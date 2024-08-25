@@ -1,4 +1,6 @@
-use crate::{colour::Colour, hittable::HitRecord, ray::Ray, vec3::Vec3};
+use std::sync::Arc;
+
+use crate::{colour::Colour, hittable::HitRecord, ray::Ray, texture::{SolidColour, Texture}, vec3::Vec3};
 
 pub trait Material: Send + Sync {
     fn scatter(&self, ray_in: &Ray, rec: &HitRecord, attenuation: &mut Colour, scattered: &mut Ray) -> bool {
@@ -7,12 +9,16 @@ pub trait Material: Send + Sync {
 }
 
 pub struct Lambertian {
-    albedo: Colour,
+    texture: Arc<dyn Texture>
 }
 
 impl Lambertian {
     pub fn new(albedo: &Colour) -> Self {
-        Self { albedo: *albedo }
+        Self { texture: Arc::new(SolidColour::new(*albedo)) }
+    }
+
+    pub fn new_tex(texture: Arc<dyn Texture>) -> Self {
+        Self { texture }
     }
 }
 
@@ -24,8 +30,9 @@ impl Material for Lambertian {
             scatter_direction = rec.normal;
         }
 
-        *scattered = Ray::new(rec.p, scatter_direction);
-        *attenuation = self.albedo;
+        // println!("{}, {}", rec.u, rec.v);
+        *scattered = Ray::new_tm(rec.p, scatter_direction, ray_in.time());
+        *attenuation = self.texture.value(rec.u, rec.v, &rec.p);
 
         return true;
     }
@@ -46,7 +53,7 @@ impl Material for Metal {
     fn scatter(&self, ray_in: &Ray, rec: &HitRecord, attenuation: &mut Colour, scattered: &mut Ray) -> bool {
         let mut reflected = Vec3::reflect(ray_in.direction(), &rec.normal);
         reflected = Vec3::unit_vector(reflected) + (self.fuzz * Vec3::random_in_unit_vector());
-        *scattered = Ray::new(rec.p, reflected);
+        *scattered = Ray::new_tm(rec.p, reflected, ray_in.time());
         *attenuation = self.albedo;
 
         return (Vec3::dot(*scattered.direction(), rec.normal) > 0.)
@@ -91,7 +98,7 @@ impl Material for Dielectric {
             Vec3::refract(&unit_direction, &rec.normal, ri)
         };
 
-        *scattered = Ray::new(rec.p, direction);
+        *scattered = Ray::new_tm(rec.p, direction, ray_in.time());
 
         return true;
     }
