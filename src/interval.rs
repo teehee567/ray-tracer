@@ -40,4 +40,26 @@ impl Interval {
 
         return x
     }
+
+    // pads an interval so no NaN
+    pub fn expand(&self, delta: f64) -> Interval {
+        let padding = delta/2.;
+        Interval::new(self.min - padding, self.max + padding)
+    }
+
+    pub fn combine(a: &Interval, b: &Interval) -> Self {
+        let min = if (a.min <= b.min) {
+            a.min
+        } else {
+            b.min
+        };
+
+        let max = if (a.max >= b.max) {
+            a.max
+        } else {
+            b.max
+        };
+
+        Self { min, max }
+    }
 }

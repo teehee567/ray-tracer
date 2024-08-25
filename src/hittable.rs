@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
+    aabb::AABB,
     colour::Colour,
     interval::Interval,
     material::{Lambertian, Material},
@@ -14,6 +15,8 @@ pub struct HitRecord {
     pub normal: Vec3,
     pub mat: Arc<dyn Material>,
     pub t: f64,
+    pub u: f64,
+    pub v: f64,
     pub front_face: bool,
 }
 
@@ -24,6 +27,8 @@ impl HitRecord {
             normal: Vec3::none(),
             mat: Arc::new(Lambertian::new(&Colour::new(0.8, 0.8, 0.8))),
             t: 0.,
+            u: 123.,
+            v: 153.,
             front_face: false,
         }
     }
@@ -40,4 +45,5 @@ impl HitRecord {
 
 pub trait Hittable: Send + Sync {
     fn hit(&self, ray: &Ray, ray_t: Interval, rec: &mut HitRecord) -> bool;
+    fn bounding_box(&self) -> &AABB;
 }
