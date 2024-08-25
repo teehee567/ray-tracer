@@ -1,3 +1,4 @@
+use core::panic;
 use std::{f64::INFINITY, fmt::Write, time::Instant};
 
 use image::{Rgb, RgbImage};
@@ -57,7 +58,7 @@ impl Camera {
             vup: Vec3::none(),
 
             defocus_angle: 0.,
-            focus_dist: 0.,
+            focus_dist: 10.,
 
             image_height: 0,
             pixel_samples_scale: 0.,
@@ -176,7 +177,6 @@ impl Camera {
             if (rec.mat.scatter(ray, &rec, &mut attenuation, &mut scattered)) {
                 return attenuation * Self::ray_color(&scattered, depth - 1, world);
             }
-
             return Colour::none();
         }
 
@@ -199,8 +199,9 @@ impl Camera {
         };
 
         let ray_direction = pixel_sample - ray_origin;
+        let ray_time = random_f64();
 
-        Ray::new(ray_origin, ray_direction)
+        Ray::new_tm(ray_origin, ray_direction, ray_time)
     }
 
     #[inline]

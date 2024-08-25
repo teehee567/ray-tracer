@@ -1,22 +1,25 @@
 
 use std::sync::Arc;
 
-use crate::{hittable::{HitRecord, Hittable}, interval::Interval, ray::Ray};
+use crate::{aabb::AABB, hittable::{HitRecord, Hittable}, interval::Interval, ray::Ray};
 
 pub struct HittableList {
-    objects: Vec<Box<dyn Hittable>>
+    pub objects: Vec<Box<dyn Hittable>>,
+    bbox: AABB 
 }
 
 impl HittableList {
     pub fn new(object: impl Hittable + 'static) -> Self {
         Self {
             objects: vec![Box::new(object)],
+            bbox: AABB::none(),
         }
     }
 
     pub fn none() -> Self {
         Self {
-            objects: vec![]
+            objects: vec![],
+            bbox: AABB::none(),
         }
     }
     
@@ -25,6 +28,7 @@ impl HittableList {
     }
 
     pub fn add(&mut self, object: impl Hittable + 'static) {
+        self.bbox = AABB::combine(&self.bbox, object.bounding_box());
         self.objects.push(Box::new(object));
     }
 }
@@ -36,7 +40,7 @@ impl Hittable for HittableList {
 
         for object in &self.objects {
             let mut temp_rec = HitRecord::new();  // Local temporary record
-            let current_interval = Interval::new(ray_t.min, closest_so_far);
+            let mut current_interval = Interval::new(ray_t.min, closest_so_far);
 
             if object.hit(ray, current_interval, &mut temp_rec) {
                 hit_anything = true;
@@ -48,9 +52,16 @@ impl Hittable for HittableList {
                 rec.normal = temp_rec.normal;
                 rec.front_face = temp_rec.front_face;
                 rec.mat = Arc::clone(&temp_rec.mat);
+                // FIX: FUCK YOU DOESNT AUTO SET STRUCT INSIDES
+                rec.u = temp_rec.u;
+                rec.v = temp_rec.v;
             }
         }
 
         hit_anything
+    }
+
+    fn bounding_box(&self) -> &AABB {
+        return &self.bbox
     }
 }
