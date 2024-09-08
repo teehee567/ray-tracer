@@ -20,6 +20,7 @@ pub struct Camera {
     pub image_width: i32,
     pub samples_per_pixel: i32,
     pub max_depth: i32,
+    pub background: Colour,
 
     pub vfov: i32,
     pub lookfrom: Point3,
@@ -51,6 +52,7 @@ impl Camera {
             image_width: 3840,
             samples_per_pixel: 10,
             max_depth: 10,
+            background: Colour::none(),
 
             vfov: 90,
             lookfrom: Point3::none(),
@@ -101,7 +103,7 @@ impl Camera {
                     let mut pixel_color = Colour::new(0., 0., 0.);
                     for _ in 0..self.samples_per_pixel {
                         let ray = self.get_ray(i as i32, j as i32);
-                        pixel_color += Self::ray_color(&ray, self.max_depth, world);
+                        pixel_color += self.ray_color(&ray, self.max_depth, world);
                     }
 
                     // Average sample colors.
@@ -163,26 +165,29 @@ impl Camera {
     }
 
     // Actual ray tracing function
-    fn ray_color(ray: &Ray, depth: i32, world: &impl Hittable) -> Colour {
+    fn ray_color(&self, ray: &Ray, depth: i32, world: &impl Hittable) -> Colour {
         if (depth <= 0) {
             return Colour::new(0., 0., 0.);
         }
 
         let mut rec: HitRecord = HitRecord::new();
-        
+
         // Recursive diffusion bounces
-        if (world.hit(&ray, Interval::new(0.001, INFINITY), &mut rec)) {
-            let mut scattered: Ray = Ray::none();
-            let mut attenuation: Colour = Colour::none();
-            if (rec.mat.scatter(ray, &rec, &mut attenuation, &mut scattered)) {
-                return attenuation * Self::ray_color(&scattered, depth - 1, world);
-            }
-            return Colour::none();
+        if (!world.hit(&ray, Interval::new(0.001, INFINITY), &mut rec)) {
+            return self.background;
         }
 
-        let unit_direction = Vec3::unit_vector(*ray.direction());
-        let a = 0.5 * (unit_direction.y() + 1.);
-        return (1. - a) * Colour::new(1., 1., 1.) + a * Colour::new(0.5, 0.7, 1.);
+        let mut scattered: Ray = Ray::none();
+        let mut attenuation: Colour = Colour::none();
+        let mut colour_from_emission = rec.mat.emitted(rec.u, rec.v, &rec.p);
+
+        if (!rec.mat.scatter(ray, &rec, &mut attenuation, &mut scattered)) {
+            return colour_from_emission;
+        }
+
+        let colour_from_scatter = attenuation * self.ray_color(&scattered, depth - 1, world);
+
+        return colour_from_emission + colour_from_scatter;
     }
 
     // Gets ray from a pixel position
