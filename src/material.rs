@@ -1,10 +1,14 @@
 use std::sync::Arc;
 
-use crate::{colour::Colour, hittable::HitRecord, ray::Ray, texture::{SolidColour, Texture}, vec3::Vec3};
+use crate::{colour::Colour, hittable::HitRecord, ray::Ray, texture::{SolidColour, Texture}, vec3::{Point3, Vec3}};
 
 pub trait Material: Send + Sync {
     fn scatter(&self, ray_in: &Ray, rec: &HitRecord, attenuation: &mut Colour, scattered: &mut Ray) -> bool {
         return false;
+    }
+
+    fn emitted(&self, u: f64, v: f64, p: &Point3) -> Colour {
+        return Colour::new(0., 0., 0.);
     }
 }
 
@@ -101,5 +105,30 @@ impl Material for Dielectric {
         *scattered = Ray::new_tm(rec.p, direction, ray_in.time());
 
         return true;
+    }
+}
+
+pub struct DiffuseLight {
+    texture: Arc<dyn Texture>
+}
+
+impl DiffuseLight {
+    pub fn new(texture: Arc<dyn Texture>) -> Self {
+        Self {
+            texture
+        }
+    }
+
+    pub fn new_colour(colour: Colour) -> Self {
+        let texture = Arc::new(SolidColour::new(colour));
+        Self {
+            texture
+        }
+    }
+}
+
+impl Material for DiffuseLight {
+    fn emitted(&self, u: f64, v: f64, p: &Point3) -> Colour {
+        return self.texture.value(u, v, p);
     }
 }
