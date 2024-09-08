@@ -6,12 +6,14 @@ use std::{fs::File, sync::Arc};
 
 use bvh::BVH;
 use camera::Camera;
+use cube::Cube;
 use hittable::{HitRecord, Hittable};
 use hittable_list::HittableList;
 use image::{Rgb, RgbImage};
 use indicatif::ProgressBar;
 use interval::Interval;
-use material::{Dielectric, Lambertian, Material, Metal};
+use material::{Dielectric, DiffuseLight, Lambertian, Material, Metal};
+use quad::Quad;
 use rayon::prelude::*;
 
 use colour::Colour;
@@ -25,11 +27,13 @@ mod aabb;
 mod bvh;
 mod camera;
 mod colour;
+mod cube;
 mod hittable;
 mod hittable_list;
 mod interval;
 mod material;
 mod perlin;
+mod quad;
 mod ray;
 mod sphere;
 mod texture;
@@ -129,6 +133,7 @@ fn bouncing_spheres() -> (Camera, HittableList) {
     camera.image_width = 3840;
     camera.samples_per_pixel = 30;
     camera.max_depth = 50;
+    camera.background = Colour::new(0.7, 0.8, 1.);
 
     camera.vfov = 20;
     camera.lookfrom = Point3::new(13., 2., 3.);
@@ -154,6 +159,7 @@ fn earht() -> (Camera, HittableList) {
     camera.image_width = 3840;
     camera.samples_per_pixel = 100;
     camera.max_depth = 50;
+    camera.background = Colour::new(0.7, 0.8, 1.);
 
     camera.vfov = 20;
     camera.lookfrom = Point3::new(0., 0., -12.);
@@ -191,6 +197,7 @@ fn checkerd_sphered() -> (Camera, HittableList) {
     camera.image_width = 3840;
     camera.samples_per_pixel = 10;
     camera.max_depth = 50;
+    camera.background = Colour::new(0.7, 0.8, 1.);
 
     camera.vfov = 90;
     camera.lookfrom = Point3::new(13., 2., 3.);
@@ -224,6 +231,7 @@ fn perlin_spheres() -> (Camera, HittableList) {
     camera.image_width = 3840;
     camera.samples_per_pixel = 10;
     camera.max_depth = 50;
+    camera.background = Colour::new(0.7, 0.8, 1.);
 
     camera.vfov = 20;
     camera.lookfrom = Point3::new(13., 2., 3.);
@@ -236,12 +244,190 @@ fn perlin_spheres() -> (Camera, HittableList) {
     (camera, world)
 }
 
+fn quads() -> (Camera, HittableList) {
+    let mut world = HittableList::none();
+    let left_red = Arc::new(Lambertian::new(&Colour::new(1., 0.2, 0.2)));
+    let back_green = Arc::new(Lambertian::new(&Colour::new(0.2, 1., 0.2)));
+    let right_blue = Arc::new(Lambertian::new(&Colour::new(0.2, 0.2, 1.)));
+    let upper_orange = Arc::new(Lambertian::new(&Colour::new(1., 0.5, 0.)));
+    let lower_teal = Arc::new(Lambertian::new(&Colour::new(0.2, 0.8, 0.8)));
+
+    world.add(Quad::new(
+        Point3::new(-3., -2., 5.),
+        Vec3::new(0., 0., -4.),
+        Vec3::new(0., 4., 0.),
+        left_red,
+    ));
+    world.add(Quad::new(
+        Point3::new(-2., -2., 0.),
+        Vec3::new(4., 0., 0.),
+        Vec3::new(0., 4., 0.),
+        back_green,
+    ));
+    world.add(Quad::new(
+        Point3::new(3., -2., 1.),
+        Vec3::new(0., 0., 4.),
+        Vec3::new(0., 4., 0.),
+        right_blue,
+    ));
+    world.add(Quad::new(
+        Point3::new(-2., 3., 1.),
+        Vec3::new(4., 0., 0.),
+        Vec3::new(0., 0., 4.),
+        upper_orange,
+    ));
+    world.add(Quad::new(
+        Point3::new(-2., -3., 5.),
+        Vec3::new(4., 0., 0.),
+        Vec3::new(0., 0., -4.),
+        lower_teal,
+    ));
+
+    let mut camera = Camera::new();
+
+    camera.aspect_ratio = 16. / 9.;
+    camera.image_width = 3840;
+    camera.samples_per_pixel = 100;
+    camera.max_depth = 50;
+    camera.background = Colour::new(0.7, 0.8, 1.);
+
+    camera.vfov = 50;
+    camera.lookfrom = Point3::new(0., 0., 9.);
+    camera.lookat = Point3::new(0., 0., 0.);
+    camera.vup = Vec3::new(0., 1., 0.);
+
+    camera.defocus_angle = 0.;
+    camera.focus_dist = 10.;
+
+    (camera, world)
+}
+
+fn simple_light() -> (Camera, HittableList) {
+    let mut world = HittableList::none();
+
+    let pertext = Arc::new(NoiseTexture::new(4.));
+    world.add(Sphere::new(
+        Point3::new(0., -1000., 0.),
+        1000.,
+        Arc::new(Lambertian::new_tex(pertext.clone())),
+    ));
+    world.add(Sphere::new(
+        Point3::new(0., 2., 0.),
+        2.,
+        Arc::new(Lambertian::new_tex(pertext.clone())),
+    ));
+
+    let difflight = Arc::new(DiffuseLight::new_colour(Colour::new(4., 4., 4.)));
+    world.add(Quad::new(
+        Point3::new(3., 1., -2.),
+        Vec3::new(2., 0., 0.),
+        Vec3::new(0., 2., 0.),
+        difflight.clone(),
+    ));
+
+    let mut camera = Camera::new();
+
+    camera.aspect_ratio = 16. / 9.;
+    camera.image_width = 3840;
+    camera.samples_per_pixel = 100;
+    camera.max_depth = 50;
+
+    camera.vfov = 20;
+    camera.lookfrom = Point3::new(26., 3., 6.);
+    camera.lookat = Point3::new(0., 2., 0.);
+    camera.vup = Vec3::new(0., 1., 0.);
+
+    camera.defocus_angle = 0.;
+    camera.focus_dist = 20.;
+
+    (camera, world)
+}
+
+fn cornell_box() -> (Camera, HittableList) {
+    let mut world = HittableList::none();
+
+    let red = Arc::new(Lambertian::new(&Colour::new(0.65, 0.05, 0.05)));
+    let white = Arc::new(Lambertian::new(&Colour::new(0.73, 0.73, 0.73)));
+    let green = Arc::new(Lambertian::new(&Colour::new(0.12, 0.45, 0.15)));
+    let light = Arc::new(DiffuseLight::new_colour(Colour::new(15., 15., 15.)));
+
+    world.add(Quad::new(
+        Point3::new(555., 0., 0.),
+        Vec3::new(0., 555., 0.),
+        Vec3::new(0., 0., 555.),
+        green,
+    ));
+    world.add(Quad::new(
+        Point3::new(0., 0., 0.),
+        Vec3::new(0., 555., 0.),
+        Vec3::new(0., 0., 555.),
+        red,
+    ));
+    world.add(Quad::new(
+        Point3::new(343., 554., 332.),
+        Vec3::new(-130., 0., 0.),
+        Vec3::new(0., 0., -105.),
+        light,
+    ));
+    world.add(Quad::new(
+        Point3::new(0., 0., 0.),
+        Vec3::new(555., 0., 0.),
+        Vec3::new(0., 0., 555.),
+        white.clone(),
+    ));
+    world.add(Quad::new(
+        Point3::new(555., 555., 555.),
+        Vec3::new(-555., 0., 0.),
+        Vec3::new(0., 0., -555.),
+        white.clone(),
+    ));
+    world.add(Quad::new(
+        Point3::new(0., 0., 555.),
+        Vec3::new(555., 0., 0.),
+        Vec3::new(0., 555., 0.),
+        white.clone(),
+    ));
+
+    world.add(Cube::new(
+        Point3::new(130., 0., 65.),
+        Point3::new(295., 165., 230.),
+        white.clone(),
+    ));
+    world.add(Cube::new(
+        Point3::new(265., 0., 295.),
+        Point3::new(430., 330., 460.),
+        white.clone(),
+    ));
+
+    world = HittableList::new(BVH::new(world.objects, 0., 1.));
+
+    let mut camera = Camera::new();
+
+    camera.aspect_ratio = 1.;
+    camera.image_width = 3840;
+    camera.samples_per_pixel = 200;
+    camera.max_depth = 50;
+
+    camera.vfov = 40;
+    camera.lookfrom = Point3::new(278., 278., -400.);
+    camera.lookat = Point3::new(278., 278., 0.);
+    camera.vup = Vec3::new(0., 1., 0.);
+
+    camera.defocus_angle = 0.;
+    camera.focus_dist = 200.;
+
+    (camera, world)
+}
+
 fn main() {
-    let (mut camera, world) = match 4 {
+    let (mut camera, world) = match 7 {
         1 => bouncing_spheres(),
         2 => checkerd_sphered(),
         3 => earht(),
         4 => perlin_spheres(),
+        5 => quads(),
+        6 => simple_light(),
+        7 => cornell_box(),
         _ => panic!("bro...."),
     };
     camera.render(&world);
