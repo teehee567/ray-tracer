@@ -1,13 +1,12 @@
 use std::{pin::pin, sync::Arc};
 
 use image::{GenericImageView, ImageReader, RgbaImage};
+use nalgebra::Point3;
 
-use crate::{
-    colour::Colour, perlin::Perlin, vec3::{Point3, Vec3}
-};
+use crate::{colour::Colour, perlin::Perlin};
 
 pub trait Texture: Send + Sync {
-    fn value(&self, u: f64, v: f64, p: &Point3) -> Colour;
+    fn value(&self, u: f32, v: f32, p: &Point3<f32>) -> Colour;
 }
 
 pub struct SolidColour {
@@ -21,11 +20,11 @@ impl SolidColour {
 
     pub fn none() -> Self {
         Self {
-            albedo: Colour::none(),
+            albedo: Colour::default(),
         }
     }
 
-    pub fn new_colour(red: f64, green: f64, blue: f64) -> Self {
+    pub fn new_colour(red: f32, green: f32, blue: f32) -> Self {
         Self {
             albedo: Colour::new(red, green, blue),
         }
@@ -33,19 +32,19 @@ impl SolidColour {
 }
 
 impl Texture for SolidColour {
-    fn value(&self, u: f64, v: f64, p: &Point3) -> Colour {
+    fn value(&self, u: f32, v: f32, p: &Point3<f32>) -> Colour {
         return self.albedo;
     }
 }
 
 pub struct CheckerTexture {
-    inv_scale: f64,
+    inv_scale: f32,
     even: Arc<dyn Texture>,
     odd: Arc<dyn Texture>,
 }
 
 impl CheckerTexture {
-    pub fn new(scale: f64, even: Arc<dyn Texture>, odd: Arc<dyn Texture>) -> Self {
+    pub fn new(scale: f32, even: Arc<dyn Texture>, odd: Arc<dyn Texture>) -> Self {
         Self {
             inv_scale: 1. / scale,
             even,
@@ -53,7 +52,7 @@ impl CheckerTexture {
         }
     }
 
-    pub fn new_colour(scale: f64, c1: &Colour, c2: &Colour) -> Self {
+    pub fn new_colour(scale: f32, c1: &Colour, c2: &Colour) -> Self {
         Self::new(
             scale,
             Arc::new(SolidColour::new(*c1)),
@@ -63,10 +62,10 @@ impl CheckerTexture {
 }
 
 impl Texture for CheckerTexture {
-    fn value(&self, u: f64, v: f64, p: &Point3) -> Colour {
-        let x = (self.inv_scale * p.x()).floor() as i32;
-        let y = (self.inv_scale * p.y()).floor() as i32;
-        let z = (self.inv_scale * p.z()).floor() as i32;
+    fn value(&self, u: f32, v: f32, p: &Point3<f32>) -> Colour {
+        let x = (self.inv_scale * p.x).floor() as i32;
+        let y = (self.inv_scale * p.y).floor() as i32;
+        let z = (self.inv_scale * p.z).floor() as i32;
 
         if (x + y + z) % 2 == 0 {
             self.even.value(u, v, p)
@@ -97,13 +96,13 @@ impl ImageTexture {
 }
 
 impl Texture for ImageTexture {
-    fn value(&self, u: f64, v: f64, p: &Point3) -> Colour {
+    fn value(&self, u: f32, v: f32, p: &Point3<f32>) -> Colour {
         let u = u.clamp(0., 1.);
         let v = 1. - v.clamp(0., 1.);
 
         let (i, j) = {
-            let mut i = (u * self.data.width() as f64) as u32;
-            let mut j = (v * self.data.height() as f64) as u32;
+            let mut i = (u * self.data.width() as f32) as u32;
+            let mut j = (v * self.data.height() as f32) as u32;
 
             // Clamp integer mapping. The actual coordinates should be < 1.0
             if i >= self.data.width() {
@@ -121,20 +120,20 @@ impl Texture for ImageTexture {
         // println!("{}, {}: {}, {}", i, j, u, v);
 
         Colour::new(
-            color_scale * pixel[0] as f64,
-            color_scale * pixel[1] as f64,
-            color_scale * pixel[2] as f64,
+            color_scale * pixel[0] as f32,
+            color_scale * pixel[1] as f32,
+            color_scale * pixel[2] as f32,
         )
     }
 }
 
 pub struct NoiseTexture {
     noise: Perlin,
-    scale: f64,
+    scale: f32,
 }
 
 impl NoiseTexture {
-    pub fn new(scale: f64) -> Self {
+    pub fn new(scale: f32) -> Self {
         Self {
             noise: Perlin::new(),
             scale,
@@ -143,7 +142,8 @@ impl NoiseTexture {
 }
 
 impl Texture for NoiseTexture {
-    fn value(&self, u: f64, v: f64, p: &Point3) -> Colour {
-        Colour::new(0.5, 0.5, 0.5) * (1. + (self.scale * p.z() + 10. * self.noise.turbulence(*p, 7)).sin())
+    fn value(&self, u: f32, v: f32, p: &Point3<f32>) -> Colour {
+        Colour::new(0.5, 0.5, 0.5)
+            * (1. + (self.scale * p.z + 10. * self.noise.turbulence(*p, 7)).sin())
     }
 }

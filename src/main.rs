@@ -1,5 +1,5 @@
 #![allow(unused)]
-use std::f64::INFINITY;
+use std::f32::INFINITY;
 use std::io::Write;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{fs::File, sync::Arc};
@@ -13,15 +13,15 @@ use image::{Rgb, RgbImage};
 use indicatif::ProgressBar;
 use interval::Interval;
 use material::{Dielectric, DiffuseLight, Lambertian, Material, Metal};
+use nalgebra::{Point3, Vector3};
 use quad::Quad;
 use rayon::prelude::*;
 
 use colour::Colour;
 use ray::Ray;
 use sphere::Sphere;
-use texture::{CheckerTexture, ImageTexture, NoiseTexture};
-use utils::{random_f64, random_f64_in};
-use vec3::{Point3, Vec3};
+use texture::{CheckerTexture, ImageTexture, NoiseTexture, SolidColour};
+use utils::{random_f32, random_f32_in};
 
 mod aabb;
 mod bvh;
@@ -38,7 +38,6 @@ mod ray;
 mod sphere;
 mod texture;
 mod utils;
-mod vec3;
 
 fn balls() -> HittableList {
     // let material_ground = Arc::new(Lambertian::new(&Colour::new(0.8, 0.8, 0.)));
@@ -80,31 +79,31 @@ fn bouncing_spheres() -> (Camera, HittableList) {
     let mut world = HittableList::none();
     let material_ground = Lambertian::new_tex(checker.clone());
     world.add(Sphere::new(
-        Point3::new(0.0, -1000.0, 0.0),
+        nalgebra::Point3::new(0.0, -1000.0, 0.0),
         1000.0,
         Arc::new(material_ground),
     ));
 
     for a in -11..11 {
         for b in -11..11 {
-            let choose_mat = random_f64();
+            let choose_mat = random_f32();
             let center = Point3::new(
-                a as f64 + 0.9 * random_f64(),
+                a as f32 + 0.9 * random_f32(),
                 0.2,
-                b as f64 + 0.9 * random_f64(),
+                b as f32 + 0.9 * random_f32(),
             );
 
-            if (center - Point3::new(4.0, 0.2, 0.0)).length() > 0.9 {
+            if (center - Point3::new(4.0, 0.2, 0.0)).norm() > 0.9 {
                 if choose_mat < 0.8 {
                     // Lambertian
-                    let albedo = Colour::random() * Colour::random();
+                    let albedo = utils::rand_vec().component_mul(&utils::rand_vec());
                     let material = Arc::new(Lambertian::new(&albedo));
-                    let center2 = center + Vec3::new(0., random_f64_in(0., 0.5), 0.);
+                    let center2 = center + Vector3::new(0., random_f32_in(0., 0.5), 0.);
                     world.add(Sphere::new_mov(center, center2, 0.2, material));
                 } else if choose_mat < 0.95 {
                     // Metal
-                    let albedo = Colour::random_in(0.5, 1.0);
-                    let fuzz = random_f64() * 0.5;
+                    let albedo = utils::rand_vec_in(0.5, 1.0);
+                    let fuzz = random_f32() * 0.5;
                     let material = Arc::new(Metal::new(&albedo, fuzz));
                     world.add(Sphere::new(center, 0.2, material));
                 } else {
@@ -138,7 +137,7 @@ fn bouncing_spheres() -> (Camera, HittableList) {
     camera.vfov = 20;
     camera.lookfrom = Point3::new(13., 2., 3.);
     camera.lookat = Point3::new(0., 0., 0.);
-    camera.vup = Vec3::new(0., 1., 0.);
+    camera.vup = Vector3::new(0., 1., 0.);
 
     camera.defocus_angle = 0.6;
     camera.focus_dist = 10.;
@@ -164,7 +163,7 @@ fn earht() -> (Camera, HittableList) {
     camera.vfov = 20;
     camera.lookfrom = Point3::new(0., 0., -12.);
     camera.lookat = Point3::new(0., 0., 0.);
-    camera.vup = Vec3::new(0., 1., 0.);
+    camera.vup = Vector3::new(0., 1., 0.);
 
     camera.defocus_angle = 0.;
     camera.focus_dist = 12.;
@@ -181,12 +180,12 @@ fn checkerd_sphered() -> (Camera, HittableList) {
     ));
 
     world.add(Sphere::new(
-        Point3::new(0., -10., 0.),
+        nalgebra::Point3::new(0., -10., 0.),
         10.,
         Arc::new(Lambertian::new_tex(checker.clone())),
     ));
     world.add(Sphere::new(
-        Point3::new(0., 10., 0.),
+        nalgebra::Point3::new(0., 10., 0.),
         10.,
         Arc::new(Lambertian::new_tex(checker.clone())),
     ));
@@ -200,9 +199,9 @@ fn checkerd_sphered() -> (Camera, HittableList) {
     camera.background = Colour::new(0.7, 0.8, 1.);
 
     camera.vfov = 90;
-    camera.lookfrom = Point3::new(13., 2., 3.);
-    camera.lookat = Point3::new(0., 0., 0.);
-    camera.vup = Vec3::new(0., 1., 0.);
+    camera.lookfrom = nalgebra::Point3::new(13., 2., 3.);
+    camera.lookat = nalgebra::Point3::new(0., 0., 0.);
+    camera.vup = Vector3::new(0., 1., 0.);
 
     camera.defocus_angle = 0.;
     camera.focus_dist = 10.;
@@ -236,7 +235,7 @@ fn perlin_spheres() -> (Camera, HittableList) {
     camera.vfov = 20;
     camera.lookfrom = Point3::new(13., 2., 3.);
     camera.lookat = Point3::new(0., 0., 0.);
-    camera.vup = Vec3::new(0., 1., 0.);
+    camera.vup = Vector3::new(0., 1., 0.);
 
     camera.defocus_angle = 0.;
     camera.focus_dist = 10.;
@@ -254,32 +253,32 @@ fn quads() -> (Camera, HittableList) {
 
     world.add(Quad::new(
         Point3::new(-3., -2., 5.),
-        Vec3::new(0., 0., -4.),
-        Vec3::new(0., 4., 0.),
+        Vector3::new(0., 0., -4.),
+        Vector3::new(0., 4., 0.),
         left_red,
     ));
     world.add(Quad::new(
         Point3::new(-2., -2., 0.),
-        Vec3::new(4., 0., 0.),
-        Vec3::new(0., 4., 0.),
+        Vector3::new(4., 0., 0.),
+        Vector3::new(0., 4., 0.),
         back_green,
     ));
     world.add(Quad::new(
         Point3::new(3., -2., 1.),
-        Vec3::new(0., 0., 4.),
-        Vec3::new(0., 4., 0.),
+        Vector3::new(0., 0., 4.),
+        Vector3::new(0., 4., 0.),
         right_blue,
     ));
     world.add(Quad::new(
         Point3::new(-2., 3., 1.),
-        Vec3::new(4., 0., 0.),
-        Vec3::new(0., 0., 4.),
+        Vector3::new(4., 0., 0.),
+        Vector3::new(0., 0., 4.),
         upper_orange,
     ));
     world.add(Quad::new(
         Point3::new(-2., -3., 5.),
-        Vec3::new(4., 0., 0.),
-        Vec3::new(0., 0., -4.),
+        Vector3::new(4., 0., 0.),
+        Vector3::new(0., 0., -4.),
         lower_teal,
     ));
 
@@ -294,7 +293,7 @@ fn quads() -> (Camera, HittableList) {
     camera.vfov = 50;
     camera.lookfrom = Point3::new(0., 0., 9.);
     camera.lookat = Point3::new(0., 0., 0.);
-    camera.vup = Vec3::new(0., 1., 0.);
+    camera.vup = Vector3::new(0., 1., 0.);
 
     camera.defocus_angle = 0.;
     camera.focus_dist = 10.;
@@ -320,8 +319,8 @@ fn simple_light() -> (Camera, HittableList) {
     let difflight = Arc::new(DiffuseLight::new_colour(Colour::new(4., 4., 4.)));
     world.add(Quad::new(
         Point3::new(3., 1., -2.),
-        Vec3::new(2., 0., 0.),
-        Vec3::new(0., 2., 0.),
+        Vector3::new(2., 0., 0.),
+        Vector3::new(0., 2., 0.),
         difflight.clone(),
     ));
 
@@ -335,7 +334,7 @@ fn simple_light() -> (Camera, HittableList) {
     camera.vfov = 20;
     camera.lookfrom = Point3::new(26., 3., 6.);
     camera.lookat = Point3::new(0., 2., 0.);
-    camera.vup = Vec3::new(0., 1., 0.);
+    camera.vup = Vector3::new(0., 1., 0.);
 
     camera.defocus_angle = 0.;
     camera.focus_dist = 20.;
@@ -353,38 +352,38 @@ fn cornell_box() -> (Camera, HittableList) {
 
     world.add(Quad::new(
         Point3::new(555., 0., 0.),
-        Vec3::new(0., 555., 0.),
-        Vec3::new(0., 0., 555.),
+        Vector3::new(0., 555., 0.),
+        Vector3::new(0., 0., 555.),
         green,
     ));
     world.add(Quad::new(
         Point3::new(0., 0., 0.),
-        Vec3::new(0., 555., 0.),
-        Vec3::new(0., 0., 555.),
+        Vector3::new(0., 555., 0.),
+        Vector3::new(0., 0., 555.),
         red,
     ));
     world.add(Quad::new(
         Point3::new(343., 554., 332.),
-        Vec3::new(-130., 0., 0.),
-        Vec3::new(0., 0., -105.),
+        Vector3::new(-130., 0., 0.),
+        Vector3::new(0., 0., -105.),
         light,
     ));
     world.add(Quad::new(
         Point3::new(0., 0., 0.),
-        Vec3::new(555., 0., 0.),
-        Vec3::new(0., 0., 555.),
+        Vector3::new(555., 0., 0.),
+        Vector3::new(0., 0., 555.),
         white.clone(),
     ));
     world.add(Quad::new(
         Point3::new(555., 555., 555.),
-        Vec3::new(-555., 0., 0.),
-        Vec3::new(0., 0., -555.),
+        Vector3::new(-555., 0., 0.),
+        Vector3::new(0., 0., -555.),
         white.clone(),
     ));
     world.add(Quad::new(
         Point3::new(0., 0., 555.),
-        Vec3::new(555., 0., 0.),
-        Vec3::new(0., 555., 0.),
+        Vector3::new(555., 0., 0.),
+        Vector3::new(0., 555., 0.),
         white.clone(),
     ));
 
@@ -404,17 +403,45 @@ fn cornell_box() -> (Camera, HittableList) {
     let mut camera = Camera::new();
 
     camera.aspect_ratio = 1.;
-    camera.image_width = 3840;
-    camera.samples_per_pixel = 200;
+    camera.image_width = 840;
+    camera.samples_per_pixel = 20;
     camera.max_depth = 50;
 
     camera.vfov = 40;
-    camera.lookfrom = Point3::new(278., 278., -400.);
-    camera.lookat = Point3::new(278., 278., 0.);
-    camera.vup = Vec3::new(0., 1., 0.);
+    camera.lookfrom = nalgebra::Point3::new(278., 278., -400.);
+    camera.lookat = nalgebra::Point3::new(278., 278., 0.);
+    camera.vup = Vector3::new(0., 1., 0.);
 
     camera.defocus_angle = 0.;
     camera.focus_dist = 200.;
+
+    (camera, world)
+}
+
+fn huh() -> (Camera, HittableList) {
+    let mut world = HittableList::none();
+
+    world.add(Sphere::new(
+        nalgebra::Point3::new(0., 0., -5.),
+        2.,
+        Arc::new(DiffuseLight::new(Arc::new(SolidColour::new(Colour::new(0.7, 0.4, 0.2))))),
+    ));
+
+    let mut camera = Camera::new();
+
+    camera.aspect_ratio = 1.;
+    camera.image_width = 3840;
+    camera.samples_per_pixel = 20;
+    camera.max_depth = 50;
+
+    camera.vfov = 90;
+    camera.lookfrom = nalgebra::Point3::new(0., 0., 1.);
+    camera.lookat = nalgebra::Point3::new(0., 0., -5.);
+    camera.vup = Vector3::new(0., 1., 0.);
+    camera.background = Colour::new(0.5, 0., 0.);
+
+    camera.defocus_angle = 0.;
+    camera.focus_dist = 5.;
 
     (camera, world)
 }
@@ -428,6 +455,7 @@ fn main() {
         5 => quads(),
         6 => simple_light(),
         7 => cornell_box(),
+        8 => huh(),
         _ => panic!("bro...."),
     };
     camera.render(&world);

@@ -1,4 +1,6 @@
-use crate::{interval::Interval, ray::Ray, vec3::Point3};
+use nalgebra::Point3;
+
+use crate::{interval::Interval, ray::Ray};
 
 #[derive(Clone)]
 pub struct AABB {
@@ -8,7 +10,7 @@ pub struct AABB {
 }
 
 impl AABB {
-    const MIN_DELTA: f64 = 0.0001;
+    const MIN_DELTA: f32 = 0.0001;
 
     pub fn new(x: &Interval, y: &Interval, z: &Interval) -> Self {
         let mut aabb = Self {
@@ -38,7 +40,7 @@ impl AABB {
         combined
     }
 
-    pub fn new_points(a: &Point3, b: &Point3) -> Self {
+    pub fn new_points(a: &Point3<f32>, b: &Point3<f32>) -> Self {
         let x = if a[0] <= b[0] {
             Interval::new(a[0], b[0])
         } else {
