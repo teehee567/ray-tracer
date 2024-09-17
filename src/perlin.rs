@@ -1,7 +1,9 @@
-use crate::Vec3;
+use nalgebra::{Point3, Vector3};
+
+use crate::utils;
 
 pub struct Perlin {
-    random_points: Vec<Vec3>,
+    random_points: Vec<Vector3<f32>>,
     x: Vec<usize>,
     y: Vec<usize>,
     z: Vec<usize>,
@@ -10,9 +12,9 @@ pub struct Perlin {
 impl Perlin {
     const POINT_COUNT: usize = 256;
 
-    fn perlin_generate() -> Vec<Vec3> {
+    fn perlin_generate() -> Vec<Vector3<f32>> {
         (0..Self::POINT_COUNT)
-            .map(|_| Vec3::random_in(-1., 1.))
+            .map(|_| utils::rand_vec_in(-1., 1.))
             .collect()
     }
 
@@ -32,7 +34,6 @@ impl Perlin {
     }
 
     pub fn new() -> Self {
-
         Self {
             random_points: Self::perlin_generate(),
             x: Self::generate_permutation(),
@@ -41,16 +42,15 @@ impl Perlin {
         }
     }
 
-    pub fn noise(&self, point: Vec3) -> f64 {
-        let u = point.x() - point.x().floor();
-        let v = point.y() - point.y().floor();
-        let w = point.z() - point.z().floor();
+    pub fn noise(&self, point: Point3<f32>) -> f32 {
+        let u = point.x - point.x.floor();
+        let v = point.y - point.y.floor();
+        let w = point.z - point.z.floor();
 
-
-        let i = point.x().floor() as i32;
-        let j = point.y().floor() as i32;
-        let k = point.z().floor() as i32;
-        let mut c = [[[Vec3::none(); 2]; 2]; 2]; // Vec3f c[2][2][2];
+        let i = point.x.floor() as i32;
+        let j = point.y.floor() as i32;
+        let k = point.z.floor() as i32;
+        let mut c = [[[Vector3::default(); 2]; 2]; 2]; // Vec3f c[2][2][2];
         for (di, item) in c.iter_mut().enumerate() {
             for (dj, item) in item.iter_mut().enumerate() {
                 for (dk, item) in item.iter_mut().enumerate() {
@@ -65,7 +65,7 @@ impl Perlin {
         Self::perlin_interp(c, u, v, w)
     }
 
-    fn perlin_interp(c: [[[Vec3; 2]; 2]; 2], u: f64, v: f64, w: f64) -> f64 {
+    fn perlin_interp(c: [[[Vector3<f32>; 2]; 2]; 2], u: f32, v: f32, w: f32) -> f32 {
         let uu = u * u * (3. - 2. * u);
         let vv = v * v * (3. - 2. * v);
         let ww = w * w * (3. - 2. * w);
@@ -74,18 +74,18 @@ impl Perlin {
         for (i, item) in c.iter().enumerate() {
             for (j, item) in item.iter().enumerate() {
                 for (k, item) in item.iter().enumerate() {
-                    let weight = Vec3::new(u - i as f64, v - j as f64, w - k as f64);
-                    accumulator += (i as f64 * uu + (1 - i) as f64 * (1. - uu))
-                        * (j as f64 * vv + (1 - j) as f64 * (1. - vv))
-                        * (k as f64 * ww + (1 - k) as f64 * (1. - ww))
-                        * Vec3::dot(*item, weight);
+                    let weight = Vector3::new(u - i as f32, v - j as f32, w - k as f32);
+                    accumulator += (i as f32 * uu + (1 - i) as f32 * (1. - uu))
+                        * (j as f32 * vv + (1 - j) as f32 * (1. - vv))
+                        * (k as f32 * ww + (1 - k) as f32 * (1. - ww))
+                        * Vector3::dot(item, &weight);
                 }
             }
         }
         accumulator
     }
 
-    pub fn turbulence(&self, point: Vec3, depth: u32) -> f64 {
+    pub fn turbulence(&self, point: Point3<f32>, depth: u32) -> f32 {
         if depth == 0 {
             return 0.;
         }

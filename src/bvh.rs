@@ -18,16 +18,16 @@ pub struct BVH {
 }
 
 impl BVH {
-    pub fn new(mut objects: Vec<Box<dyn Hittable>>, time0: f64, time1: f64) -> Self {
+    pub fn new(mut objects: Vec<Box<dyn Hittable>>, time0: f32, time1: f32) -> Self {
         fn axis_range(
             hittable: &[Box<dyn Hittable>],
-            time0: f64,
-            time1: f64,
+            time0: f32,
+            time1: f32,
             axis: usize,
-        ) -> f64 {
+        ) -> f32 {
             let (min, max) = hittable
                 .iter()
-                .fold((f64::MAX, f64::MIN), |(bmin, bmax), hit| {
+                .fold((f32::MAX, f32::MIN), |(bmin, bmax), hit| {
                     let aabb = hit.bounding_box();
                     let (axis_min, axis_max) = match axis {
                         0 => (aabb.x.min, aabb.x.max),
