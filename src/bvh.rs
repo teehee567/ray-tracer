@@ -30,9 +30,9 @@ impl BVH {
                 .fold((f32::MAX, f32::MIN), |(bmin, bmax), hit| {
                     let aabb = hit.bounding_box();
                     let (axis_min, axis_max) = match axis {
-                        0 => (aabb.x.min, aabb.x.max),
-                        1 => (aabb.y.min, aabb.y.max),
-                        2 => (aabb.z.min, aabb.z.max),
+                        0 => (aabb.min.x, aabb.max.x),
+                        1 => (aabb.min.y, aabb.max.y),
+                        2 => (aabb.min.z, aabb.max.z),
                         _ => unreachable!(),
                     };
                     (bmin.min(axis_min), bmax.max(axis_max))
@@ -51,15 +51,15 @@ impl BVH {
             let abb = a.bounding_box();
             let bbb = b.bounding_box();
             let ac = match longest_axis {
-                0 => abb.x.min + abb.x.max,
-                1 => abb.y.min + abb.y.max,
-                2 => abb.z.min + abb.z.max,
+                0 => abb.min.x + abb.max.x,
+                1 => abb.min.y + abb.max.y,
+                2 => abb.min.z + abb.max.z,
                 _ => panic!("Axis out of range(it might be over)"),
             };
             let bc = match longest_axis {
-                0 => bbb.x.min + bbb.x.max,
-                1 => bbb.y.min + bbb.y.max,
-                2 => bbb.z.min + bbb.z.max,
+                0 => bbb.min.x + bbb.max.x,
+                1 => bbb.min.y + bbb.max.y,
+                2 => bbb.min.z + bbb.max.z,
                 _ => panic!("Axis out of range(it might be over)"),
             };
             ac.partial_cmp(&bc).unwrap()

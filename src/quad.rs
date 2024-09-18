@@ -24,15 +24,33 @@ pub struct Quad {
 
 impl Quad {
     pub fn new(q: Point3<f32>, u: Vector3<f32>, v: Vector3<f32>, material: Arc<dyn Material>) -> Self {
-        let q = q;
-        let bbox_diagonal1 = AABB::new_points(&q, &(q + u + v));
-        let bbox_diagonal2 = AABB::new_points(&(q + u), &(q + v));
-        let bbox = AABB::combine(&bbox_diagonal1, &bbox_diagonal2);
+        // Compute the four vertices of the quad
+        let p0 = q;
+        let p1 = q + u;
+        let p2 = q + v;
+        let p3 = q + u + v;
 
-        let n = Vector3::cross(&u, &v);
+        // Find the minimum and maximum coordinates among the vertices
+        let min_x = p0.x.min(p1.x).min(p2.x).min(p3.x);
+        let min_y = p0.y.min(p1.y).min(p2.y).min(p3.y);
+        let min_z = p0.z.min(p1.z).min(p2.z).min(p3.z);
+
+        let max_x = p0.x.max(p1.x).max(p2.x).max(p3.x);
+        let max_y = p0.y.max(p1.y).max(p2.y).max(p3.y);
+        let max_z = p0.z.max(p1.z).max(p2.z).max(p3.z);
+
+        // Slightly expand the bounding box to prevent zero-size boxes
+        let padding = 1e-4;
+        let min_point = Point3::new(min_x - padding, min_y - padding, min_z - padding);
+        let max_point = Point3::new(max_x + padding, max_y + padding, max_z + padding);
+
+        let bbox = AABB::new(min_point, max_point);
+
+        // Rest of your existing code
+        let n = u.cross(&v);
         let normal = n.normalize();
-        let d = Vector3::dot(&normal, &q.coords);
-        let w = n / Vector3::dot(&n, &n);
+        let d = normal.dot(&q.coords);
+        let w = n / n.dot(&n);
 
         Self {
             q,
