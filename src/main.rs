@@ -38,6 +38,7 @@ mod ray;
 mod sphere;
 mod texture;
 mod utils;
+mod translate;
 
 fn balls() -> HittableList {
     // let material_ground = Arc::new(Lambertian::new(&Colour::new(0.8, 0.8, 0.)));
@@ -404,8 +405,8 @@ fn cornell_box() -> (Camera, HittableList) {
 
     camera.aspect_ratio = 1.;
     camera.image_width = 840;
-    camera.samples_per_pixel = 20;
-    camera.max_depth = 50;
+    camera.samples_per_pixel = 200;
+    camera.max_depth = 10;
 
     camera.vfov = 40;
     camera.lookfrom = nalgebra::Point3::new(278., 278., -400.);
@@ -447,7 +448,7 @@ fn huh() -> (Camera, HittableList) {
 }
 
 fn main() {
-    let (mut camera, world) = match 7 {
+    let (mut camera, world) = match 1 {
         1 => bouncing_spheres(),
         2 => checkerd_sphered(),
         3 => earht(),

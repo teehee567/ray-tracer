@@ -12,14 +12,14 @@ impl HittableList {
     pub fn new(object: impl Hittable + 'static) -> Self {
         Self {
             objects: vec![Box::new(object)],
-            bbox: AABB::none(),
+            bbox: AABB::default(),
         }
     }
 
     pub fn none() -> Self {
         Self {
             objects: vec![],
-            bbox: AABB::none(),
+            bbox: AABB::default(),
         }
     }
     

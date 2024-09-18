@@ -1,6 +1,6 @@
 use nalgebra::{Point3, Vector3};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Ray {
     orig: Point3<f32>,
     dir: Vector3<f32>,
@@ -8,10 +8,6 @@ pub struct Ray {
 }
 
 impl Ray {
-    pub fn none() -> Self {
-        Ray::new(Point3::default(), Vector3::default())
-    }
-
     pub fn new_tm(origin: Point3<f32>, direction: Vector3<f32>, tm: f32) -> Self {
         Self {
             orig: origin,

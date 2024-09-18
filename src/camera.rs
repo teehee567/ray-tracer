@@ -177,7 +177,7 @@ impl Camera {
             return self.background;
         }
 
-        let mut scattered: Ray = Ray::none();
+        let mut scattered: Ray = Ray::default();
         let mut attenuation: Colour = Colour::default();
         let mut colour_from_emission = rec.mat.emitted(rec.u, rec.v, &rec.p);
 

@@ -67,16 +67,12 @@ impl Cube {
             dz,
             material.clone(),
         )); // bottom
-
-        let x = Interval::new(min.x, max.x);
-        let y = Interval::new(min.y, max.y);
-        let z = Interval::new(min.z, max.z);
-
+        
         Self {
             box_min: min,
             box_max: max,
             sides,
-            bbox: AABB::new(&x, &y, &z),
+            bbox: AABB::new(min, max),
         }
     }
 }

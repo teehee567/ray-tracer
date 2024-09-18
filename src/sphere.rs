@@ -28,9 +28,9 @@ pub struct Sphere {
 impl Sphere {
     pub fn new(center: Point3<f32>, radius: f32, mat: Arc<dyn Material>) -> Self {
         let rvec = Vector3::new(radius, radius, radius);
-        let bbox = AABB::new_points(
-            &(center - rvec),
-            &(center + rvec),
+        let bbox = AABB::new(
+            (center - rvec),
+            (center + rvec),
         );
         Self {
             center1: Point3::new(center.x, center.y, center.z),
@@ -49,13 +49,13 @@ impl Sphere {
         mat: Arc<dyn Material>,
     ) -> Self {
         let rvec = Vector3::new(radius, radius, radius);
-        let box1 = AABB::new_points(
-            &(center1 - rvec),
-            &(center1 + rvec),
+        let box1 = AABB::new(
+            (center1 - rvec),
+            (center1 + rvec),
         );
-        let box2 = AABB::new_points(
-            &(center2 - rvec),
-            &(center2 + rvec),
+        let box2 = AABB::new(
+            (center2 - rvec),
+            (center2 + rvec),
         );
         let bbox = AABB::combine(&box1, &box2);
 
