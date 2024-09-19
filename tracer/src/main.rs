@@ -39,6 +39,7 @@ mod sphere;
 mod texture;
 mod utils;
 mod translate;
+mod mesh;
 
 fn balls() -> HittableList {
     // let material_ground = Arc::new(Lambertian::new(&Colour::new(0.8, 0.8, 0.)));
