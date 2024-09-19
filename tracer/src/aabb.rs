@@ -9,7 +9,18 @@ pub struct AABB {
 }
 
 impl AABB {
-    pub fn new(min: Point3<f32>, max: Point3<f32>) -> Self {
+    #[inline]
+    pub fn new(p0: Point3<f32>, p1: Point3<f32>) -> Self {
+        let min = Point3::new(
+            p0.x.min(p1.x),
+            p0.y.min(p1.y),
+            p0.z.min(p1.z),
+        );
+        let max = Point3::new(
+            p0.x.max(p1.x),
+            p0.y.max(p1.y),
+            p0.z.max(p1.z),
+        );
         AABB { min, max }
     }
 
@@ -42,5 +53,20 @@ impl AABB {
             }
         }
         true
+    }
+
+    #[inline]
+    pub fn union(&mut self, point: Point3<f32>) -> AABB {
+        let min = Point3::new(
+            self.min.x.min(point.x),
+            self.min.y.min(point.y),
+            self.min.z.min(point.z),
+        );
+        let max = Point3::new(
+            self.max.x.max(point.x),
+            self.max.y.max(point.y),
+            self.max.z.max(point.z),
+        );
+        AABB { min, max }
     }
 }
