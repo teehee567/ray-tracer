@@ -1,4 +1,7 @@
 #![allow(unused)]
+#![allow(internal_features)]
+#![feature(core_intrinsics)]
+#![feature(portable_simd)]
 use std::f32::INFINITY;
 use std::io::Write;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -23,23 +26,23 @@ use sphere::Sphere;
 use texture::{CheckerTexture, ImageTexture, NoiseTexture, SolidColour};
 use utils::{random_f32, random_f32_in};
 
-mod aabb;
-mod bvh;
-mod camera;
-mod colour;
-mod cube;
-mod hittable;
-mod hittable_list;
-mod interval;
-mod material;
-mod perlin;
-mod quad;
-mod ray;
-mod sphere;
-mod texture;
-mod utils;
-mod translate;
-mod mesh;
+pub mod aabb;
+pub mod bvh;
+pub mod camera;
+pub mod colour;
+pub mod cube;
+pub mod hittable;
+pub mod hittable_list;
+pub mod interval;
+pub mod material;
+pub mod perlin;
+pub mod quad;
+pub mod ray;
+pub mod sphere;
+pub mod texture;
+pub mod utils;
+pub mod translate;
+pub mod mesh;
 
 fn balls() -> HittableList {
     // let material_ground = Arc::new(Lambertian::new(&Colour::new(0.8, 0.8, 0.)));
@@ -182,12 +185,12 @@ fn checkerd_sphered() -> (Camera, HittableList) {
     ));
 
     world.add(Sphere::new(
-        nalgebra::Point3::new(0., -10., 0.),
+        Point3::new(0., -10., 0.),
         10.,
         Arc::new(Lambertian::new_tex(checker.clone())),
     ));
     world.add(Sphere::new(
-        nalgebra::Point3::new(0., 10., 0.),
+        Point3::new(0., 10., 0.),
         10.,
         Arc::new(Lambertian::new_tex(checker.clone())),
     ));
@@ -201,8 +204,8 @@ fn checkerd_sphered() -> (Camera, HittableList) {
     camera.background = Colour::new(0.7, 0.8, 1.);
 
     camera.vfov = 90;
-    camera.lookfrom = nalgebra::Point3::new(13., 2., 3.);
-    camera.lookat = nalgebra::Point3::new(0., 0., 0.);
+    camera.lookfrom = Point3::new(13., 2., 3.);
+    camera.lookat = Point3::new(0., 0., 0.);
     camera.vup = Vector3::new(0., 1., 0.);
 
     camera.defocus_angle = 0.;
@@ -406,12 +409,13 @@ fn cornell_box() -> (Camera, HittableList) {
 
     camera.aspect_ratio = 1.;
     camera.image_width = 840;
-    camera.samples_per_pixel = 200;
+    camera.samples_per_pixel = 4;
     camera.max_depth = 10;
+    camera.background = Vector3::new(1., 1., 1.);
 
     camera.vfov = 40;
-    camera.lookfrom = nalgebra::Point3::new(278., 278., -400.);
-    camera.lookat = nalgebra::Point3::new(278., 278., 0.);
+    camera.lookfrom = Point3::new(278., 278., -400.);
+    camera.lookat = Point3::new(278., 278., 0.);
     camera.vup = Vector3::new(0., 1., 0.);
 
     camera.defocus_angle = 0.;
@@ -437,8 +441,8 @@ fn huh() -> (Camera, HittableList) {
     camera.max_depth = 50;
 
     camera.vfov = 90;
-    camera.lookfrom = nalgebra::Point3::new(0., 0., 1.);
-    camera.lookat = nalgebra::Point3::new(0., 0., -5.);
+    camera.lookfrom = Point3::new(0., 0., 1.);
+    camera.lookat = Point3::new(0., 0., -5.);
     camera.vup = Vector3::new(0., 1., 0.);
     camera.background = Colour::new(0.5, 0., 0.);
 
@@ -449,7 +453,7 @@ fn huh() -> (Camera, HittableList) {
 }
 
 fn main() {
-    let (mut camera, world) = match 1 {
+    let (mut camera, world) = match 7 {
         1 => bouncing_spheres(),
         2 => checkerd_sphered(),
         3 => earht(),
