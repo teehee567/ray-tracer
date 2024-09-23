@@ -38,9 +38,10 @@ pub fn ray_triangle_rcp(x: f32) -> f32 {
         // avx2
 
         let a = _mm_set_ss(x);
-        let r = _mm_rcp_ss(a);
-
-        return _mm_cvtss_f32(_mm_mul_ss(r, _mm_fnmadd_ss(r, a, _mm_set_ss(2.0f32))))
+        return _mm_cvtss_f32(_mm_rcp_ss(a));
+        // let r = _mm_rcp_ss(a);
+        //
+        // return _mm_cvtss_f32(_mm_mul_ss(r, _mm_fnmadd_ss(r, a, _mm_set_ss(2.0f32))))
     }
 }
 
