@@ -19,12 +19,7 @@ pub struct BVH {
 
 impl BVH {
     pub fn new(mut objects: Vec<Box<dyn Hittable>>, time0: f32, time1: f32) -> Self {
-        fn axis_range(
-            hittable: &[Box<dyn Hittable>],
-            time0: f32,
-            time1: f32,
-            axis: usize,
-        ) -> f32 {
+        fn axis_range(hittable: &[Box<dyn Hittable>], time0: f32, time1: f32, axis: usize) -> f32 {
             let (min, max) = hittable
                 .iter()
                 .fold((f32::MAX, f32::MIN), |(bmin, bmax), hit| {
@@ -92,6 +87,49 @@ impl BVH {
     }
 }
 
+impl ToString for BVH {
+    fn to_string(&self) -> String {
+        let mut output = String::new();
+
+        let mut nodes: i32 = 0;
+
+        fn build_string(bvh: &BVH, level: i32) -> (ascii_tree::Tree, i32, i32) {
+            match &bvh.tree {
+                BVHNode::Branch { left, right } => {
+                    let left_node = build_string(left, level + 1);
+                    let right_node = build_string(right, level + 1);
+
+                    (
+                        ascii_tree::Tree::Node(
+                            format!("level: {} ({}, {})", level, bvh.bbox.min, bvh.bbox.max),
+                            vec![left_node.0, right_node.0],
+                        ),
+                        left_node.1 + right_node.1 + 1,
+                        left_node.2 + left_node.2,
+                    )
+                }
+                BVHNode::Leaf(_) => (
+                    ascii_tree::Tree::Leaf(vec![format!(
+                        "end: ({}, {})",
+                        bvh.bbox.min, bvh.bbox.max
+                    )]),
+                    0,
+                    1,
+                ),
+            }
+        }
+
+        let level = 0;
+        let tree = build_string(self, level);
+        let _ = ascii_tree::write_tree(&mut output, &tree.0);
+
+        format!(
+            "{}\ntotal nodes: {}, total leaves: {}",
+            output, tree.1, tree.2
+        )
+    }
+}
+
 impl Hittable for BVH {
     fn hit(&self, ray: &Ray, mut ray_t: Interval, rec: &mut HitRecord) -> bool {
         if self.bbox.hit(ray, ray_t) {
@@ -99,7 +137,11 @@ impl Hittable for BVH {
                 BVHNode::Leaf(leaf) => leaf.hit(ray, ray_t, rec),
                 BVHNode::Branch { left, right } => {
                     let hit_left = left.hit(ray, ray_t, rec);
-                    let hit_right = right.hit(ray, Interval::new(ray_t.min, if hit_left { rec.t } else { ray_t.max }), rec);
+                    let hit_right = right.hit(
+                        ray,
+                        Interval::new(ray_t.min, if hit_left { rec.t } else { ray_t.max }),
+                        rec,
+                    );
 
                     hit_left || hit_right
                 }

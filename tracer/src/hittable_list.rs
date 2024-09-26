@@ -31,6 +31,10 @@ impl HittableList {
         self.bbox = AABB::combine(&self.bbox, object.bounding_box());
         self.objects.push(Box::new(object));
     }
+
+    pub fn len(&self) -> usize {
+        self.objects.len()
+    }
 }
 
 impl Hittable for HittableList {
