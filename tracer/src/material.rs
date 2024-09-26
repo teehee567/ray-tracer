@@ -170,21 +170,22 @@ impl Material for Dielectric {
 
 pub struct DiffuseLight {
     texture: Arc<dyn Texture>,
+    intensity: f32,
 }
 
 impl DiffuseLight {
-    pub fn new(texture: Arc<dyn Texture>) -> Self {
-        Self { texture }
+    pub fn new(texture: Arc<dyn Texture>, intensity: f32) -> Self {
+        Self { texture , intensity}
     }
 
-    pub fn new_colour(colour: Colour) -> Self {
+    pub fn new_colour(colour: Colour, intensity: f32) -> Self {
         let texture = Arc::new(SolidColour::new(colour));
-        Self { texture }
+        Self { texture , intensity }
     }
 }
 
 impl Material for DiffuseLight {
     fn emitted(&self, u: f32, v: f32, p: &Point3<f32>) -> Colour {
-        return self.texture.value(u, v, &p);
+        return self.texture.value(u, v, &p) * self.intensity;
     }
 }

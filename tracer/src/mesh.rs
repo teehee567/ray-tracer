@@ -1,36 +1,160 @@
-use std::f32::EPSILON;
 use core::arch::x86_64::*;
 use nalgebra::{ComplexField, Normed, Point2, Point3, Vector3};
+use serde::Serialize;
+use std::{f32::EPSILON, fs::File, io::BufReader, sync::Arc};
 
 use crate::{
     aabb::AABB,
+    bvh::BVH,
     hittable::{HitRecord, Hittable},
     interval::Interval,
+    material::Material,
     ray::Ray,
 };
 
+use obj::{load_obj, Obj};
+
+// NOTE: pbrt container, fix post gpu
 pub struct TriangleMesh {
     pub vertex_i: Vec<i32>,
     pub p: Vec<Point3<f32>>,
     pub s: Vec<Vector3<f32>>,
     pub n: Vec<Vector3<f32>>,
     pub uv: Vec<Point2<f32>>,
+    pub bbox: AABB,
 }
 
-impl TriangleMesh {}
-
 pub struct Triangle {
-    pub mesh_i: i32,
-    pub tri_i: i32,
-    pub aabb: AABB, //FIX: get rid of aabb here, make it calculated??? test differences
+    vertices: [u32; 3],
+    normal: Vector3<f32>,
+}
+
+pub struct Vertex {
+    position: Point3<f32>,
+    normal: Vector3<f32>,
+}
+
+pub struct Mesh {
+    /// Vertex buffer
+    vertices: Vec<Vertex>,
+    triangles: Vec<Triangle>,
+    bvh_root: Option<BVH>,
+    mat: Arc<dyn Material>,
+    bbox: AABB,
+}
+
+impl Serialize for Mesh {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        loop {
+            panic!();
+        }
+    }
+}
+
+impl Mesh {
+    pub fn from_file(path: &str, mat: Arc<dyn Material>) -> Self {
+        let obj: Obj<obj::Vertex, u32> =
+            load_obj(BufReader::new(File::open(path).unwrap())).unwrap();
+        let mut vertices: Vec<Vertex> = Vec::new();
+
+        for vertex in obj.vertices {
+            vertices.push(Vertex {
+                position: Point3::new(vertex.position[0], vertex.position[1], vertex.position[2]),
+                normal: Vector3::new(vertex.normal[0], vertex.normal[1], vertex.normal[2]),
+            });
+        }
+
+        Self::from_buffers(vertices, obj.indices, mat)
+    }
+
+    pub fn from_buffers(vertices: Vec<Vertex>, indices: Vec<u32>, mat: Arc<dyn Material>) -> Self {
+        let mut triangles = Vec::<Triangle>::new();
+
+        for triangle in indices.chunks_exact(3) {
+            let e1 =
+                vertices[triangle[0] as usize].position - vertices[triangle[1] as usize].position;
+            let e2 =
+                vertices[triangle[2] as usize].position - vertices[triangle[1] as usize].position;
+            let normal = e2.cross(&e1).normalize();
+
+            triangles.push(Triangle {
+                vertices: [triangle[0], triangle[1], triangle[2]],
+                normal,
+            })
+        }
+
+        // Calculate bounding box
+        let mut bounds = AABB::default();
+        for vertex in &vertices[..] {
+            bounds = AABB::combine(
+                &bounds,
+                &AABB {
+                    min: vertex.position,
+                    max: vertex.position,
+                },
+            );
+        }
+
+        Self {
+            vertices,
+            triangles,
+            mat,
+            bvh_root: None,
+            bbox: bounds,
+        }
+    }
+}
+
+impl Hittable for Mesh {
+    fn hit(&self, ray: &Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
+        let mut result = None;
+        let mut closest_so_far = ray_t.max;
+
+        for triangle in &self.triangles {
+            if let Some(hit) = intersect_triangle(
+                ray,
+                Interval::new(ray_t.min, closest_so_far),
+                self.vertices[triangle.vertices[0] as usize].position.coords,
+                self.vertices[triangle.vertices[1] as usize].position.coords,
+                self.vertices[triangle.vertices[2] as usize].position.coords,
+            ) {
+                if closest_so_far > hit.t {
+                    closest_so_far = hit.t;
+                    result = Some(hit);
+                }
+            }
+        }
+
+        if let Some(result) = result {
+            rec.t = result.t;
+            rec.u = result.u;
+            rec.v = result.v;
+            rec.mat = self.mat.clone();
+            rec.set_face_normal(ray, &result.outward_normal);
+            rec.p = result.intersection_point;
+
+            true
+        } else {
+            false
+        }
+    }
+
+    fn bounding_box(&self) -> &AABB {
+        &self.bbox
+    }
 }
 
 pub struct TriangleIntersection {
     u: f32,
     v: f32,
     t: f32,
+    // WARN: Remove
+    intersection_point: Point3<f32>,
+    outward_normal: Vector3<f32>,
 }
-
 
 #[inline(always)]
 pub fn ray_triangle_rcp(x: f32) -> f32 {
@@ -82,18 +206,19 @@ pub fn intersect_triangle(
         return None;
     }
 
+    // NOTE: Convert to precomputed normals
     // Calculate geometry normal and denominator.
     let ng1 = e1.cross(&e0);
     let ng = ng1 + ng1;
     let den = ng.dot(ray_d);
     // avoid division by 0.
-    // if std::intrinsics::unlikely(den == 0.0f32) {
-    //     return None;
-    // }
-
-    if den == 0.0f32 {
+    if std::intrinsics::unlikely(den == 0.0f32) {
         return None;
     }
+
+    // if den == 0.0f32 {
+    //     return None;
+    // }
 
     // Perform depth test.
     let t = v0.dot(&ng) / den;
@@ -104,45 +229,49 @@ pub fn intersect_triangle(
     let rcp_uvw = if uvw.abs() < 1e-18f32 {
         0.0f32
     } else {
-        // 1f32 / uvw
-        ray_triangle_rcp(uvw)
+        1f32 / uvw
+        // ray_triangle_rcp(uvw)
     };
+
+    // NOTE: Remove
+    let intersection_point = ray.origin() + ray.direction() * t;
+    let outward_normal = ng.normalize();
 
     Some(TriangleIntersection {
         u: 1.0f32.min(u * rcp_uvw),
         v: 1.0f32.min(v * rcp_uvw),
         t,
+        intersection_point,
+        outward_normal,
     })
-
 }
 
-
-impl Triangle {
-    pub fn new(mesh: &TriangleMesh, mesh_i: i32, tri_i: i32) -> Self {
-        let v = &mesh.vertex_i[(tri_i as usize * 3)..(tri_i as usize * 3 + 3)];
-        let p0 = mesh.p[v[0] as usize];
-        let p1 = mesh.p[v[1] as usize];
-        let p2 = mesh.p[v[2] as usize];
-        let aabb = AABB::new(p0, p1).union(p2);
-
-        Self {
-            mesh_i,
-            tri_i,
-            aabb,
-        }
-    }
-}
-
-impl Hittable for Triangle {
-    fn hit(&self, ray: &Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
-        todo!()
-    }
-
-    fn bounding_box(&self) -> &AABB {
-        &self.aabb
-    }
-}
-
+//
+// impl Triangle {
+//     pub fn new(mesh: &TriangleMesh, mesh_i: i32, tri_i: i32) -> Self {
+//         let v = &mesh.vertex_i[(tri_i as usize * 3)..(tri_i as usize * 3 + 3)];
+//         let p0 = mesh.p[v[0] as usize];
+//         let p1 = mesh.p[v[1] as usize];
+//         let p2 = mesh.p[v[2] as usize];
+//         let aabb = AABB::new(p0, p1).union(p2);
+//
+//         Self {
+//             mesh_i,
+//             tri_i,
+//             aabb,
+//         }
+//     }
+// }
+//
+// impl Hittable for Triangle {
+//     fn hit(&self, ray: &Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
+//         todo!()
+//     }
+//
+//     fn bounding_box(&self) -> &AABB {
+//         &self.aabb
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
@@ -274,8 +403,6 @@ mod tests {
         assert!(intersection.is_none());
     }
 }
-
-
 
 // NOTE: Intersect from pbrt
 //
