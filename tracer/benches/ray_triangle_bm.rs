@@ -1,7 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use nalgebra::{Point3, Vector3};
-use ray_tracer::{interval::Interval, mesh::intersect_triangle, ray::Ray};
-
+use ray_tracer::core::interval::Interval;
+use ray_tracer::core::ray::Ray;
+use ray_tracer::geometry::objects::mesh::intersect_triangle;
 
 pub fn intersect_triangle_benchmark(c: &mut Criterion) {
     // Define the triangle vertices
@@ -40,5 +41,5 @@ pub fn intersect_triangle_benchmark(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, intersect_triangle_benchmark, );
+criterion_group!(benches, intersect_triangle_benchmark,);
 criterion_main!(benches);
