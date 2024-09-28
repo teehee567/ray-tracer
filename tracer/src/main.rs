@@ -3,47 +3,34 @@
 #![feature(core_intrinsics)]
 #![feature(portable_simd)]
 use std::f32::INFINITY;
+use std::fs::File;
 use std::io::Write;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{fs::File, sync::Arc};
+use std::sync::Arc;
 
-use bvh::BVH;
-use camera::Camera;
-use cube::Cube;
-use hittable::{HitRecord, Hittable};
-use hittable_list::HittableList;
 use image::{Rgb, RgbImage};
 use indicatif::ProgressBar;
-use interval::Interval;
-use material::{Dielectric, DiffuseLight, Lambertian, Material, Metal};
-use mesh::Mesh;
 use nalgebra::{Point3, Vector3};
-use quad::Quad;
 use rayon::prelude::*;
 
-use colour::Colour;
-use ray::Ray;
-use sphere::Sphere;
-use texture::{CheckerTexture, ImageTexture, NoiseTexture, SolidColour};
-use utils::{random_f32, random_f32_in};
 
-pub mod aabb;
-pub mod bvh;
-pub mod camera;
-pub mod colour;
-pub mod cube;
-pub mod hittable;
-pub mod hittable_list;
-pub mod interval;
-pub mod material;
-pub mod mesh;
-pub mod perlin;
-pub mod quad;
-pub mod ray;
-pub mod sphere;
-pub mod texture;
-pub mod translate;
-pub mod utils;
+use ray_tracer::accelerators::bvh::{self, BVH};
+use ray_tracer::core::camera::{self, Camera};
+use ray_tracer::core::hittable::{self, call_wireframe_for_quad};
+use ray_tracer::core::hittable_list::{self, HittableList};
+use ray_tracer::core::{interval, ray};
+use ray_tracer::geometry::objects::cube::{self, Cube};
+use ray_tracer::geometry::objects::mesh::{self, Mesh};
+use ray_tracer::geometry::objects::quad::{self, Quad};
+use ray_tracer::geometry::objects::sphere::{self, Sphere};
+use ray_tracer::materials::material::{self, Dielectric, DiffuseLight, Lambertian, Metal};
+use ray_tracer::materials::{self};
+use ray_tracer::textures::texture::{
+    self, CheckerTexture, ImageTexture, NoiseTexture, SolidColour,
+};
+use ray_tracer::textures::{self};
+use ray_tracer::utils::colour::Colour;
+use ray_tracer::utils::{self, random_f32, random_f32_in};
 
 fn balls() -> HittableList {
     // let material_ground = Arc::new(Lambertian::new(&Colour::new(0.8, 0.8, 0.)));
@@ -73,6 +60,52 @@ fn balls() -> HittableList {
     // camera.defocus_angle = 10.;
     // camera.focus_dist = 3.4;
     todo!()
+}
+
+fn test_line_draw() -> (Camera, HittableList) {
+    let mut world = HittableList::none();
+
+    let green = Arc::new(Lambertian::new(&Colour::new(0.12, 0.45, 0.15)));
+
+    world.add(Quad::new(
+        Point3::new(-1., -1., 0.),
+        Vector3::new(2., 0., 0.),
+        Vector3::new(0., 2., 0.),
+        green.clone(),
+    ));
+
+    let mut camera = Camera::new();
+
+    camera.aspect_ratio = 1.;
+    camera.image_width = 3840;
+    camera.samples_per_pixel = 30;
+    camera.max_depth = 50;
+    camera.background = Colour::new(0.7, 0.8, 1.);
+
+    camera.vfov = 80;
+    camera.lookfrom = Point3::new(-5., -5., -5.);
+    camera.lookat = Point3::new(0., 0., 0.);
+    camera.vup = Vector3::new(0., 1., 0.);
+
+    camera.defocus_angle = 0.6;
+    camera.focus_dist = 10.;
+
+    camera.build();
+
+    // random white dot
+
+    let mut image = RgbImage::new(camera.image_width as u32, camera.image_height as u32);
+
+    image.put_pixel(50, 50, Rgb([255, 255, 255]));
+
+    let colour = Colour::new(1., 0., 0.);
+    for cube in &world.objects {
+        unsafe { call_wireframe_for_quad(cube, &mut image, colour, &camera) }
+    }
+
+    image.save("wireframe.png").expect("failed");
+
+    (camera, world)
 }
 
 fn bouncing_spheres() -> (Camera, HittableList) {
@@ -441,9 +474,10 @@ fn huh() -> (Camera, HittableList) {
     world.add(Sphere::new(
         nalgebra::Point3::new(0., 0., -5.),
         2.,
-        Arc::new(DiffuseLight::new(Arc::new(SolidColour::new(Colour::new(
-            0.7, 0.4, 0.2,
-        ))), 1.)),
+        Arc::new(DiffuseLight::new(
+            Arc::new(SolidColour::new(Colour::new(0.7, 0.4, 0.2))),
+            1.,
+        )),
     ));
 
     let mut camera = Camera::new();
@@ -482,7 +516,7 @@ fn mesh_please_work() -> (Camera, HittableList) {
         Vector3::new(0., 0., 40.),
         Arc::new(mirror),
     ));
-    
+
     let sun = Arc::new(DiffuseLight::new_colour(Vector3::new(1., 1.4, 0.), 10.));
     // world.add(Sphere::new(Point3::new(-5., 3.2, -3.), 0.5, sun));
 
@@ -506,7 +540,7 @@ fn mesh_please_work() -> (Camera, HittableList) {
 }
 
 fn main() {
-    let (mut camera, world) = match 9 {
+    let (mut camera, world) = match 1 {
         1 => bouncing_spheres(),
         2 => checkerd_sphered(),
         3 => earht(),
@@ -516,6 +550,7 @@ fn main() {
         7 => cornell_box(),
         8 => huh(),
         9 => mesh_please_work(),
+        10 => test_line_draw(),
         _ => panic!("bro...."),
     };
     camera.render(&world);
