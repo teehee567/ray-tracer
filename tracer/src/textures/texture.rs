@@ -28,7 +28,7 @@ impl SolidColour {
 
     pub fn new_colour(red: f32, green: f32, blue: f32) -> Self {
         Self {
-            albedo: Colour::new(red, green, blue),
+            albedo: Colour::new(red, green, blue, 1.),
         }
     }
 }
@@ -125,6 +125,7 @@ impl Texture for ImageTexture {
             color_scale * pixel[0] as f32,
             color_scale * pixel[1] as f32,
             color_scale * pixel[2] as f32,
+            1.
         )
     }
 }
@@ -145,7 +146,7 @@ impl NoiseTexture {
 
 impl Texture for NoiseTexture {
     fn value(&self, u: f32, v: f32, p: &Point3<f32>) -> Colour {
-        Colour::new(0.5, 0.5, 0.5)
+        Colour::new(0.5, 0.5, 0.5, 1.)
             * (1. + (self.scale * p.z + 10. * self.noise.turbulence(*p, 7)).sin())
     }
 }

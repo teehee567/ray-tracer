@@ -25,5 +25,9 @@ criterion = "0.5.1"
 name = "ray_triangle_bm"
 harness = false
 
-[build]
-rustflags = ["-C", "target-feature=+avx2"]
+[[bench]]
+name = "aabb_combine"
+harness = false
+
+
+
