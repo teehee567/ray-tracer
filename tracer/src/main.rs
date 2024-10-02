@@ -8,15 +8,16 @@ use std::io::Write;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use image::{Rgb, RgbImage};
+use image::{Rgb, RgbImage, Rgba, RgbaImage};
 use indicatif::ProgressBar;
 use nalgebra::{Point3, Vector3};
+use ray_tracer::geometry::objects::triangle::Triangle;
 use rayon::prelude::*;
 
 
-use ray_tracer::accelerators::bvh::{self, BVH};
+use ray_tracer::accelerators::oldbvh::{self, OLDBVH};
 use ray_tracer::core::camera::{self, Camera};
-use ray_tracer::core::hittable::{self, call_wireframe_for_quad};
+use ray_tracer::core::hittable::{self, call_wireframe_for_cube, call_wireframe_for_quad};
 use ray_tracer::core::hittable_list::{self, HittableList};
 use ray_tracer::core::{interval, ray};
 use ray_tracer::geometry::objects::cube::{self, Cube};
@@ -33,11 +34,11 @@ use ray_tracer::utils::colour::Colour;
 use ray_tracer::utils::{self, random_f32, random_f32_in};
 
 fn balls() -> HittableList {
-    // let material_ground = Arc::new(Lambertian::new(&Colour::new(0.8, 0.8, 0.)));
-    // let material_center = Arc::new(Lambertian::new(&Colour::new(0.1, 0.2, 0.5)));
+    // let material_ground = Arc::new(Lambertian::new(&Colour::new(0.8, 0.8, 0., 1.)));
+    // let material_center = Arc::new(Lambertian::new(&Colour::new(0.1, 0.2, 0.5, 1.)));
     // let material_left = Arc::new(Dielectric::new(1.5));
     // let material_bubble = Arc::new(Dielectric::new(1./1.5));
-    // let material_right = Arc::new(Metal::new(&Colour::new(0.8, 0.6, 0.2), 1.));
+    // let material_right = Arc::new(Metal::new(&Colour::new(0.8, 0.6, 0.2, 1.), 1.));
     //
     // // World
     // world.add(Sphere::new(Vec3::new(0., -100.5, -1.), 100., material_ground.clone()));
@@ -65,12 +66,11 @@ fn balls() -> HittableList {
 fn test_line_draw() -> (Camera, HittableList) {
     let mut world = HittableList::none();
 
-    let green = Arc::new(Lambertian::new(&Colour::new(0.12, 0.45, 0.15)));
+    let green = Arc::new(Lambertian::new(&Colour::new(0.12, 0.45, 0.15, 1.)));
 
-    world.add(Quad::new(
-        Point3::new(-1., -1., 0.),
-        Vector3::new(2., 0., 0.),
-        Vector3::new(0., 2., 0.),
+    world.add(Cube::new(
+        Point3::new(0., 0., 0.),
+        Point3::new(1., 1., 1.),
         green.clone(),
     ));
 
@@ -80,10 +80,10 @@ fn test_line_draw() -> (Camera, HittableList) {
     camera.image_width = 3840;
     camera.samples_per_pixel = 30;
     camera.max_depth = 50;
-    camera.background = Colour::new(0.7, 0.8, 1.);
+    camera.background = Colour::new(0.7, 0.8, 1., 1.);
 
     camera.vfov = 80;
-    camera.lookfrom = Point3::new(-5., -5., -5.);
+    camera.lookfrom = Point3::new(-3., -5., -3.);
     camera.lookat = Point3::new(0., 0., 0.);
     camera.vup = Vector3::new(0., 1., 0.);
 
@@ -94,13 +94,13 @@ fn test_line_draw() -> (Camera, HittableList) {
 
     // random white dot
 
-    let mut image = RgbImage::new(camera.image_width as u32, camera.image_height as u32);
+    let mut image = RgbaImage::new(camera.image_width as u32, camera.image_height as u32);
 
-    image.put_pixel(50, 50, Rgb([255, 255, 255]));
+    image.put_pixel(50, 50, Rgba([255, 255, 255, 255]));
 
-    let colour = Colour::new(1., 0., 0.);
+    let colour = Colour::new(1., 0., 0., 1.);
     for cube in &world.objects {
-        unsafe { call_wireframe_for_quad(cube, &mut image, colour, &camera) }
+        unsafe { call_wireframe_for_cube(cube, &mut image, colour, &camera) }
     }
 
     image.save("wireframe.png").expect("failed");
@@ -111,8 +111,8 @@ fn test_line_draw() -> (Camera, HittableList) {
 fn bouncing_spheres() -> (Camera, HittableList) {
     let checker = Arc::new(CheckerTexture::new_colour(
         0.32,
-        &Colour::new(0.2, 0.3, 0.1),
-        &Colour::new(0.9, 0.9, 0.9),
+        &Colour::new(0.2, 0.3, 0.1, 1.),
+        &Colour::new(0.9, 0.9, 0.9, 1.),
     ));
 
     let mut world = HittableList::none();
@@ -137,13 +137,13 @@ fn bouncing_spheres() -> (Camera, HittableList) {
                 huh += 1;
                 if choose_mat < 0.8 {
                     // Lambertian
-                    let albedo = utils::rand_vec().component_mul(&utils::rand_vec());
+                    let albedo = utils::rand_vec4().component_mul(&utils::rand_vec4());
                     let material = Arc::new(Lambertian::new(&albedo));
                     let center2 = center + Vector3::new(0., random_f32_in(0., 0.5), 0.);
                     world.add(Sphere::new_mov(center, center2, 0.2, material));
                 } else if choose_mat < 0.95 {
                     // Metal
-                    let albedo = utils::rand_vec_in(0.5, 1.0);
+                    let albedo = utils::rand_vec4_in(0.5, 1.0);
                     let fuzz = random_f32() * 0.5;
                     let material = Arc::new(Metal::new(&albedo, fuzz));
                     world.add(Sphere::new(center, 0.2, material));
@@ -159,15 +159,15 @@ fn bouncing_spheres() -> (Camera, HittableList) {
     let material1 = Arc::new(Dielectric::new(1.5));
     world.add(Sphere::new(Point3::new(0., 1., 0.), 1., material1));
 
-    let material2 = Arc::new(Lambertian::new(&Colour::new(0.4, 0.2, 0.1)));
+    let material2 = Arc::new(Lambertian::new(&Colour::new(0.4, 0.2, 0.1, 1.)));
     world.add(Sphere::new(Point3::new(-4., 1., 0.), 1., material2));
 
-    let material3 = Arc::new(Metal::new(&Colour::new(0.7, 0.6, 0.5), 0.));
+    let material3 = Arc::new(Metal::new(&Colour::new(0.7, 0.6, 0.5, 1.), 0.));
     world.add(Sphere::new(Point3::new(4., 1., 0.), 1., material3));
 
     println!("huh: {}, {}", huh, world.len());
 
-    let bvh = BVH::new(world.objects, 0., 1.);
+    let bvh = OLDBVH::new(world.objects, 0., 1.);
     println!("{}", bvh.to_string());
 
     world = HittableList::new(bvh);
@@ -178,7 +178,7 @@ fn bouncing_spheres() -> (Camera, HittableList) {
     camera.image_width = 3840;
     camera.samples_per_pixel = 30;
     camera.max_depth = 50;
-    camera.background = Colour::new(0.7, 0.8, 1.);
+    camera.background = Colour::new(0.7, 0.8, 1., 1.);
 
     camera.vfov = 20;
     camera.lookfrom = Point3::new(13., 2., 3.);
@@ -204,7 +204,7 @@ fn earht() -> (Camera, HittableList) {
     camera.image_width = 3840;
     camera.samples_per_pixel = 100;
     camera.max_depth = 50;
-    camera.background = Colour::new(0.7, 0.8, 1.);
+    camera.background = Colour::new(0.7, 0.8, 1., 1.);
 
     camera.vfov = 20;
     camera.lookfrom = Point3::new(0., 0., -12.);
@@ -221,8 +221,8 @@ fn checkerd_sphered() -> (Camera, HittableList) {
     let mut world = HittableList::none();
     let checker = Arc::new(CheckerTexture::new_colour(
         0.32,
-        &Colour::new(0.2, 0.3, 0.1),
-        &Colour::new(0.9, 0.9, 0.9),
+        &Colour::new(0.2, 0.3, 0.1, 1.),
+        &Colour::new(0.9, 0.9, 0.9, 1.),
     ));
 
     world.add(Sphere::new(
@@ -242,7 +242,7 @@ fn checkerd_sphered() -> (Camera, HittableList) {
     camera.image_width = 3840;
     camera.samples_per_pixel = 10;
     camera.max_depth = 50;
-    camera.background = Colour::new(0.7, 0.8, 1.);
+    camera.background = Colour::new(0.7, 0.8, 1., 1.);
 
     camera.vfov = 90;
     camera.lookfrom = Point3::new(13., 2., 3.);
@@ -276,7 +276,7 @@ fn perlin_spheres() -> (Camera, HittableList) {
     camera.image_width = 3840;
     camera.samples_per_pixel = 10;
     camera.max_depth = 50;
-    camera.background = Colour::new(0.7, 0.8, 1.);
+    camera.background = Colour::new(0.7, 0.8, 1., 1.);
 
     camera.vfov = 20;
     camera.lookfrom = Point3::new(13., 2., 3.);
@@ -291,11 +291,11 @@ fn perlin_spheres() -> (Camera, HittableList) {
 
 fn quads() -> (Camera, HittableList) {
     let mut world = HittableList::none();
-    let left_red = Arc::new(Lambertian::new(&Colour::new(1., 0.2, 0.2)));
-    let back_green = Arc::new(Lambertian::new(&Colour::new(0.2, 1., 0.2)));
-    let right_blue = Arc::new(Lambertian::new(&Colour::new(0.2, 0.2, 1.)));
-    let upper_orange = Arc::new(Lambertian::new(&Colour::new(1., 0.5, 0.)));
-    let lower_teal = Arc::new(Lambertian::new(&Colour::new(0.2, 0.8, 0.8)));
+    let left_red = Arc::new(Lambertian::new(&Colour::new(1., 0.2, 0.2, 1.)));
+    let back_green = Arc::new(Lambertian::new(&Colour::new(0.2, 1., 0.2, 1.)));
+    let right_blue = Arc::new(Lambertian::new(&Colour::new(0.2, 0.2, 1., 1.)));
+    let upper_orange = Arc::new(Lambertian::new(&Colour::new(1., 0.5, 0., 1.)));
+    let lower_teal = Arc::new(Lambertian::new(&Colour::new(0.2, 0.8, 0.8, 1.)));
 
     world.add(Quad::new(
         Point3::new(-3., -2., 5.),
@@ -334,7 +334,7 @@ fn quads() -> (Camera, HittableList) {
     camera.image_width = 3840;
     camera.samples_per_pixel = 100;
     camera.max_depth = 50;
-    camera.background = Colour::new(0.7, 0.8, 1.);
+    camera.background = Colour::new(0.7, 0.8, 1., 1.);
 
     camera.vfov = 50;
     camera.lookfrom = Point3::new(0., 0., 9.);
@@ -362,7 +362,7 @@ fn simple_light() -> (Camera, HittableList) {
         Arc::new(Lambertian::new_tex(pertext.clone())),
     ));
 
-    let difflight = Arc::new(DiffuseLight::new_colour(Colour::new(4., 4., 4.), 1.));
+    let difflight = Arc::new(DiffuseLight::new_colour(Colour::new(4., 4., 4., 1.), 1.));
     world.add(Quad::new(
         Point3::new(3., 1., -2.),
         Vector3::new(2., 0., 0.),
@@ -391,10 +391,10 @@ fn simple_light() -> (Camera, HittableList) {
 fn cornell_box() -> (Camera, HittableList) {
     let mut world = HittableList::none();
 
-    let red = Arc::new(Lambertian::new(&Colour::new(0.65, 0.05, 0.05)));
-    let white = Arc::new(Lambertian::new(&Colour::new(0.73, 0.73, 0.73)));
-    let green = Arc::new(Lambertian::new(&Colour::new(0.12, 0.45, 0.15)));
-    let light = Arc::new(DiffuseLight::new_colour(Colour::new(15., 15., 15.), 1.));
+    let red = Arc::new(Lambertian::new(&Colour::new(0.65, 0.05, 0.05, 1.)));
+    let white = Arc::new(Lambertian::new(&Colour::new(0.73, 0.73, 0.73, 1.)));
+    let green = Arc::new(Lambertian::new(&Colour::new(0.12, 0.45, 0.15, 1.)));
+    let light = Arc::new(DiffuseLight::new_colour(Colour::new(15., 15., 15., 1.), 1.));
 
     world.add(Quad::new(
         Point3::new(555., 0., 0.),
@@ -444,7 +444,7 @@ fn cornell_box() -> (Camera, HittableList) {
         white.clone(),
     ));
 
-    let bvh = BVH::new(world.objects, 0., 1.);
+    let bvh = OLDBVH::new(world.objects, 0., 1.);
     println!("{}", bvh.to_string());
 
     world = HittableList::new(bvh);
@@ -455,7 +455,7 @@ fn cornell_box() -> (Camera, HittableList) {
     camera.image_width = 840;
     camera.samples_per_pixel = 4;
     camera.max_depth = 10;
-    camera.background = Vector3::new(1., 1., 1.);
+    camera.background = Colour::new(1., 1., 1., 1.);
 
     camera.vfov = 40;
     camera.lookfrom = Point3::new(278., 278., -400.);
@@ -475,7 +475,7 @@ fn huh() -> (Camera, HittableList) {
         nalgebra::Point3::new(0., 0., -5.),
         2.,
         Arc::new(DiffuseLight::new(
-            Arc::new(SolidColour::new(Colour::new(0.7, 0.4, 0.2))),
+            Arc::new(SolidColour::new(Colour::new(0.7, 0.4, 0.2, 1.))),
             1.,
         )),
     ));
@@ -491,7 +491,7 @@ fn huh() -> (Camera, HittableList) {
     camera.lookfrom = Point3::new(0., 0., 1.);
     camera.lookat = Point3::new(0., 0., -5.);
     camera.vup = Vector3::new(0., 1., 0.);
-    camera.background = Colour::new(0.5, 0., 0.);
+    camera.background = Colour::new(0.5, 0., 0., 1.);
 
     camera.defocus_angle = 0.;
     camera.focus_dist = 5.;
@@ -502,13 +502,17 @@ fn huh() -> (Camera, HittableList) {
 fn mesh_please_work() -> (Camera, HittableList) {
     let mut world = HittableList::none();
 
-    world.add(Mesh::from_file(
+    let mesh = Mesh::from_file(
         "house.obj",
-        Arc::new(Lambertian::new(&Vector3::new(0.5, 0.2, 0.2))),
-    ));
+        Arc::new(Lambertian::new(&Colour::new(0.5, 0.2, 0.2, 1.))),
+    );
+    
+    println!("{}", mesh.bvh_root.as_ref().unwrap().compute_debug_info());
 
-    let mirror = Metal::new(&Vector3::new(0.2, 0.2, 0.2), 0.2);
-    let test = Lambertian::new(&Vector3::new(0.1, 0.1, 0.1));
+    world.add(mesh);
+
+    let mirror = Metal::new(&Colour::new(0.2, 0.2, 0.2, 1.), 0.2);
+    let test = Lambertian::new(&Colour::new(0.1, 0.1, 0.1, 1.));
 
     world.add(Quad::new(
         Point3::new(-20., 0., -20.),
@@ -517,21 +521,21 @@ fn mesh_please_work() -> (Camera, HittableList) {
         Arc::new(mirror),
     ));
 
-    let sun = Arc::new(DiffuseLight::new_colour(Vector3::new(1., 1.4, 0.), 10.));
+    let sun = Arc::new(DiffuseLight::new_colour(Colour::new(1., 1.4, 0., 1.), 10.));
     // world.add(Sphere::new(Point3::new(-5., 3.2, -3.), 0.5, sun));
 
     let mut camera = Camera::new();
 
     camera.aspect_ratio = 16. / 9.;
-    camera.image_width = 3840;
-    camera.samples_per_pixel = 400;
-    camera.max_depth = 20;
+    camera.image_width = 1020;
+    camera.samples_per_pixel = 5;
+    camera.max_depth = 3;
 
     camera.vfov = 60;
     camera.lookfrom = Point3::new(-3., 3., 4.);
     camera.lookat = Point3::new(0., 2., -1.);
     camera.vup = Vector3::new(0., 1., 0.);
-    camera.background = Colour::new(0.7, 0.7, 0.7);
+    camera.background = Colour::new(0.7, 0.7, 0.7, 1.);
 
     camera.defocus_angle = 0.;
     camera.focus_dist = 5.;
@@ -539,8 +543,59 @@ fn mesh_please_work() -> (Camera, HittableList) {
     (camera, world)
 }
 
+fn debug_mesh_please_work() -> (Camera, HittableList) {
+    let mut camera = Camera::new();
+
+    camera.aspect_ratio = 16. / 9.;
+    camera.image_width = 1020;
+    camera.samples_per_pixel = 5;
+    camera.max_depth = 3;
+
+    camera.vfov = 40;
+    camera.lookfrom = Point3::new(-10., 4., 7.);
+    camera.lookat = Point3::new(0., 2., -1.);
+    camera.vup = Vector3::new(0., 1., 0.);
+    camera.background = Colour::new(0.7, 0.7, 0.7, 1.);
+
+    camera.defocus_angle = 0.;
+    camera.focus_dist = 5.;
+
+    camera.build();
+
+    let mut world = HittableList::none();
+
+    let mesh = Mesh::from_file(
+        "dragon.obj",
+        Arc::new(Lambertian::new(&Colour::new(0.5, 0.2, 0.2, 1.))),
+    );
+    println!("{}", mesh.bvh_root.as_ref().unwrap().compute_debug_info());
+    let mut image = RgbaImage::new(camera.image_width as u32, camera.image_height as u32);
+    let colour = Colour::new(1., 0., 0., 0.2);
+    mesh.bvh_root.as_ref().unwrap().traverse_and_draw_wireframe(0, 0, 0..6, &mut image, colour,  &camera);
+    mesh.bvh_root.as_ref().unwrap().validate_traversal();
+
+    image.save("wireframe.png").expect("failed");
+
+    world.add(mesh);
+
+    let mirror = Metal::new(&Colour::new(0.2, 0.2, 0.2, 1.), 0.05);
+    let test = Lambertian::new(&Colour::new(0.1, 0.1, 0.1, 1.));
+
+    world.add(Quad::new(
+        Point3::new(-20., 0., -20.),
+        Vector3::new(40., 0., 0.),
+        Vector3::new(0., 0., 40.),
+        Arc::new(mirror),
+    ));
+
+    let sun = Arc::new(DiffuseLight::new_colour(Colour::new(1., 1.4, 0., 1.), 10.));
+    // world.add(Sphere::new(Point3::new(-5., 3.2, -3.), 0.5, sun));
+
+    (camera, world)
+}
+
 fn main() {
-    let (mut camera, world) = match 1 {
+    let (mut camera, world) = match 11 {
         1 => bouncing_spheres(),
         2 => checkerd_sphered(),
         3 => earht(),
@@ -551,6 +606,7 @@ fn main() {
         8 => huh(),
         9 => mesh_please_work(),
         10 => test_line_draw(),
+        11 => debug_mesh_please_work(),
         _ => panic!("bro...."),
     };
     camera.render(&world);

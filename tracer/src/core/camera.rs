@@ -3,7 +3,7 @@ use std::f32::INFINITY;
 use std::fmt::Write;
 use std::time::Instant;
 
-use image::{GenericImage, Rgb, RgbImage};
+use image::{GenericImage, GenericImageView, Pixel, Rgb, RgbImage, RgbaImage};
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use nalgebra::{Point3, Vector, Vector3};
 use rayon::prelude::*;
@@ -93,7 +93,7 @@ impl Camera {
                 .with_key("eta", |state: &ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f32()).unwrap()));
 
         // Create an empty image buffer
-        let mut img = RgbImage::new(self.image_width as u32, self.image_height as u32);
+        let mut img = RgbaImage::new(self.image_width as u32, self.image_height as u32);
 
         let start = Instant::now();
 
@@ -105,7 +105,7 @@ impl Camera {
                 progress_bar.inc(1);
 
                 for (i, _, pixel) in row {
-                    let mut pixel_color = Colour::new(0., 0., 0.);
+                    let mut pixel_color = Colour::new(0., 0., 0., 1.);
                     for _ in 0..self.samples_per_pixel {
                         let ray = self.get_ray(i as i32, j as i32);
                         pixel_color += self.ray_color(&ray, self.max_depth, world);
@@ -176,7 +176,7 @@ impl Camera {
     // Actual ray tracing function
     fn ray_color(&self, ray: &Ray, depth: i32, world: &impl Hittable) -> Colour {
         if (depth <= 0) {
-            return Colour::new(0., 0., 0.);
+            return Colour::new(0., 0., 0., 1.);
         }
 
         let mut rec: HitRecord = HitRecord::new();
@@ -267,7 +267,7 @@ impl Camera {
     }
 
     pub fn draw_line(
-        img: &mut RgbImage,
+        img: &mut RgbaImage,
         mut x0: i32,
         mut y0: i32,
         mut x1: i32,
@@ -296,11 +296,21 @@ impl Camera {
         let mut y = y0;
 
         for x in x0..=x1 {
-            if steep {
-                img.put_pixel(y as u32, x as u32, colour);
+            let (target_x, target_y) = if steep {
+                (y as u32, x as u32)
             } else {
-                img.put_pixel(x as u32, y as u32, colour);
-            }
+                (x as u32, y as u32)
+            };
+
+            // if let Some(existing_pixel) = img.get_pixel(target_x, target_y).cloned() {
+            //     // Blend the existing pixel with the new colour
+            //     let blended_pixel = existing_pixel.bl colour);
+            //     img.put_pixel(target_x, target_y, blended_pixel);
+            // } else {
+            //     img.put_pixel(target_x, target_y, colour);
+            // }
+            img.get_pixel_mut(target_x, target_y).blend(&colour);
+
             error2 += derror2;
             if (error2 > dx) {
                 y += if y1 > y0 { 1 } else { -1 };
@@ -313,72 +323,73 @@ impl Camera {
 
 #[cfg(test)]
 mod tests {
-    use image::{Rgb, RgbImage};
+    use image::{Rgb, RgbaImage};
+    use nalgebra::Vector4;
 
     use super::*;
 
-    const RED: Vector3<f32> = Vector3::new(1., 0., 0.);
-    const GREEN: Vector3<f32> = Vector3::new(0., 1., 0.);
-    const BLUE: Vector3<f32> = Vector3::new(0., 0., 1.);
+    const RED: Vector4<f32> = Colour::new(1., 0., 0., 1.);
+    const GREEN: Vector4<f32> = Colour::new(0., 1., 0., 1.);
+    const BLUE: Vector4<f32> = Colour::new(0., 0., 1., 1.);
 
     #[test]
     fn test_draw_line_horizontal() {
-        let mut img = RgbImage::new(10, 10);
+        let mut img = RgbaImage::new(10, 10);
         Camera::draw_line(&mut img, 2, 5, 7, 5, RED);
 
         for x in 2..=7 {
-            assert_eq!(img.get_pixel(x as u32, 5).0, [255, 0, 0]);
+            assert_eq!(img.get_pixel(x as u32, 5).0, [255, 0, 0, 255]);
         }
     }
 
     #[test]
     fn test_draw_line_vertical() {
-        let mut img = RgbImage::new(10, 10);
+        let mut img = RgbaImage::new(10, 10);
         Camera::draw_line(&mut img, 5, 2, 5, 7, GREEN);
 
         for y in 2..=7 {
-            assert_eq!(img.get_pixel(5, y as u32).0, [0, 255, 0]);
+            assert_eq!(img.get_pixel(5, y as u32).0, [0, 255, 0, 255]);
         }
     }
 
     #[test]
     fn test_draw_line_diagonal_positive_slope() {
-        let mut img = RgbImage::new(10, 10);
+        let mut img = RgbaImage::new(10, 10);
         Camera::draw_line(&mut img, 0, 0, 9, 9, BLUE);
 
         for i in 0..=9 {
-            assert_eq!(img.get_pixel(i, i).0, [0, 0, 255]);
+            assert_eq!(img.get_pixel(i, i).0, [0, 0, 255, 255]);
         }
     }
 
     #[test]
     fn test_draw_line_diagonal_negative_slope() {
-        let mut img = RgbImage::new(10, 10);
+        let mut img = RgbaImage::new(10, 10);
         Camera::draw_line(&mut img, 0, 9, 9, 0, RED);
 
         for i in 0..=9 {
-            assert_eq!(img.get_pixel(i, 9 - i).0, [255, 0, 0]);
+            assert_eq!(img.get_pixel(i, 9 - i).0, [255, 0, 0, 255]);
         }
     }
 
     #[test]
     fn test_draw_line_steep_slope() {
-        let mut img = RgbImage::new(10, 10);
+        let mut img = RgbaImage::new(10, 10);
         Camera::draw_line(&mut img, 4, 0, 5, 9, GREEN);
 
         // Line will cover multiple y values for x = 4 and x = 5
         for y in 0..=9 {
             let x = if y <= 4 { 4 } else { 5 };
-            assert_eq!(img.get_pixel(x, y).0, [0, 255, 0]);
+            assert_eq!(img.get_pixel(x, y).0, [0, 255, 0, 255]);
         }
     }
 
     #[test]
     fn test_draw_line_single_point() {
-        let mut img = RgbImage::new(10, 10);
+        let mut img = RgbaImage::new(10, 10);
         Camera::draw_line(&mut img, 5, 5, 5, 5, RED);
 
-        assert_eq!(img.get_pixel(5, 5).0, [255, 0, 0]);
+        assert_eq!(img.get_pixel(5, 5).0, [255, 0, 0, 255]);
     }
 
     #[test]

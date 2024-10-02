@@ -11,10 +11,10 @@ pub fn intersect_triangle_benchmark(c: &mut Criterion) {
     let tri_c = Vector3::new(0.0, 1.0, 0.0);
 
     // Generate a list of rays with varying origins and directions
-    let rays: Vec<Ray> = (0..1000)
+    let rays: Vec<Ray> = (0..10000)
         .map(|i| {
-            let x = (i as f32) / 1000.0;
-            let y = (i as f32) / 1000.0;
+            let x = (i as f32) / 10000.0;
+            let y = (i as f32) / 10000.0;
             let ray_origin = Point3::new(x, y, -1.0);
             let ray_direction = Vector3::new(0.0, 0.0, 1.0);
             Ray::new(ray_origin, ray_direction)

@@ -2,7 +2,7 @@ pub mod colour;
 
 use std::f32::consts::PI;
 
-use nalgebra::Vector3;
+use nalgebra::{Vector3, Vector4};
 
 #[inline]
 pub fn degrees_to_radians(degrees: f32) -> f32 {
@@ -25,8 +25,23 @@ pub fn rand_vec() -> Vector3<f32> {
 }
 
 #[inline]
+pub fn rand_vec4() -> Vector4<f32> {
+    Vector4::new(random_f32(), random_f32(), random_f32(), random_f32())
+}
+
+#[inline]
 pub fn rand_vec_in(min: f32, max: f32) -> Vector3<f32> {
     Vector3::new(
+        random_f32_in(min, max),
+        random_f32_in(min, max),
+        random_f32_in(min, max),
+    )
+}
+
+#[inline]
+pub fn rand_vec4_in(min: f32, max: f32) -> Vector4<f32> {
+    Vector4::new(
+        random_f32_in(min, max),
         random_f32_in(min, max),
         random_f32_in(min, max),
         random_f32_in(min, max),

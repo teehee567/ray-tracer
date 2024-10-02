@@ -8,7 +8,9 @@
 
 use anyhow::{anyhow, Result};
 
-use vk::KhrSurfaceExtension;
+use vk::{KhrSurfaceExtension, KhrSwapchainExtension};
+use vulkan::pipeline::create_pipeline;
+use vulkan::swapchain::{create_swapchain, create_swapchain_image_views};
 use winit::dpi::LogicalSize;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::EventLoop;
@@ -91,6 +93,12 @@ struct AppData {
     present_queue: vk::Queue,
     // Surface
     surface: vk::SurfaceKHR,
+    // Swapchain
+    swapchain_format: vk::Format,
+    swapchain_extent: vk::Extent2D,
+    swapchain: vk::SwapchainKHR,
+    swapchain_images: Vec<vk::Image>,
+    swapchain_image_views: Vec<vk::ImageView>,
 }
 
 impl App {
@@ -103,6 +111,9 @@ impl App {
         data.surface = vk_window::create_surface(&instance, &window, &window)?;
         pick_physical_device(&instance, &mut data)?;
         let device = create_logical_device(&entry, &instance, &mut data)?;
+        create_swapchain(window, &instance, &device, &mut data)?;
+        create_swapchain_image_views(&device, &mut data)?;
+        create_pipeline(&device, &mut data);
         Ok(Self {
             entry,
             instance,
@@ -119,6 +130,10 @@ impl App {
     /// Destroys our Vulkan app.
     #[rustfmt::skip]
     unsafe fn destroy(&mut self) {
+        self.data.swapchain_image_views
+            .iter()
+            .for_each(|v| self.device.destroy_image_view(*v, None));
+        self.device.destroy_swapchain_khr(self.data.swapchain, None);
         self.device.destroy_device(None);
         if VALIDATION_ENABLED {
             self.instance.destroy_debug_utils_messenger_ext(self.data.messenger, None);

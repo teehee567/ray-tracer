@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use image::RgbImage;
+use image::{RgbImage, RgbaImage};
 use nalgebra::{Point3, Vector3};
 
 use crate::accelerators::aabb::AABB;
@@ -9,6 +9,7 @@ use crate::core::interval::Interval;
 use crate::core::ray::Ray;
 use crate::geometry::objects::cube::Cube;
 use crate::geometry::objects::quad::Quad;
+use crate::geometry::wireframe::WireFrame;
 use crate::materials::material::{Lambertian, Material};
 use crate::utils::colour::Colour;
 
@@ -28,7 +29,7 @@ impl HitRecord {
         Self {
             p: Point3::default(),
             normal: Vector3::default(),
-            mat: Arc::new(Lambertian::new(&Colour::new(0.8, 0.8, 0.8))),
+            mat: Arc::new(Lambertian::new(&Colour::new(0.8, 0.8, 0.8, 1.))),
             t: 0.,
             u: 123.,
             v: 153.,
@@ -58,11 +59,23 @@ pub trait ToScreen {
 // FIX: create proper generic wireframe
 pub unsafe fn call_wireframe_for_quad(
     hittable: &Box<dyn Hittable>,
-    img: &mut RgbImage,
+    img: &mut RgbaImage,
     colour: Colour,
     camera: &Camera,
 ) {
     let cube_ptr = &**hittable as *const dyn Hittable as *const Quad;
+    let cube_ref = &*cube_ptr;
+
+    cube_ref.draw_wireframe(img, colour, camera)
+}
+
+pub unsafe fn call_wireframe_for_cube(
+    hittable: &Box<dyn Hittable>,
+    img: &mut RgbaImage,
+    colour: Colour,
+    camera: &Camera,
+) {
+    let cube_ptr = &**hittable as *const dyn Hittable as *const Cube;
     let cube_ref = &*cube_ptr;
 
     cube_ref.draw_wireframe(img, colour, camera)

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use image::RgbImage;
+use image::{RgbImage, RgbaImage};
 use nalgebra::{Point3, Vector3};
 
 use crate::accelerators::aabb::AABB;
@@ -9,6 +9,7 @@ use crate::core::hittable::{HitRecord, Hittable, ToScreen};
 use crate::core::hittable_list::HittableList;
 use crate::core::interval::Interval;
 use crate::core::ray::Ray;
+use crate::geometry::wireframe::WireFrame;
 use crate::materials::material::Material;
 use crate::utils::colour::Colour;
 
@@ -83,8 +84,10 @@ impl Quad {
         return true;
     }
 
-    // FIX: create proper generic wireframe
-    pub fn draw_wireframe(&self, img: &mut RgbImage, colour: Colour, camera: &Camera) {
+}
+
+impl WireFrame for Quad {
+    fn draw_wireframe(&self, img: &mut RgbaImage, colour: Colour, camera: &Camera) {
         let vertices = [
             self.q,
             self.q + self.u,
@@ -109,6 +112,7 @@ impl Quad {
             }
         }
     }
+
 }
 
 impl Hittable for Quad {
