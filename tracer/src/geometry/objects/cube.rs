@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use image::RgbImage;
+use image::{RgbImage, RgbaImage};
 use nalgebra::{Point3, Vector3};
 
 use crate::accelerators::aabb::AABB;
@@ -10,6 +10,7 @@ use crate::core::hittable_list::HittableList;
 use crate::core::interval::Interval;
 use crate::core::ray::Ray;
 use crate::geometry::objects::quad::Quad;
+use crate::geometry::wireframe::WireFrame;
 use crate::materials::material::Material;
 use crate::utils::colour::Colour;
 
@@ -87,5 +88,39 @@ impl Hittable for Cube {
 
     fn bounding_box(&self) -> &AABB {
         &self.bbox
+    }
+}
+
+impl WireFrame for Cube {
+    fn draw_wireframe(&self, img: &mut RgbaImage, colour: Colour, camera: &Camera) {
+        // Define the 8 vertices of the cube
+        let vertices = [
+            self.box_min,                                       // min (x, y, z)
+            Point3::new(self.box_min.x, self.box_min.y, self.box_max.z), // min (x, y, max z)
+            Point3::new(self.box_min.x, self.box_max.y, self.box_min.z), // min (x, max y, z)
+            Point3::new(self.box_min.x, self.box_max.y, self.box_max.z), // min (x, max y, max z)
+            Point3::new(self.box_max.x, self.box_min.y, self.box_min.z), // max (x, y, z)
+            Point3::new(self.box_max.x, self.box_min.y, self.box_max.z), // max (x, y, max z)
+            Point3::new(self.box_max.x, self.box_max.y, self.box_min.z), // max (x, max y, z)
+            self.box_max,                                       // max (x, y, z)
+        ];
+
+        // Define the 12 edges of the cube (pairs of vertex indices)
+        let edges = [
+            (0, 1), (1, 3), (3, 2), (2, 0), // Bottom face
+            (4, 5), (5, 7), (7, 6), (6, 4), // Top face
+            (0, 4), (1, 5), (2, 6), (3, 7), // Vertical edges connecting bottom and top
+        ];
+
+        // Draw each edge
+        for &(start, end) in &edges {
+            if let (Some((x0, y0)), Some((x1, y1))) = (
+                camera.world_to_screen(vertices[start]),
+                camera.world_to_screen(vertices[end]),
+            ) {
+                println!("Drawing edge: {}, {} -> {}, {}", x0, y0, x1, y1);
+                Camera::draw_line(img, x0, y0, x1, y1, colour);
+            }
+        }
     }
 }

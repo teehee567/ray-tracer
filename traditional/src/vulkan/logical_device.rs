@@ -71,8 +71,8 @@ pub unsafe fn create_logical_device(
 
 #[derive(Copy, Clone, Debug)]
 pub struct QueueFamilyIndices {
-    graphics: u32,
-    present: u32,
+    pub graphics: u32,
+    pub present: u32,
 }
 
 impl QueueFamilyIndices {

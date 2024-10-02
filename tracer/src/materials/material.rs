@@ -20,7 +20,7 @@ pub trait Material: Send + Sync {
     }
 
     fn emitted(&self, u: f32, v: f32, p: &Point3<f32>) -> Colour {
-        return Colour::new(0., 0., 0.);
+        return Colour::new(0., 0., 0., 1.);
     }
 }
 
@@ -136,7 +136,7 @@ impl Material for Dielectric {
         attenuation: &mut Colour,
         scattered: &mut Ray,
     ) -> bool {
-        *attenuation = Colour::new(1., 1., 1.);
+        *attenuation = Colour::new(1., 1., 1., 1.);
         let ri: f32 = if (rec.front_face) {
             1. / self.refraction_index
         } else {

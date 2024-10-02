@@ -9,11 +9,16 @@ use obj::{load_obj, Obj};
 use serde::Serialize;
 
 use crate::accelerators::aabb::AABB;
-use crate::accelerators::bvh::BVH;
+use crate::accelerators::bvh::binsahbvh2::BinSahBVH2;
+use crate::accelerators::bvh::sahbvh2::{SahBVH2};
+use crate::accelerators::bvh::{BVH, BVH2, SAH};
+use crate::accelerators::oldbvh::OLDBVH;
 use crate::core::hittable::{HitRecord, Hittable};
 use crate::core::interval::Interval;
 use crate::core::ray::Ray;
 use crate::materials::material::Material;
+
+use super::triangle::{Triangle, Vertex};
 
 // NOTE: pbrt container, fix post gpu
 pub struct TriangleMesh {
@@ -25,21 +30,24 @@ pub struct TriangleMesh {
     pub bbox: AABB,
 }
 
-pub struct Triangle {
-    vertices: [u32; 3],
-    normal: Vector3<f32>,
+pub trait Primitive<Scalar>: Send + Sync {
+    #[inline]
+    fn centroid(&self, vertices: &[Vertex]) -> Vector3<Scalar>;
+
+    #[inline]
+    fn aabb(&self, vertices: &[Vertex]) -> AABB;
+
+    #[inline]
+    fn intersect_prim(&self, ray: &Ray, vertices: &[Vertex], ray_t: Interval) -> Option<TriangleIntersection>;
 }
 
-pub struct Vertex {
-    position: Point3<f32>,
-    normal: Vector3<f32>,
-}
+
 
 pub struct Mesh {
     /// Vertex buffer
     vertices: Vec<Vertex>,
     triangles: Vec<Triangle>,
-    bvh_root: Option<BVH>,
+    pub bvh_root: Option<BinSahBVH2<Triangle>>,
     mat: Arc<dyn Material>,
     bbox: AABB,
 }
@@ -72,7 +80,7 @@ impl Mesh {
     }
 
     pub fn from_buffers(vertices: Vec<Vertex>, indices: Vec<u32>, mat: Arc<dyn Material>) -> Self {
-        let mut triangles = Vec::<Triangle>::new();
+        let mut triangles: Vec<Triangle> = Vec::new();
 
         for triangle in indices.chunks_exact(3) {
             let e1 =
@@ -82,7 +90,7 @@ impl Mesh {
             let normal = e2.cross(&e1).normalize();
 
             triangles.push(Triangle {
-                vertices: [triangle[0], triangle[1], triangle[2]],
+                vertices: [triangle[0] as usize, triangle[1] as usize, triangle[2] as usize],
                 normal,
             })
         }
@@ -99,47 +107,69 @@ impl Mesh {
             );
         }
 
+        // make bvh
+        // let sah = SAH::new(2., 1.);
+        // let max_leaf_size = 4;
+        // let bvh_root: Option<BVH<Triangle>> = Some(BVH::build(triangles.as_slice(), &vertices, sah, max_leaf_size));
+        let bvh_root = Some(BinSahBVH2::build(triangles.as_mut_slice(), &vertices, 16));
+
         Self {
             vertices,
             triangles,
             mat,
-            bvh_root: None,
+            bvh_root,
             bbox: bounds,
         }
     }
 }
 
+
 impl Hittable for Mesh {
     fn hit(&self, ray: &Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
-        let mut result = None;
-        let mut closest_so_far = ray_t.max;
+        if let Some(ref bvh) = self.bvh_root {
+            if let Some(result) = bvh.intersect(ray, ray_t, self.triangles.as_slice(), &self.vertices) {
+                rec.t = result.t;
+                rec.u = result.u;
+                rec.v = result.v;
+                rec.mat = self.mat.clone();
+                rec.set_face_normal(ray, &result.outward_normal);
+                rec.p = result.intersection_point;
+                true
+            } else {
+                false
+            }
+        } else {
 
-        for triangle in &self.triangles {
-            if let Some(hit) = intersect_triangle(
-                ray,
-                Interval::new(ray_t.min, closest_so_far),
-                self.vertices[triangle.vertices[0] as usize].position.coords,
-                self.vertices[triangle.vertices[1] as usize].position.coords,
-                self.vertices[triangle.vertices[2] as usize].position.coords,
-            ) {
-                if closest_so_far > hit.t {
-                    closest_so_far = hit.t;
-                    result = Some(hit);
+            let mut result = None;
+            let mut closest_so_far = ray_t.max;
+
+            for triangle in &self.triangles {
+                if let Some(hit) = intersect_triangle(
+                    ray,
+                    Interval::new(ray_t.min, closest_so_far),
+                    self.vertices[triangle.vertices[0] as usize].position.coords,
+                    self.vertices[triangle.vertices[1] as usize].position.coords,
+                    self.vertices[triangle.vertices[2] as usize].position.coords,
+                ) {
+                    if closest_so_far > hit.t {
+                        closest_so_far = hit.t;
+                        result = Some(hit);
+                    }
                 }
             }
-        }
 
-        if let Some(result) = result {
-            rec.t = result.t;
-            rec.u = result.u;
-            rec.v = result.v;
-            rec.mat = self.mat.clone();
-            rec.set_face_normal(ray, &result.outward_normal);
-            rec.p = result.intersection_point;
+            if let Some(result) = result {
+                rec.t = result.t;
+                rec.u = result.u;
+                rec.v = result.v;
+                rec.mat = self.mat.clone();
+                rec.set_face_normal(ray, &result.outward_normal);
+                rec.p = result.intersection_point;
 
-            true
-        } else {
-            false
+                true
+            } else {
+                false
+            }
         }
     }
 
@@ -149,12 +179,12 @@ impl Hittable for Mesh {
 }
 
 pub struct TriangleIntersection {
-    u: f32,
-    v: f32,
-    t: f32,
+    pub u: f32,
+    pub v: f32,
+    pub t: f32,
     // WARN: Remove
-    intersection_point: Point3<f32>,
-    outward_normal: Vector3<f32>,
+    pub intersection_point: Point3<f32>,
+    pub outward_normal: Vector3<f32>,
 }
 
 #[inline(always)]
