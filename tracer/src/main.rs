@@ -547,12 +547,12 @@ fn debug_mesh_please_work() -> (Camera, HittableList) {
     let mut camera = Camera::new();
 
     camera.aspect_ratio = 16. / 9.;
-    camera.image_width = 1020;
-    camera.samples_per_pixel = 5;
-    camera.max_depth = 3;
+    camera.image_width = 3840;
+    camera.samples_per_pixel = 20;
+    camera.max_depth = 10;
 
-    camera.vfov = 40;
-    camera.lookfrom = Point3::new(-10., 4., 7.);
+    camera.vfov = 60;
+    camera.lookfrom = Point3::new(-4., 4., 9.);
     camera.lookat = Point3::new(0., 2., -1.);
     camera.vup = Vector3::new(0., 1., 0.);
     camera.background = Colour::new(0.7, 0.7, 0.7, 1.);
@@ -564,14 +564,16 @@ fn debug_mesh_please_work() -> (Camera, HittableList) {
 
     let mut world = HittableList::none();
 
+    let glass = Arc::new(Dielectric::new(1.5));
+    let basic = Arc::new(Lambertian::new(&Colour::new(0.5, 0.2, 0.2, 1.)));
     let mesh = Mesh::from_file(
         "dragon.obj",
-        Arc::new(Lambertian::new(&Colour::new(0.5, 0.2, 0.2, 1.))),
+        glass,
     );
     println!("{}", mesh.bvh_root.as_ref().unwrap().compute_debug_info());
     let mut image = RgbaImage::new(camera.image_width as u32, camera.image_height as u32);
     let colour = Colour::new(1., 0., 0., 0.2);
-    mesh.bvh_root.as_ref().unwrap().traverse_and_draw_wireframe(0, 0, 0..6, &mut image, colour,  &camera);
+    mesh.bvh_root.as_ref().unwrap().traverse_and_draw_wireframe(0, 0, 4..5, &mut image, colour,  &camera);
     mesh.bvh_root.as_ref().unwrap().validate_traversal();
 
     image.save("wireframe.png").expect("failed");
