@@ -115,6 +115,7 @@ impl<'a, Prim: Primitive<f32>> BinSahBVH2Builder<'a, Prim> {
         let mut best_axis = 0;
         let mut best_pos = 0.;
         for axis in 0..3 {
+
             let mut bounds_min = f32::MAX;
             let mut bounds_max = f32::MIN;
             for i in 0..node.prim_count {

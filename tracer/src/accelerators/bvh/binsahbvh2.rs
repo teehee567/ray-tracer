@@ -1,7 +1,7 @@
 use core::f32;
 use std::fmt;
 use std::marker::PhantomData;
-use std::ops::Range;
+use std::ops::{Range, RangeBounds};
 
 use image::{RgbImage, RgbaImage};
 use nalgebra::Vector3;
@@ -408,6 +408,8 @@ pub struct HUHDebugInfo {
     pub min_depth: usize,
     pub max_depth: usize,
     pub total_depth: usize,
+    pub min_leaf_depth: usize,
+    pub max_leaf_depth: usize,
     pub min_prims_in_leaf: usize,
     pub max_prims_in_leaf: usize,
     pub total_primitives_in_leaves: usize,
@@ -440,6 +442,8 @@ impl<Prim: Primitive<f32>> BinSahBVH2<Prim> {
             min_depth: usize::MAX,
             max_depth: 0,
             total_depth: 0,
+            min_leaf_depth: usize::MAX,
+            max_leaf_depth: 0,
             min_prims_in_leaf: usize::MAX,
             max_prims_in_leaf: 0,
             total_primitives_in_leaves: 0,
@@ -468,8 +472,8 @@ impl<Prim: Primitive<f32>> BinSahBVH2<Prim> {
         if node.left_i.is_none() && node.right_i.is_none() {
             // Leaf node
             info.leaf_nodes += 1;
-            info.min_prims_in_leaf = info.min_prims_in_leaf.min(depth);
-            info.max_prims_in_leaf = info.max_prims_in_leaf.max(depth);
+            info.min_leaf_depth = info.min_leaf_depth.min(depth);
+            info.max_leaf_depth = info.max_leaf_depth.max(depth);
 
             let prim_count = node.prim_count;
             info.total_primitives_in_leaves += prim_count;
@@ -501,18 +505,19 @@ impl<Prim: Primitive<f32>> BinSahBVH2<Prim> {
         let node = &self.nodes[node_index];
 
 
-        if node.left_i.is_none() && node.right_i.is_none() {
+        // if node.left_i.is_none() && node.right_i.is_none() {
+        if depth_range.contains(&depth) {
             node.bbox.draw_wireframe(img, colour, camera);
+        }
 
-        } else {
-        // if depth < depth_range.end {
+        // } else {
             if let Some(left_index) = node.left_i {
                 self.traverse_and_draw_wireframe(left_index, depth + 1, depth_range.clone(), img, colour, camera);
             }
             if let Some(right_index) = node.right_i {
                 self.traverse_and_draw_wireframe(right_index, depth + 1, depth_range.clone(), img, colour, camera);
             }
-        }
+        // }
     }
 }
 
@@ -526,8 +531,8 @@ impl fmt::Display for HUHDebugInfo {
         writeln!(f, " - Minimum Depth: {}", self.min_depth)?;
         writeln!(f, " - Maximum Depth: {}", self.max_depth)?;
         writeln!(f, " - Average Depth: {:.2}", self.average_depth())?;
-        writeln!(f, " - Minimum Leaf Node Depth: {:.2}", self.min_prims_in_leaf)?;
-        writeln!(f, " - Maximum Leaf Node Depth: {:.2}", self.max_prims_in_leaf)?;
+        writeln!(f, " - Minimum Leaf Node Depth: {:.2}", self.min_leaf_depth)?;
+        writeln!(f, " - Maximum Leaf Node Depth: {:.2}", self.max_leaf_depth)?;
         writeln!(f, "Primitive Statistics in Leaf Nodes:")?;
         writeln!(f, " - Minimum Primitives in Leaf Nodes: {}", self.min_prims_in_leaf)?;
         writeln!(f, " - Maximum Primitives in Leaf Nodes: {}", self.max_prims_in_leaf)?;
