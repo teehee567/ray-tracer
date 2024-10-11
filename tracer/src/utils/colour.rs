@@ -11,7 +11,7 @@ pub fn linear_to_gamma(linear_component: f32) -> f32 {
         return linear_component.sqrt();
     }
 
-    return 0.;
+    0.
 }
 
 const INTENSITY_MIN: f32 = 0.;

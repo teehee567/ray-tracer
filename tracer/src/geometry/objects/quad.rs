@@ -81,7 +81,7 @@ impl Quad {
         rec.u = a;
         rec.v = b;
 
-        return true;
+        true
     }
 
 }
@@ -142,10 +142,10 @@ impl Hittable for Quad {
         rec.mat = self.material.clone();
         rec.set_face_normal(ray, &self.normal);
 
-        return true;
+        true
     }
 
     fn bounding_box(&self) -> &AABB {
-        return &self.bbox;
+        &self.bbox
     }
 }

@@ -1,3 +1,4 @@
+#![allow(clippy::all)]
 use std::{marker::PhantomData, ops::RangeBounds};
 use nalgebra::Vector3;
 
