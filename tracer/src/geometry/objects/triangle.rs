@@ -1,5 +1,3 @@
-use std::f32::EPSILON;
-
 use nalgebra::{Point3, Vector3};
 
 use crate::{accelerators::aabb::AABB, core::{interval::Interval, ray::Ray}};
@@ -32,9 +30,9 @@ impl Primitive<f32> for Triangle {
     }
 
     fn intersect_prim(&self, ray: &Ray, vertex_list: &[Vertex], ray_t: Interval) -> Option<TriangleIntersection> {
-        let tri_a = vertex_list[self.vertices[0] as usize].position.coords;
-        let tri_b = vertex_list[self.vertices[1] as usize].position.coords;
-        let tri_c = vertex_list[self.vertices[2] as usize].position.coords;
+        let tri_a = vertex_list[self.vertices[0]].position.coords;
+        let tri_b = vertex_list[self.vertices[1]].position.coords;
+        let tri_c = vertex_list[self.vertices[2]].position.coords;
         intersect_triangle(ray, ray_t, tri_a, tri_b, tri_c)
     }
 }

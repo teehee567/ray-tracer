@@ -35,7 +35,7 @@ impl SolidColour {
 
 impl Texture for SolidColour {
     fn value(&self, u: f32, v: f32, p: &Point3<f32>) -> Colour {
-        return self.albedo;
+        self.albedo
     }
 }
 

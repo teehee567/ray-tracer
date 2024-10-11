@@ -16,16 +16,16 @@ pub trait Material: Send + Sync {
         attenuation: &mut Colour,
         scattered: &mut Ray,
     ) -> bool {
-        return false;
+        false
     }
 
     fn emitted(&self, u: f32, v: f32, p: &Point3<f32>) -> Colour {
-        return Colour::new(0., 0., 0., 1.);
+        Colour::new(0., 0., 0., 1.)
     }
 }
 
 fn reflect(v: &Vector3<f32>, n: &Vector3<f32>) -> Vector3<f32> {
-    v - 2.0 * v.dot(&n) * n
+    v - 2.0 * v.dot(n) * n
 }
 
 // fn refract(v: &Vector3<f32>, n: &Vector3<f32>, ni_over_nt: f32) -> Vector3<f32> {
@@ -40,7 +40,7 @@ pub fn refract(uv: &Vector3<f32>, n: &Vector3<f32>, etai_over_etat: f32) -> Vect
     let r_out_perp = etai_over_etat * (*uv + cos_theta * *n);
     let r_out_parrallel = -(1. - r_out_perp.norm_squared()).abs().sqrt() * *n;
 
-    return r_out_perp + r_out_parrallel;
+    r_out_perp + r_out_parrallel
 }
 
 pub struct Lambertian {
@@ -77,7 +77,7 @@ impl Material for Lambertian {
         *scattered = Ray::new_tm(rec.p, scatter_direction, ray_in.time());
         *attenuation = self.texture.value(rec.u, rec.v, &rec.p);
 
-        return true;
+        true
     }
 }
 
@@ -103,12 +103,12 @@ impl Material for Metal {
         attenuation: &mut Colour,
         scattered: &mut Ray,
     ) -> bool {
-        let mut reflected = reflect(&ray_in.direction(), &rec.normal);
+        let mut reflected = reflect(ray_in.direction(), &rec.normal);
         reflected = reflected.normalize() + (self.fuzz * utils::random_in_unit_vector());
         *scattered = Ray::new_tm(rec.p, reflected, ray_in.time());
         *attenuation = self.albedo;
 
-        return (Vector3::dot(scattered.direction(), &rec.normal) > 0.);
+        Vector3::dot(scattered.direction(), &rec.normal) > 0.
     }
 }
 
@@ -156,7 +156,7 @@ impl Material for Dielectric {
 
         *scattered = Ray::new_tm(rec.p, direction, ray_in.time());
 
-        return true;
+        true
     }
 }
 
@@ -178,6 +178,6 @@ impl DiffuseLight {
 
 impl Material for DiffuseLight {
     fn emitted(&self, u: f32, v: f32, p: &Point3<f32>) -> Colour {
-        return self.texture.value(u, v, &p) * self.intensity;
+        self.texture.value(u, v, p) * self.intensity
     }
 }
