@@ -1,5 +1,4 @@
 use core::arch::x86_64::*;
-use std::f32::EPSILON;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
@@ -57,9 +56,7 @@ impl Serialize for Mesh {
     where
         S: serde::Serializer,
     {
-        loop {
-            panic!();
-        }
+        panic!();
     }
 }
 
@@ -147,9 +144,9 @@ impl Hittable for Mesh {
                 if let Some(hit) = intersect_triangle(
                     ray,
                     Interval::new(ray_t.min, closest_so_far),
-                    self.vertices[triangle.vertices[0] as usize].position.coords,
-                    self.vertices[triangle.vertices[1] as usize].position.coords,
-                    self.vertices[triangle.vertices[2] as usize].position.coords,
+                    self.vertices[triangle.vertices[0]].position.coords,
+                    self.vertices[triangle.vertices[1]].position.coords,
+                    self.vertices[triangle.vertices[2]].position.coords,
                 ) {
                     if closest_so_far > hit.t {
                         closest_so_far = hit.t;
@@ -193,7 +190,7 @@ pub fn ray_triangle_rcp(x: f32) -> f32 {
         // avx2
 
         let a = _mm_set_ss(x);
-        return _mm_cvtss_f32(_mm_rcp_ss(a));
+        _mm_cvtss_f32(_mm_rcp_ss(a))
         // let r = _mm_rcp_ss(a);
         //
         // return _mm_cvtss_f32(_mm_mul_ss(r, _mm_fnmadd_ss(r, a, _mm_set_ss(2.0f32))))
@@ -229,7 +226,7 @@ pub fn intersect_triangle(
     let w = e2.cross(&(v1 + v2)).dot(ray_d);
 
     let uvw = u + v + w;
-    let eps = EPSILON * uvw.abs();
+    let eps = f32::EPSILON * uvw.abs();
     let min_uvw = u.min(v.min(w));
     let max_uvw = u.max(v.max(w));
 

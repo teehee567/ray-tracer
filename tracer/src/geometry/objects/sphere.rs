@@ -83,7 +83,7 @@ impl Hittable for Sphere {
 
         let oc = center - ray.origin();
         let a = ray.direction().norm_squared();
-        let h = Vector3::dot(&ray.direction(), &oc);
+        let h = Vector3::dot(ray.direction(), &oc);
         let c = oc.norm_squared() - self.radius * self.radius;
 
         let discriminant = h * h - a * c;
@@ -111,10 +111,10 @@ impl Hittable for Sphere {
         rec.u = u;
         rec.v = v;
 
-        return true;
+        true
     }
 
     fn bounding_box(&self) -> &AABB {
-        return &self.bbox;
+        &self.bbox
     }
 }
