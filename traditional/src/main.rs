@@ -99,6 +99,8 @@ struct AppData {
     swapchain: vk::SwapchainKHR,
     swapchain_images: Vec<vk::Image>,
     swapchain_image_views: Vec<vk::ImageView>,
+    // Pipeline
+    pipeline_layout: vk::PipelineLayout,
 }
 
 impl App {
@@ -113,7 +115,8 @@ impl App {
         let device = create_logical_device(&entry, &instance, &mut data)?;
         create_swapchain(window, &instance, &device, &mut data)?;
         create_swapchain_image_views(&device, &mut data)?;
-        create_pipeline(&device, &mut data);
+        create_render_pass(&instance, &device, &mut data)?;
+        create_pipeline(&device, &mut data)?;
         Ok(Self {
             entry,
             instance,
@@ -130,16 +133,18 @@ impl App {
     /// Destroys our Vulkan app.
     #[rustfmt::skip]
     unsafe fn destroy(&mut self) {
+        self.device.destroy_pipeline_layout(self.data.pipeline_layout, None);
         self.data.swapchain_image_views
             .iter()
             .for_each(|v| self.device.destroy_image_view(*v, None));
         self.device.destroy_swapchain_khr(self.data.swapchain, None);
         self.device.destroy_device(None);
+        self.instance.destroy_surface_khr(self.data.surface, None);
+
         if VALIDATION_ENABLED {
             self.instance.destroy_debug_utils_messenger_ext(self.data.messenger, None);
         }
 
-        self.instance.destroy_surface_khr(self.data.surface, None);
         self.instance.destroy_instance(None);
     }
 }
