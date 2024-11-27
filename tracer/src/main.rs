@@ -30,7 +30,7 @@ use ray_tracer::textures::texture::{
     self, CheckerTexture, ImageTexture, NoiseTexture, SolidColour,
 };
 use ray_tracer::textures::{self};
-use ray_tracer::utils::colour::Colour;
+use ray_tracer::utils::colour::{self, Colour};
 use ray_tracer::utils::{self, random_f32, random_f32_in};
 
 fn balls() -> HittableList {
@@ -547,7 +547,7 @@ fn debug_mesh_please_work() -> (Camera, HittableList) {
     let mut camera = Camera::new();
 
     camera.aspect_ratio = 16. / 9.;
-    camera.image_width = 3840;
+    camera.image_width = 1920;
     camera.samples_per_pixel = 20;
     camera.max_depth = 10;
 
@@ -568,7 +568,7 @@ fn debug_mesh_please_work() -> (Camera, HittableList) {
     let basic = Arc::new(Lambertian::new(&Colour::new(0.5, 0.2, 0.2, 1.)));
     let mesh = Mesh::from_file(
         "dragon.obj",
-        glass,
+        basic,
     );
     println!("{}", mesh.bvh_root.as_ref().unwrap().compute_debug_info());
     let mut image = RgbaImage::new(camera.image_width as u32, camera.image_height as u32);
@@ -592,6 +592,34 @@ fn debug_mesh_please_work() -> (Camera, HittableList) {
 
     let sun = Arc::new(DiffuseLight::new_colour(Colour::new(1., 1.4, 0., 1.), 10.));
     // world.add(Sphere::new(Point3::new(-5., 3.2, -3.), 0.5, sun));
+
+    (camera, world)
+}
+
+fn lego_bulldozer() -> (Camera, HittableList) {
+    let mut camera = Camera::new();
+
+    camera.aspect_ratio = 16./9.;
+    camera.image_width = 1920;
+    camera.samples_per_pixel = 20;
+    camera.max_depth = 10;
+
+    camera.vfov = 60;
+    camera.lookfrom = Point3::new(1.05, 0.32, 0.4);
+    camera.lookat = Point3::new(0.03, 0.073, 0.06);
+    camera.vup = Vector3::new(0., 1., 0.);
+    camera.background = Colour::new(0.7, 0.7, 0.7, 1.);
+
+    camera.defocus_angle = 0.;
+    camera.focus_dist = 5.;
+
+    camera.build();
+
+    let mut world = HittableList::none();
+
+    let black = Arc::new(Lambertian::new(&colour::from_hex("#090909")));
+    
+
 
     (camera, world)
 }
