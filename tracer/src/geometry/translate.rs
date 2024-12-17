@@ -26,14 +26,13 @@ impl<H: Hittable> Translate<H> {
 }
 
 impl<H: Hittable> Hittable for Translate<H> {
-    fn hit(&self, ray: &Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
+    fn hit(&self, ray: &Ray, ray_t: Interval) -> Option<HitRecord> {
         let moved_ray = Ray::new_tm(ray.origin() - self.offset, *ray.direction(), ray.time());
-        let mut rec: HitRecord = HitRecord::new();
-        if (self.hittable.hit(&moved_ray, ray_t, &mut rec)) {
+        if let Some(mut rec) = self.hittable.hit(&moved_ray, ray_t) {
             rec.p += self.offset;
-            return true;
+            return Some(rec)
         }
-        false
+        None
     }
 
     fn bounding_box(&self) -> &AABB {

@@ -44,32 +44,15 @@ impl HittableList {
 }
 
 impl Hittable for HittableList {
-    fn hit(&self, ray: &Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
-        let mut hit_anything = false;
-        let mut closest_so_far = ray_t.max;
-
-        for object in &self.objects {
-            let mut temp_rec = HitRecord::new(); // Local temporary record
-            let mut current_interval = Interval::new(ray_t.min, closest_so_far);
-
-            if object.hit(ray, current_interval, &mut temp_rec) {
-                hit_anything = true;
-                closest_so_far = temp_rec.t;
-
-                // Update only the fields in rec instead of copying the entire struct
-                rec.t = temp_rec.t;
-                rec.p = temp_rec.p;
-                rec.normal = temp_rec.normal;
-                rec.front_face = temp_rec.front_face;
-                rec.mat = Arc::clone(&temp_rec.mat);
-                // FIX: FUCK YOU DOESNT AUTO SET STRUCT INSIDES
-                rec.u = temp_rec.u;
-                rec.v = temp_rec.v;
-            }
-        }
-
-        hit_anything
-    }
+    fn hit(&self, ray: &Ray, ray_t: Interval) -> Option<HitRecord> {
+        self.objects
+            .iter()
+            .filter_map(|object| {
+                let interval = Interval::new(ray_t.min, ray_t.max);
+                object.hit(ray, interval)
+            })
+            .min_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal))
+}
 
     fn bounding_box(&self) -> &AABB {
         return &self.bbox;

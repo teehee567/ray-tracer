@@ -73,7 +73,8 @@ impl Sphere {
 }
 
 impl Hittable for Sphere {
-    fn hit(&self, ray: &Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
+    fn hit(&self, ray: &Ray, ray_t: Interval) -> Option<HitRecord> {
+        let mut rec = HitRecord::new();
         let center = if (self.is_moving) {
             let v = self.sphere_center(ray.time());
             Point3::new(v.x, v.y, v.z)
@@ -88,7 +89,7 @@ impl Hittable for Sphere {
 
         let discriminant = h * h - a * c;
         if (discriminant < 0.) {
-            return false;
+            return None;
         }
 
         let sqrtd = discriminant.sqrt();
@@ -98,7 +99,7 @@ impl Hittable for Sphere {
         if (!ray_t.surrounds(root)) {
             root = (h + sqrtd) / a;
             if (!ray_t.surrounds(root)) {
-                return false;
+                return None;
             }
         }
 
@@ -111,7 +112,7 @@ impl Hittable for Sphere {
         rec.u = u;
         rec.v = v;
 
-        true
+        Some(rec)
     }
 
     fn bounding_box(&self) -> &AABB {
