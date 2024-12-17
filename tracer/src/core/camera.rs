@@ -179,25 +179,23 @@ impl Camera {
             return Colour::new(0., 0., 0., 1.);
         }
 
-        let mut rec: HitRecord = HitRecord::new();
-
         // Recursive diffusion bounces
-        if (!world.hit(&ray, Interval::new(0.001, INFINITY), &mut rec)) {
+        if let Some(mut rec) = world.hit(&ray, Interval::new(0.001, INFINITY)) {
+            let mut scattered: Ray = Ray::default();
+            let mut attenuation: Colour = Colour::default();
+            let mut colour_from_emission = rec.mat.emitted(rec.u, rec.v, &rec.p);
+
+            if (!rec.mat.scatter(ray, &rec, &mut attenuation, &mut scattered)) {
+                return colour_from_emission;
+            }
+
+            let colour_from_scatter =
+                attenuation.component_mul(&self.ray_color(&scattered, depth - 1, world));
+
+            return colour_from_emission + colour_from_scatter;
+        } else {
             return self.background;
         }
-
-        let mut scattered: Ray = Ray::default();
-        let mut attenuation: Colour = Colour::default();
-        let mut colour_from_emission = rec.mat.emitted(rec.u, rec.v, &rec.p);
-
-        if (!rec.mat.scatter(ray, &rec, &mut attenuation, &mut scattered)) {
-            return colour_from_emission;
-        }
-
-        let colour_from_scatter =
-            attenuation.component_mul(&self.ray_color(&scattered, depth - 1, world));
-
-        return colour_from_emission + colour_from_scatter;
     }
 
     // Gets ray from a pixel position

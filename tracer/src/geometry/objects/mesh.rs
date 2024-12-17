@@ -122,7 +122,8 @@ impl Mesh {
 
 
 impl Hittable for Mesh {
-    fn hit(&self, ray: &Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
+    fn hit(&self, ray: &Ray, ray_t: Interval) -> Option<HitRecord> {
+        let mut rec = HitRecord::new();
         if let Some(ref bvh) = self.bvh_root {
             if let Some(result) = bvh.intersect(ray, ray_t, self.triangles.as_slice(), &self.vertices) {
                 rec.t = result.t;
@@ -131,9 +132,9 @@ impl Hittable for Mesh {
                 rec.mat = self.mat.clone();
                 rec.set_face_normal(ray, &result.outward_normal);
                 rec.p = result.intersection_point;
-                true
+                return Some(rec);
             } else {
-                false
+                None
             }
         } else {
 
@@ -162,10 +163,9 @@ impl Hittable for Mesh {
                 rec.mat = self.mat.clone();
                 rec.set_face_normal(ray, &result.outward_normal);
                 rec.p = result.intersection_point;
-
-                true
+                return Some(rec);
             } else {
-                false
+                None
             }
         }
     }

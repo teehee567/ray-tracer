@@ -116,16 +116,17 @@ impl WireFrame for Quad {
 }
 
 impl Hittable for Quad {
-    fn hit(&self, ray: &Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
+    fn hit(&self, ray: &Ray, ray_t: Interval) -> Option<HitRecord> {
+        let mut rec = HitRecord::new();
         let denom = Vector3::dot(&self.normal, ray.direction());
 
         if denom.abs() < 1e-8 {
-            return false;
+            return None;
         }
 
         let t = (self.d - Vector3::dot(&self.normal, &ray.origin().coords)) / denom;
         if !ray_t.contains(t) {
-            return false;
+            return None;
         }
 
         let intersection = ray.at(t);
@@ -133,8 +134,8 @@ impl Hittable for Quad {
         let alpha = Vector3::dot(&self.w, &Vector3::cross(&planar_hitpt_vector, &self.v));
         let beta = Vector3::dot(&self.w, &Vector3::cross(&self.u, &planar_hitpt_vector));
 
-        if !Self::is_interior(alpha, beta, rec) {
-            return false;
+        if !Self::is_interior(alpha, beta, &mut rec) {
+            return None;
         }
 
         rec.t = t;
@@ -142,7 +143,7 @@ impl Hittable for Quad {
         rec.mat = self.material.clone();
         rec.set_face_normal(ray, &self.normal);
 
-        true
+        Some(rec)
     }
 
     fn bounding_box(&self) -> &AABB {
