@@ -82,8 +82,8 @@ impl Cube {
 }
 
 impl Hittable for Cube {
-    fn hit(&self, ray: &Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
-        self.sides.hit(ray, ray_t, rec)
+    fn hit(&self, ray: &Ray, ray_t: Interval) -> Option<HitRecord> {
+        self.sides.hit(ray, ray_t)
     }
 
     fn bounding_box(&self) -> &AABB {

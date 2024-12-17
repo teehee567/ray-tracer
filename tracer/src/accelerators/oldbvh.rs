@@ -130,23 +130,30 @@ impl ToString for OLDBVH {
 }
 
 impl Hittable for OLDBVH {
-    fn hit(&self, ray: &Ray, mut ray_t: Interval, rec: &mut HitRecord) -> bool {
+    fn hit(&self, ray: &Ray, ray_t: Interval) -> Option<HitRecord> {
         if self.bbox.hit(ray, ray_t) {
             match &self.tree {
-                BVHNode::Leaf(leaf) => leaf.hit(ray, ray_t, rec),
+                BVHNode::Leaf(leaf) => leaf.hit(ray, ray_t),
                 BVHNode::Branch { left, right } => {
-                    let hit_left = left.hit(ray, ray_t, rec);
-                    let hit_right = right.hit(
-                        ray,
-                        Interval::new(ray_t.min, if hit_left { rec.t } else { ray_t.max }),
-                        rec,
-                    );
+                    let hit_left = left.hit(ray, ray_t);
+                    let hit_right = right.hit(ray, ray_t);
 
-                    hit_left || hit_right
+                    match (hit_left, hit_right) {
+                        (Some(left_hit), Some(right_hit)) => {
+                            if left_hit.t < right_hit.t {
+                                Some(left_hit)
+                            } else {
+                                Some(right_hit)
+                            }
+                        }
+                        (Some(left_hit), None) => Some(left_hit),
+                        (None, Some(right_hit)) => Some(right_hit),
+                        (None, None) => None,
+                    }
                 }
             }
         } else {
-            false
+            None
         }
     }
 
