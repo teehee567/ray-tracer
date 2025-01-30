@@ -81,14 +81,13 @@ pub unsafe fn create_pipeline(device: &Device, data: &mut AppData) -> Result<()>
     // Color Blending.
     let attachment = vk::PipelineColorBlendAttachmentState::builder()
         .color_write_mask(vk::ColorComponentFlags::all())
-        .blend_enable(false)
-        .src_color_blend_factor(vk::BlendFactor::ONE)
-        .dst_color_blend_factor(vk::BlendFactor::ZERO)
-        .color_blend_op(vk::BlendOp::ADD)
-        .src_alpha_blend_factor(vk::BlendFactor::ONE)
-        .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD);
-
+        .blend_enable(false);
+    // .src_color_blend_factor(vk::BlendFactor::ONE)
+    // .dst_color_blend_factor(vk::BlendFactor::ZERO)
+    // .color_blend_op(vk::BlendOp::ADD)
+    // .src_alpha_blend_factor(vk::BlendFactor::ONE)
+    // .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+    // .alpha_blend_op(vk::BlendOp::ADD);
 
     //     // final_color.rgb = new_alpha * new_color + (1 - new_alpha) * old_color;
     //     // final_color.a = new_alpha.a;
@@ -110,26 +109,57 @@ pub unsafe fn create_pipeline(device: &Device, data: &mut AppData) -> Result<()>
         .attachments(attachments)
         .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
-    let dynamic_states = &[
-        vk::DynamicState::VIEWPORT,
-        vk::DynamicState::LINE_WIDTH,
-    ];
+    //WARN: huh
+    //
+    // let dynamic_states = &[
+    //     vk::DynamicState::VIEWPORT,
+    //     vk::DynamicState::LINE_WIDTH,
+    // ];
+    //
+    // let dynamic_state = vk::PipelineDynamicStateCreateInfo::builder()
+    //     .dynamic_states(dynamic_states);
 
-    let dynamic_state = vk::PipelineDynamicStateCreateInfo::builder()
-        .dynamic_states(dynamic_states);
+    // Layout
 
     let layout_info = vk::PipelineLayoutCreateInfo::builder();
 
     data.pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
-    
+
+    // Create
+
+    let stages = &[vert_stage, frag_stage];
+    let info = vk::GraphicsPipelineCreateInfo::builder()
+        .stages(stages)
+        // provide array of vk::PipelineShaderStageCreateInfo
+        .vertex_input_state(&vertex_input_state)
+        .input_assembly_state(&input_assembly_state)
+        .viewport_state(&viewport_state)
+        .rasterization_state(&rasterization_state)
+        .multisample_state(&multisample_state)
+        .color_blend_state(&color_blend_state)
+        .layout(data.pipeline_layout)
+        .render_pass(data.render_pass)
+        .subpass(0);
+
+    data.pipeline = device
+        .create_graphics_pipelines(vk::PipelineCache::null(), &[info], None)?
+        .0[0];
+
+    // Cleanup
+
     device.destroy_shader_module(vert_shader_module, None);
     device.destroy_shader_module(frag_shader_module, None);
 
     Ok(())
 }
 
-pub unsafe fn create_render_pass(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
-    
+pub unsafe fn create_render_pass(
+    instance: &Instance,
+    device: &Device,
+    data: &mut AppData,
+) -> Result<()> {
+    // Attachments
+
     let color_attachment = vk::AttachmentDescription::builder()
         .format(data.swapchain_format)
         .samples(vk::SampleCountFlags::_1)
@@ -151,6 +181,8 @@ pub unsafe fn create_render_pass(instance: &Instance, device: &Device, data: &mu
         // TRANSFER_DST_OPTIMAL - Images to be used as destination for a memory copy operation
         .final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
 
+    // Subpasses
+
     let color_attachment_ref = vk::AttachmentReference::builder()
         .attachment(0)
         .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
@@ -159,6 +191,28 @@ pub unsafe fn create_render_pass(instance: &Instance, device: &Device, data: &mu
     let subpass = vk::SubpassDescription::builder()
         .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
         .color_attachments(color_attachments);
+
+    // Dependencies
+
+    let dependency = vk::SubpassDependency::builder()
+        .src_subpass(vk::SUBPASS_EXTERNAL)
+        .dst_subpass(0)
+        .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+        .src_access_mask(vk::AccessFlags::empty())
+        .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+        .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
+
+    //Create
+
+    let attachments = &[color_attachment];
+    let subpasses = &[subpass];
+    let dependencies = &[dependency];
+    let info = vk::RenderPassCreateInfo::builder()
+        .attachments(attachments)
+        .subpasses(subpasses)
+        .dependencies(dependencies);
+
+    data.render_pass = device.create_render_pass(&info, None)?;
 
     Ok(())
 }
