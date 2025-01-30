@@ -17,6 +17,8 @@ pub unsafe fn create_swapchain(
     device: &Device,
     data: &mut AppData,
 ) -> Result<()> {
+    // Image
+
     let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
     let support = SwapchainSupport::get(instance, data, data.physical_device)?;
 
@@ -40,9 +42,10 @@ pub unsafe fn create_swapchain(
         queue_family_indices.push(indices.present);
         vk::SharingMode::CONCURRENT
     } else {
-        // Image is owned by one queue vamily at a time, and must be transfered explicitely
         vk::SharingMode::EXCLUSIVE
     };
+
+    // Create
 
     let info = vk::SwapchainCreateInfoKHR::builder()
         .surface(data.surface)
@@ -51,7 +54,6 @@ pub unsafe fn create_swapchain(
         .image_color_space(surface_format.color_space)
         .image_extent(extent)
         .image_array_layers(1)
-        // for post processing ImageUsageFlags::TRANSFER_DST instead
         .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
         .image_sharing_mode(image_sharing_mode)
         .queue_family_indices(&queue_family_indices)
@@ -63,24 +65,23 @@ pub unsafe fn create_swapchain(
 
     data.swapchain = device.create_swapchain_khr(&info, None)?;
 
+    // Images
+
     data.swapchain_images = device.get_swapchain_images_khr(data.swapchain)?;
 
     Ok(())
 }
-
 pub unsafe fn create_swapchain_image_views(device: &Device, data: &mut AppData) -> Result<()> {
     data.swapchain_image_views = data
         .swapchain_images
         .iter()
         .map(|i| {
-            // colour component mapping of rimage view
-            let componenets = vk::ComponentMapping::builder()
+            let components = vk::ComponentMapping::builder()
                 .r(vk::ComponentSwizzle::IDENTITY)
                 .g(vk::ComponentSwizzle::IDENTITY)
                 .b(vk::ComponentSwizzle::IDENTITY)
                 .a(vk::ComponentSwizzle::IDENTITY);
 
-            // describes the image's purpose and which part should be accessed
             let subresource_range = vk::ImageSubresourceRange::builder()
                 .aspect_mask(vk::ImageAspectFlags::COLOR)
                 .base_mip_level(0)
@@ -92,17 +93,15 @@ pub unsafe fn create_swapchain_image_views(device: &Device, data: &mut AppData) 
                 .image(*i)
                 .view_type(vk::ImageViewType::_2D)
                 .format(data.swapchain_format)
-                .components(componenets)
+                .components(components)
                 .subresource_range(subresource_range);
 
             device.create_image_view(&info, None)
-
         })
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(())
 }
-
 #[derive(Clone, Debug)]
 pub struct SwapchainSupport {
     // Resolution of swapchain images

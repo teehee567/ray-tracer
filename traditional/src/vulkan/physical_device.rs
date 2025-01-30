@@ -61,10 +61,11 @@ pub unsafe fn check_physical_device_extensions(
         .iter()
         .map(|e| e.extension_name)
         .collect::<HashSet<_>>();
-
     if DEVICE_EXTENSION.iter().all(|e| extensions.contains(e)) {
         Ok(())
     } else {
-        Err(anyhow!(SuitabilityError("Missing required device extensions.")))
+        Err(anyhow!(SuitabilityError(
+            "Missing required device extensions."
+        )))
     }
 }
