@@ -52,11 +52,7 @@ pub unsafe fn create_instance(window: &Window, entry: &Entry, data: &mut AppData
     // Required by Vulkan SDK on macOS since 1.3.216.
     let flags = if cfg!(target_os = "macos") && entry.version()? >= PORTABILITY_MACOS_VERSION {
         info!("Enabling extensions for macOS portability.");
-        extensions.push(
-            vk::KHR_GET_PHYSICAL_DEVICE_PROPERTIES2_EXTENSION
-                .name
-                .as_ptr(),
-        );
+        extensions.push(vk::KHR_GET_PHYSICAL_DEVICE_PROPERTIES2_EXTENSION.name.as_ptr());
         extensions.push(vk::KHR_PORTABILITY_ENUMERATION_EXTENSION.name.as_ptr());
         vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR
     } else {
@@ -98,7 +94,6 @@ pub unsafe fn create_instance(window: &Window, entry: &Entry, data: &mut AppData
 
     Ok(instance)
 }
-
 pub extern "system" fn debug_callback(
     severity: vk::DebugUtilsMessageSeverityFlagsEXT,
     type_: vk::DebugUtilsMessageTypeFlagsEXT,
