@@ -42,7 +42,7 @@ pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData) -> Res
             .range(size_of::<UniformBufferObject>() as u64);
 
         let sbo_info = vk::DescriptorBufferInfo::builder()
-            .buffer(data.shader_buffers[0])
+            .buffer(data.shader_buffer)
             .offset(0)
             .range(vk::WHOLE_SIZE as u64);
 

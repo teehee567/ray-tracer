@@ -29,9 +29,6 @@ pub unsafe fn create_uniform_buffers(instance: &Instance, device: &Device, data:
 pub unsafe fn create_shader_buffers(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
     let size: vk::DeviceSize = 1024;
 
-    data.shader_buffers.clear();
-    data.shader_buffers_memory.clear();
-
     let (shader_buffer, shader_buffer_memory) = create_buffer(
         instance,
         device,
@@ -41,7 +38,7 @@ pub unsafe fn create_shader_buffers(instance: &Instance, device: &Device, data: 
         vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
     )?;
 
-    data.shader_buffers.push(shader_buffer);
-    data.shader_buffers_memory.push(shader_buffer_memory);
+    data.shader_buffer = shader_buffer;
+    data.shader_buffer_memory = shader_buffer_memory;
     Ok(())
 }
