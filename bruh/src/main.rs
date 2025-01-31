@@ -77,38 +77,49 @@ fn main() -> Result<()> {
     let mut app = unsafe { App::create(&window)? };
 
 unsafe {
-    // 1) Map the GPU memory (whatever Vulkan or other API call).
     let mapped_ptr = app.device.map_memory(
         app.data.shader_buffers_memory[0],
         0,
-        1024, // or the actual size you need
+        1024,
         vk::MemoryMapFlags::empty(),
     )?;
     
-    // 2) Cast the start of that mapped region to our "header" type
     let sbo_header_ptr = mapped_ptr as *mut SphereShaderBufferObject;
     
-    // 3) Write the header data (e.g. set count)
-    (*sbo_header_ptr).count = 3;
+    (*sbo_header_ptr).count = 4;
     
     // 4) Compute where the spheres should begin in that same buffer
     //    We rely on #[repr(C)] to ensure the header is at offset 0.
     //    The spheres start at the offset right after the header.
     let spheres_offset = std::mem::size_of::<SphereShaderBufferObject>();
     let spheres_ptr = (mapped_ptr as *mut u8).add(spheres_offset) as *mut Sphere;
-    
-    // 5) Write the actual spheres. We said count=3, so let’s write 3 of them:
+
     *spheres_ptr.add(0) = Sphere {
-        center: AlignedVec3(Vec3 { x: 0.0, y: 0.0, z: 5.0 }),
+        center: AlignedVec3::new(3.0, 0.5, 5.0),
         radius: 1.5,
+        emissive: false,
+        color: AlignedVec3::new(0.99, 0.43, 0.33),
     };
+
     *spheres_ptr.add(1) = Sphere {
-        center: AlignedVec3(Vec3 { x: 1.1, y: 1.0, z: 3.0 }),
-        radius: 0.25,
+        center: AlignedVec3::new(0.0, 0.0, 5.0),
+        radius: 1.0,
+        emissive: false,
+        color: AlignedVec3::new(0.48, 0.62, 0.89),
     };
+
     *spheres_ptr.add(2) = Sphere {
-        center: AlignedVec3(Vec3 { x: 0.0, y: -107.0, z: 0.0 }),
-        radius: 100.0,
+        center: AlignedVec3::new(0.0, -100.0, 5.0),
+        radius: 99.0,
+        emissive: false,
+        color: AlignedVec3::new(0.89, 0.7, 0.48),
+    };
+
+    *spheres_ptr.add(3) = Sphere {
+        center: AlignedVec3::new(-500.0, 200.0, 700.0),
+        radius: 200.0,
+        emissive: true,
+        color: AlignedVec3::new(1., 0.99, 0.9),
     };
 
     app.device.unmap_memory(app.data.shader_buffers_memory[0]);
@@ -286,12 +297,25 @@ impl App {
 
         proj[1][1] *= -1.0;
 
+
+
+
         let origin = Vec3::new(0., 0., 0.);
 
+        let ratio = self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32;
+        let (u, v) = if ratio > 1. {
+            (ratio, 1.0f32)
+        } else {
+            (1., 1./ratio)
+        };
+        let size = 2.0f32;
+
+
         let ubo = UniformBufferObject {
-            width: self.data.swapchain_extent.width,
-            height: self.data.swapchain_extent.height,
-            focal_length: -1.5,
+            resolution: Vec2::new(self.data.swapchain_extent.width as f32, self.data.swapchain_extent.height as f32),
+            view_port_uv: Vec2::new(u, v) * size,
+            focal_length: 1.5,
+            time: self.frame as u32,
             origin,
         };
 
@@ -1301,9 +1325,10 @@ impl SwapchainSupport {
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 struct UniformBufferObject {
-    width: u32,
-    height: u32,
+    resolution: Vec2,
+    view_port_uv: Vec2,
     focal_length: f32,
+    time: u32,
     origin: Vec3,
 }
 
@@ -1322,6 +1347,8 @@ impl AlignedVec3 {
 #[repr(align(16))]
 struct Sphere {
     radius: f32,
+    emissive: bool,
+    color: AlignedVec3,
     center: AlignedVec3,
 }
 
