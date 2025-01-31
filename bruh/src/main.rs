@@ -85,54 +85,54 @@ fn main() -> Result<()> {
 
     let mut app = unsafe { App::create(&window)? };
 
-unsafe {
-    let mapped_ptr = app.device.map_memory(
-        app.data.shader_buffers_memory[0],
-        0,
-        1024,
-        vk::MemoryMapFlags::empty(),
-    )?;
-    
-    let sbo_header_ptr = mapped_ptr as *mut SphereShaderBufferObject;
-    
-    (*sbo_header_ptr).count = 4;
-    
-    // 4) Compute where the spheres should begin in that same buffer
-    //    We rely on #[repr(C)] to ensure the header is at offset 0.
-    //    The spheres start at the offset right after the header.
-    let spheres_offset = std::mem::size_of::<SphereShaderBufferObject>();
-    let spheres_ptr = (mapped_ptr as *mut u8).add(spheres_offset) as *mut Sphere;
+    unsafe {
+        let mapped_ptr = app.device.map_memory(
+            app.data.shader_buffer_memory,
+            0,
+            1024,
+            vk::MemoryMapFlags::empty(),
+        )?;
+        
+        let sbo_header_ptr = mapped_ptr as *mut SphereShaderBufferObject;
+        
+        (*sbo_header_ptr).count = 4;
+        
+        // 4) Compute where the spheres should begin in that same buffer
+        //    We rely on #[repr(C)] to ensure the header is at offset 0.
+        //    The spheres start at the offset right after the header.
+        let spheres_offset = std::mem::size_of::<SphereShaderBufferObject>();
+        let spheres_ptr = (mapped_ptr as *mut u8).add(spheres_offset) as *mut Sphere;
 
-    *spheres_ptr.add(0) = Sphere {
-        center: AlignedVec3::new(3.0, 0.5, 5.0),
-        radius: 1.5,
-        emissive: false,
-        color: AlignedVec3::new(0.99, 0.43, 0.33),
-    };
+        *spheres_ptr.add(0) = Sphere {
+            center: AlignedVec3::new(3.0, 0.5, 5.0),
+            radius: 1.5,
+            emissive: false,
+            color: AlignedVec3::new(0.99, 0.43, 0.33),
+        };
 
-    *spheres_ptr.add(1) = Sphere {
-        center: AlignedVec3::new(0.0, 0.0, 5.0),
-        radius: 1.0,
-        emissive: false,
-        color: AlignedVec3::new(0.48, 0.62, 0.89),
-    };
+        *spheres_ptr.add(1) = Sphere {
+            center: AlignedVec3::new(0.0, 0.0, 5.0),
+            radius: 1.0,
+            emissive: false,
+            color: AlignedVec3::new(0.48, 0.62, 0.89),
+        };
 
-    *spheres_ptr.add(2) = Sphere {
-        center: AlignedVec3::new(0.0, -100.0, 5.0),
-        radius: 99.0,
-        emissive: false,
-        color: AlignedVec3::new(0.89, 0.7, 0.48),
-    };
+        *spheres_ptr.add(2) = Sphere {
+            center: AlignedVec3::new(0.0, -100.0, 5.0),
+            radius: 99.0,
+            emissive: false,
+            color: AlignedVec3::new(0.89, 0.7, 0.48),
+        };
 
-    *spheres_ptr.add(3) = Sphere {
-        center: AlignedVec3::new(-500.0, 200.0, 700.0),
-        radius: 200.0,
-        emissive: true,
-        color: AlignedVec3::new(1., 0.99, 0.9),
-    };
+        *spheres_ptr.add(3) = Sphere {
+            center: AlignedVec3::new(-500.0, 200.0, 700.0),
+            radius: 200.0,
+            emissive: true,
+            color: AlignedVec3::new(1., 0.99, 0.9),
+        };
 
-    app.device.unmap_memory(app.data.shader_buffers_memory[0]);
-}
+        app.device.unmap_memory(app.data.shader_buffer_memory);
+    }
 
 
     let mut minimized = false;
@@ -166,6 +166,48 @@ unsafe {
     })?;
 
     Ok(())
+}
+
+/// The Vulkan handles and associated properties used by our Vulkan app.
+#[derive(Clone, Debug, Default)]
+struct AppData {
+    messenger: vk::DebugUtilsMessengerEXT,
+    swapchain: vk::SwapchainKHR,
+    swapchain_extent: vk::Extent2D,
+    render_pass: vk::RenderPass,
+    present_queue: vk::Queue,
+    graphics_queue: vk::Queue,
+    pipeline: vk::Pipeline,
+    pipeline_layout: vk::PipelineLayout,
+
+    // there is one of these per concurrenlty rendered image
+    descriptor_sets: Vec<vk::DescriptorSet>,
+    command_buffers: Vec<vk::CommandBuffer>,
+    framebuffers: Vec<vk::Framebuffer>,
+    image_available_semaphores: Vec<vk::Semaphore>,
+    render_finished_semaphores: Vec<vk::Semaphore>,
+    in_flight_fences: Vec<vk::Fence>,
+
+    uniform_buffers_memory: Vec<vk::DeviceMemory>,
+    shader_buffer_memory: vk::DeviceMemory,
+
+    // Surface
+    surface: vk::SurfaceKHR,
+    // Physical Device / Logical Device
+    physical_device: vk::PhysicalDevice,
+    // Swapchain
+    swapchain_format: vk::Format,
+    swapchain_images: Vec<vk::Image>,
+    swapchain_image_views: Vec<vk::ImageView>,
+    // Pipeline
+    descriptor_set_layout: vk::DescriptorSetLayout,
+    // Command Pool
+    command_pool: vk::CommandPool,
+    // Buffers
+    uniform_buffers: Vec<vk::Buffer>,
+    shader_buffer: vk::Buffer,
+    // Descriptors
+    descriptor_pool: vk::DescriptorPool,
 }
 
 /// Our Vulkan app.
@@ -236,12 +278,12 @@ impl App {
             Err(e) => return Err(anyhow!(e)),
         };
 
-        let image_in_flight = self.data.images_in_flight[image_index];
-        if !image_in_flight.is_null() {
-            self.device.wait_for_fences(&[image_in_flight], true, u64::MAX)?;
-        }
+        // let image_in_flight = self.data.images_in_flight[image_index];
+        // if !image_in_flight.is_null() {
+        //     self.device.wait_for_fences(&[image_in_flight], true, u64::MAX)?;
+        // }
 
-        self.data.images_in_flight[image_index] = in_flight_fence;
+        // self.data.images_in_flight[image_index] = in_flight_fence;
 
         self.update_uniform_buffer(image_index)?;
 
@@ -358,7 +400,7 @@ impl App {
         create_descriptor_pool(&self.device, &mut self.data)?;
         create_descriptor_sets(&self.device, &mut self.data)?;
         create_command_buffers(&self.device, &mut self.data)?;
-        self.data.images_in_flight.resize(self.data.swapchain_images.len(), vk::Fence::null());
+        // self.data.images_in_flight.resize(self.data.swapchain_images.len(), vk::Fence::null());
         Ok(())
     }
 
@@ -374,8 +416,8 @@ impl App {
         self.data.image_available_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
         // self.device.free_memory(self.data.vertex_buffer_memory, None);
         // self.device.destroy_buffer(self.data.vertex_buffer, None);
-        self.data.shader_buffers_memory.iter().for_each(|m| self.device.free_memory(*m, None));
-        self.data.shader_buffers.iter().for_each(|b| self.device.destroy_buffer(*b, None));
+        self.device.free_memory(self.data.shader_buffer_memory, None);
+        self.device.destroy_buffer(self.data.shader_buffer, None);
         self.device.destroy_command_pool(self.data.command_pool, None);
         self.device.destroy_descriptor_set_layout(self.data.descriptor_set_layout, None);
         self.device.destroy_device(None);
@@ -404,50 +446,6 @@ impl App {
     }
 }
 
-/// The Vulkan handles and associated properties used by our Vulkan app.
-#[derive(Clone, Debug, Default)]
-struct AppData {
-    // Debug
-    messenger: vk::DebugUtilsMessengerEXT,
-    // Surface
-    surface: vk::SurfaceKHR,
-    // Physical Device / Logical Device
-    physical_device: vk::PhysicalDevice,
-    graphics_queue: vk::Queue,
-    present_queue: vk::Queue,
-    // Swapchain
-    swapchain_format: vk::Format,
-    swapchain_extent: vk::Extent2D,
-    swapchain: vk::SwapchainKHR,
-    swapchain_images: Vec<vk::Image>,
-    swapchain_image_views: Vec<vk::ImageView>,
-    // Pipeline
-    render_pass: vk::RenderPass,
-    descriptor_set_layout: vk::DescriptorSetLayout,
-    pipeline_layout: vk::PipelineLayout,
-    pipeline: vk::Pipeline,
-    // Framebuffers
-    framebuffers: Vec<vk::Framebuffer>,
-    // Command Pool
-    command_pool: vk::CommandPool,
-    // Buffers
-    vertex_buffer: vk::Buffer,
-    vertex_buffer_memory: vk::DeviceMemory,
-    uniform_buffers: Vec<vk::Buffer>,
-    shader_buffers: Vec<vk::Buffer>,
-    uniform_buffers_memory: Vec<vk::DeviceMemory>,
-    shader_buffers_memory: Vec<vk::DeviceMemory>,
-    // Descriptors
-    descriptor_pool: vk::DescriptorPool,
-    descriptor_sets: Vec<vk::DescriptorSet>,
-    // Command Buffers
-    command_buffers: Vec<vk::CommandBuffer>,
-    // Sync Objects
-    image_available_semaphores: Vec<vk::Semaphore>,
-    render_finished_semaphores: Vec<vk::Semaphore>,
-    in_flight_fences: Vec<vk::Fence>,
-    images_in_flight: Vec<vk::Fence>,
-}
 
 #[derive(Copy, Clone, Debug)]
 struct QueueFamilyIndices {

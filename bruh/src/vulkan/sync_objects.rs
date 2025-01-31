@@ -17,7 +17,7 @@ pub unsafe fn create_sync_objects(device: &Device, data: &mut AppData) -> Result
         data.in_flight_fences.push(device.create_fence(&fence_info, None)?);
     }
 
-    data.images_in_flight = data.swapchain_images.iter().map(|_| vk::Fence::null()).collect();
+    // data.images_in_flight = data.swapchain_images.iter().map(|_| vk::Fence::null()).collect();
 
     Ok(())
 }
