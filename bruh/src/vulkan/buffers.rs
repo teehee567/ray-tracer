@@ -23,7 +23,7 @@ pub unsafe fn create_uniform_buffer(instance: &Instance, device: &Device, data: 
 }
 
 pub unsafe fn create_shader_buffers(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
-    let size: vk::DeviceSize = 2048;
+    let size: vk::DeviceSize = 4096;
 
     let (shader_buffer, shader_buffer_memory) = create_buffer(
         instance,
