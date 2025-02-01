@@ -4,6 +4,31 @@ use vulkanalia::{bytecode::Bytecode, prelude::v1_0::*};
 use crate::AppData;
 use anyhow::Result;
 
+pub unsafe fn create_compute_pipeline(device: &Device, data: &mut AppData) -> Result<()> {
+    let binding = [data.descriptor_set_layout];
+    let pipeline_layout_info = vk::PipelineLayoutCreateInfo::builder()
+        .set_layouts(&binding);
+    data.compute_pipeline_layout = device.create_pipeline_layout(&pipeline_layout_info, None)?;
+
+    let compute_shader_src = include_bytes!("../../shaders/main.comp.spv");
+    let compute_shader = create_shader_module(device, compute_shader_src)?;
+
+    let compute_shader_stage_info = vk::PipelineShaderStageCreateInfo::builder()
+        .stage(vk::ShaderStageFlags::COMPUTE)
+        .module(compute_shader)
+        .name(b"main\0");
+
+    let pipeline_info = vk::ComputePipelineCreateInfo::builder()
+        .layout(data.compute_pipeline_layout)
+        .stage(compute_shader_stage_info);
+
+    data.compute_pipeline = device.create_compute_pipelines(vk::PipelineCache::null(), &[pipeline_info], None)?.0[0];
+
+    device.destroy_shader_module(compute_shader, None);
+
+    Ok(())
+}
+
 pub unsafe fn create_render_pass(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
     // Attachments
 
@@ -53,143 +78,124 @@ pub unsafe fn create_render_pass(instance: &Instance, device: &Device, data: &mu
     Ok(())
 }
 
-pub unsafe fn create_descriptor_set_layout(device: &Device, data: &mut AppData) -> Result<()> {
-    let ubo_binding = vk::DescriptorSetLayoutBinding::builder()
-        .binding(0)
-        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-        .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::FRAGMENT);
 
-    let sbo_binding = vk::DescriptorSetLayoutBinding::builder()
-        .binding(1)
-        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-        .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::FRAGMENT);
 
-    let bindings = &[ubo_binding, sbo_binding];
-    let info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(bindings);
+// pub unsafe fn create_pipeline(device: &Device, data: &mut AppData) -> Result<()> {
+//     // Stages
 
-    data.descriptor_set_layout = device.create_descriptor_set_layout(&info, None)?;
+//     let vert = include_bytes!("../../shaders/main.vert.spv");
+//     let frag = include_bytes!("../../shaders/main.frag.spv");
 
-    Ok(())
-}
+//     let vert_shader_module = create_shader_module(device, &vert[..])?;
+//     let frag_shader_module = create_shader_module(device, &frag[..])?;
 
-pub unsafe fn create_pipeline(device: &Device, data: &mut AppData) -> Result<()> {
-    // Stages
+//     let vert_stage = vk::PipelineShaderStageCreateInfo::builder()
+//         .stage(vk::ShaderStageFlags::VERTEX)
+//         .module(vert_shader_module)
+//         .name(b"main\0");
 
-    let vert = include_bytes!("../../shaders/main.vert.spv");
-    let frag = include_bytes!("../../shaders/main.frag.spv");
+//     let frag_stage = vk::PipelineShaderStageCreateInfo::builder()
+//         .stage(vk::ShaderStageFlags::FRAGMENT)
+//         .module(frag_shader_module)
+//         .name(b"main\0");
 
-    let vert_shader_module = create_shader_module(device, &vert[..])?;
-    let frag_shader_module = create_shader_module(device, &frag[..])?;
+//     // Vertex Input State
 
-    let vert_stage = vk::PipelineShaderStageCreateInfo::builder()
-        .stage(vk::ShaderStageFlags::VERTEX)
-        .module(vert_shader_module)
-        .name(b"main\0");
+//     // let binding_descriptions = &[Vertex::binding_description()];
+//     // let attribute_descriptions = Vertex::attribute_descriptions();
+//     let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::builder();
+//         // .vertex_binding_descriptions(binding_descriptions)
+//         // .vertex_attribute_descriptions(&attribute_descriptions);
 
-    let frag_stage = vk::PipelineShaderStageCreateInfo::builder()
-        .stage(vk::ShaderStageFlags::FRAGMENT)
-        .module(frag_shader_module)
-        .name(b"main\0");
+//     // Input Assembly State
 
-    // Vertex Input State
+//     let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo::builder()
+//         .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
+//         .primitive_restart_enable(false);
 
-    // let binding_descriptions = &[Vertex::binding_description()];
-    // let attribute_descriptions = Vertex::attribute_descriptions();
-    let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::builder();
-        // .vertex_binding_descriptions(binding_descriptions)
-        // .vertex_attribute_descriptions(&attribute_descriptions);
+//     // Viewport State
 
-    // Input Assembly State
+//     let viewport = vk::Viewport::builder()
+//         .x(0.0)
+//         .y(0.0)
+//         .width(data.swapchain_extent.width as f32)
+//         .height(data.swapchain_extent.height as f32)
+//         .min_depth(0.0)
+//         .max_depth(1.0);
 
-    let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo::builder()
-        .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-        .primitive_restart_enable(false);
+//     let scissor = vk::Rect2D::builder()
+//         .offset(vk::Offset2D { x: 0, y: 0 })
+//         .extent(data.swapchain_extent);
 
-    // Viewport State
+//     let viewports = &[viewport];
+//     let scissors = &[scissor];
+//     let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
+//         .viewports(viewports)
+//         .scissors(scissors);
 
-    let viewport = vk::Viewport::builder()
-        .x(0.0)
-        .y(0.0)
-        .width(data.swapchain_extent.width as f32)
-        .height(data.swapchain_extent.height as f32)
-        .min_depth(0.0)
-        .max_depth(1.0);
+//     // Rasterization State
 
-    let scissor = vk::Rect2D::builder()
-        .offset(vk::Offset2D { x: 0, y: 0 })
-        .extent(data.swapchain_extent);
+//     let rasterization_state = vk::PipelineRasterizationStateCreateInfo::builder()
+//         .depth_clamp_enable(false)
+//         .rasterizer_discard_enable(false)
+//         .polygon_mode(vk::PolygonMode::FILL)
+//         .line_width(1.0)
+//         .cull_mode(vk::CullModeFlags::BACK)
+//         .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+//         .depth_bias_enable(false);
 
-    let viewports = &[viewport];
-    let scissors = &[scissor];
-    let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
-        .viewports(viewports)
-        .scissors(scissors);
+//     // Multisample State
 
-    // Rasterization State
+//     let multisample_state = vk::PipelineMultisampleStateCreateInfo::builder()
+//         .sample_shading_enable(false)
+//         .rasterization_samples(vk::SampleCountFlags::_1);
 
-    let rasterization_state = vk::PipelineRasterizationStateCreateInfo::builder()
-        .depth_clamp_enable(false)
-        .rasterizer_discard_enable(false)
-        .polygon_mode(vk::PolygonMode::FILL)
-        .line_width(1.0)
-        .cull_mode(vk::CullModeFlags::BACK)
-        .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
-        .depth_bias_enable(false);
+//     // Color Blend State
 
-    // Multisample State
+//     let attachment = vk::PipelineColorBlendAttachmentState::builder()
+//         .color_write_mask(vk::ColorComponentFlags::all())
+//         .blend_enable(false);
 
-    let multisample_state = vk::PipelineMultisampleStateCreateInfo::builder()
-        .sample_shading_enable(false)
-        .rasterization_samples(vk::SampleCountFlags::_1);
+//     let attachments = &[attachment];
+//     let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
+//         .logic_op_enable(false)
+//         .logic_op(vk::LogicOp::COPY)
+//         .attachments(attachments)
+//         .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
-    // Color Blend State
+//     // Layout
 
-    let attachment = vk::PipelineColorBlendAttachmentState::builder()
-        .color_write_mask(vk::ColorComponentFlags::all())
-        .blend_enable(false);
+//     let set_layouts = &[data.descriptor_set_layout];
+//     let layout_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(set_layouts);
 
-    let attachments = &[attachment];
-    let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
-        .logic_op_enable(false)
-        .logic_op(vk::LogicOp::COPY)
-        .attachments(attachments)
-        .blend_constants([0.0, 0.0, 0.0, 0.0]);
+//     data.pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
 
-    // Layout
+//     // Create
 
-    let set_layouts = &[data.descriptor_set_layout];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(set_layouts);
+//     let stages = &[vert_stage, frag_stage];
+//     let info = vk::GraphicsPipelineCreateInfo::builder()
+//         .stages(stages)
+//         .vertex_input_state(&vertex_input_state)
+//         .input_assembly_state(&input_assembly_state)
+//         .viewport_state(&viewport_state)
+//         .rasterization_state(&rasterization_state)
+//         .multisample_state(&multisample_state)
+//         .color_blend_state(&color_blend_state)
+//         .layout(data.pipeline_layout)
+//         .render_pass(data.render_pass)
+//         .subpass(0);
 
-    data.pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
+//     data.pipeline = device
+//         .create_graphics_pipelines(vk::PipelineCache::null(), &[info], None)?
+//         .0[0];
 
-    // Create
+//     // Cleanup
 
-    let stages = &[vert_stage, frag_stage];
-    let info = vk::GraphicsPipelineCreateInfo::builder()
-        .stages(stages)
-        .vertex_input_state(&vertex_input_state)
-        .input_assembly_state(&input_assembly_state)
-        .viewport_state(&viewport_state)
-        .rasterization_state(&rasterization_state)
-        .multisample_state(&multisample_state)
-        .color_blend_state(&color_blend_state)
-        .layout(data.pipeline_layout)
-        .render_pass(data.render_pass)
-        .subpass(0);
+//     device.destroy_shader_module(vert_shader_module, None);
+//     device.destroy_shader_module(frag_shader_module, None);
 
-    data.pipeline = device
-        .create_graphics_pipelines(vk::PipelineCache::null(), &[info], None)?
-        .0[0];
-
-    // Cleanup
-
-    device.destroy_shader_module(vert_shader_module, None);
-    device.destroy_shader_module(frag_shader_module, None);
-
-    Ok(())
-}
+//     Ok(())
+// }
 
 pub unsafe fn create_shader_module(device: &Device, bytecode: &[u8]) -> Result<vk::ShaderModule> {
     let bytecode = Bytecode::new(bytecode).unwrap();

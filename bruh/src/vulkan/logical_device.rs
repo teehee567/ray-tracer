@@ -44,7 +44,8 @@ pub unsafe fn create_logical_device(entry: &Entry, instance: &Instance, data: &m
 
     // Features
 
-    let features = vk::PhysicalDeviceFeatures::builder();
+    let features = vk::PhysicalDeviceFeatures::builder()
+        .shader_storage_image_write_without_format(true);
 
     // Create
 
@@ -58,7 +59,7 @@ pub unsafe fn create_logical_device(entry: &Entry, instance: &Instance, data: &m
 
     // Queues
 
-    data.graphics_queue = device.get_device_queue(indices.graphics, 0);
+    data.compute_queue = device.get_device_queue(indices.compute, 0);
     data.present_queue = device.get_device_queue(indices.present, 0);
 
     Ok(device)

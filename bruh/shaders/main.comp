@@ -1,12 +1,11 @@
 #version 460
 
-//#define ANTIALIAS_SAMPLES // must be combined with 4 samples
-#define SAMPLES 1200
-#define BOUNCES 8
+#define SAMPLES 32
+#define BOUNCES 6
 
 #extension GL_GOOGLE_include_directive : enable
-#include "imports/ray.frag"
-#include "imports/util.frag"
+#include "imports/ray.comp"
+#include "imports/random.comp"
 
 struct HitRecord {
     bool did_hit;
@@ -20,12 +19,21 @@ struct HitRecord {
 struct Sphere {
     float radius;
     bool emissive;
+    //float reflectance;
     vec3 color;
     vec3 center;
 };
 
+//struct Material {
+//    vec3 base_color;
+//    vec3 emissive_color;
+//    float reflectance;
+    
+//}
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
 // todo: look into inline uniform buffers for speed and small data
-// todo: alternatively, look into push constants
 layout(std140, set = 0, binding = 0) uniform CameraUBO {
     vec2 resolution; // todo: move this to (unsinged) integers
     vec2 uv;
@@ -39,7 +47,10 @@ layout(set = 0, binding = 1) readonly buffer SphereSBO {
     Sphere spheres[];
 } sphere_sbo;
 
-layout(location = 0) out vec4 out_color;
+layout(set = 0, binding = 2, rgba8) uniform image2D accumulator; 
+layout(set = 0, binding = 3) writeonly uniform image2D framebuffer; 
+
+//layout(location = 0) out vec4 out_color;
 
 uint seed;
 
@@ -124,8 +135,7 @@ HitRecord hit_sphere(Sphere sphere, Ray ray) {
 
 vec3 background_color(Ray ray) {
     float blend = 0.5 * ray.direction.y + 0.5;
-    //return mix(vec3(0.6, 0.8, 1.0), vec3(0.2, 0.4, 1.0), blend);
-    return vec3(0);
+    return mix(vec3(0.6, 0.8, 1.0), vec3(0.2, 0.4, 1.0), blend);
 }
 
 
@@ -173,15 +183,26 @@ vec3 ray_color(Ray ray) {
 }
 
 void main() {
-    // initialize random seed
-    seed = uint(gl_FragCoord.x + camera.resolution.x * gl_FragCoord.y + camera.frame * 4321u);
+    ivec2 coordinates = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(framebuffer);
 
-    vec3 color = vec3(0);
-    for (int i = 0; i < SAMPLES; i++) {
-        Ray ray = calculate_ray(gl_FragCoord.xy);
+    if (coordinates.x < size.x && coordinates.y < size.y) {
+        //seed = uint(coordinates.x + camera.resolution.x * coordinates.y);
+        seed = uint(coordinates.x + camera.resolution.x * coordinates.y + camera.frame * coordinates.y);
 
-        color += ray_color(ray) / float(SAMPLES);
+        vec3 color = vec3(0);
+        for (int i = 0; i < SAMPLES; i++) {
+            Ray ray = calculate_ray(coordinates.xy);
+
+            color += ray_color(ray) / float(SAMPLES);
+        }
+
+        vec4 old_pixel = imageLoad(accumulator, coordinates);
+        vec4 new_pixel = (old_pixel * (camera.frame) + vec4(color, 1.0)) / (camera.frame + 1);
+
+        imageStore(accumulator, coordinates, new_pixel);
+        imageStore(framebuffer, coordinates, new_pixel);
+
+        //imageStore(framebuffer, coordinates, vec4(color, 1));
     }
-
-    out_color = vec4(color, 1.0);
 }
