@@ -13,12 +13,14 @@ use std::ptr::copy_nonoverlapping as memcpy;
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
-use cgmath::{vec2, vec3};
+use cgmath::{vec2, vec3, EuclideanSpace, Matrix3, Matrix4, Point3, Vector3, Vector4};
 use vulkan::accumulate_image::{create_image, transition_image_layout};
-use vulkan::buffers::{create_shader_buffers, create_uniform_buffer, };
+use vulkan::buffers::{create_shader_buffers, create_uniform_buffer};
 use vulkan::command_buffers::{create_command_buffer, run_command_buffer};
 use vulkan::command_pool::create_command_pool;
-use vulkan::descriptors::{create_compute_descriptor_set_layout, create_descriptor_pool, create_descriptor_sets};
+use vulkan::descriptors::{
+    create_compute_descriptor_set_layout, create_descriptor_pool, create_descriptor_sets,
+};
 use vulkan::instance::create_instance;
 use vulkan::logical_device::create_logical_device;
 use vulkan::physical_device::{pick_physical_device, SuitabilityError};
@@ -44,29 +46,18 @@ mod vulkan;
 /// Whether the validation layers should be enabled.
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 /// The name of the validation layers.
-const VALIDATION_LAYER: vk::ExtensionName = vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
+const VALIDATION_LAYER: vk::ExtensionName =
+    vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
 
 /// The required device extensions.
 const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[vk::KHR_SWAPCHAIN_EXTENSION.name];
 /// The Vulkan SDK version that started requiring the portability subset extension for macOS.
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 
-/// The maximum number of frames that can be processed concurrently.
-
 type Vec2 = cgmath::Vector2<f32>;
 type Vec3 = cgmath::Vector3<f32>;
 type Vec4 = cgmath::Vector4<f32>;
 type Mat4 = cgmath::Matrix4<f32>;
-
-#[rustfmt::skip]
-static VERTICES: [Vertex; 4] = [
-    Vertex::new(vec2(-0.5, -0.5), vec3(1.0, 0.0, 0.0)),
-    Vertex::new(vec2(0.5, -0.5), vec3(0.0, 1.0, 0.0)),
-    Vertex::new(vec2(0.5, 0.5), vec3(0.0, 0.0, 1.0)),
-    Vertex::new(vec2(-0.5, 0.5), vec3(1.0, 1.0, 1.0)),
-];
-
-const INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
 
 const TILE_SIZE: u32 = 16;
 
@@ -94,7 +85,7 @@ fn main() -> Result<()> {
             vk::MemoryMapFlags::empty(),
         )?;
         let sbo_header_ptr = mapped_ptr as *mut SphereShaderBufferObject;
-        (*sbo_header_ptr).count = 4;
+        (*sbo_header_ptr).count = 7;
         let spheres_offset = std::mem::size_of::<SphereShaderBufferObject>();
         let spheres_ptr = (mapped_ptr as *mut u8).add(spheres_offset) as *mut Sphere;
 
@@ -104,8 +95,10 @@ fn main() -> Result<()> {
             material: Material {
                 emissive_strength: AlignedVec4::default(),
                 base_colour: AlignedVec4::new(1., 0.1, 0.1, 0.),
-                reflectivity: Alignedf32(1.),
+                reflectivity: Alignedf32(0.),
                 roughness: Alignedf32(0.003),
+                ior: 0.,
+                is_glass: false,
             }
         };
 
@@ -114,9 +107,11 @@ fn main() -> Result<()> {
             radius: 1.0,
             material: Material {
                 emissive_strength: AlignedVec4::default(),
-                base_colour: AlignedVec4::new(0.48, 0.62, 0.89, 1.),
-                reflectivity: Alignedf32(1.),
-                roughness: Alignedf32(0.1),
+                base_colour: AlignedVec4::new(1., 1., 1., 1.),
+                reflectivity: Alignedf32(0.),
+                roughness: Alignedf32(0.),
+                ior: 1.45,
+                is_glass: true,
             }
         };
 
@@ -128,6 +123,8 @@ fn main() -> Result<()> {
                 base_colour: AlignedVec4::new(0.5, 0.5, 0.5, 1.),
                 reflectivity: Alignedf32(0.),
                 roughness: Alignedf32(0.),
+                ior: 0.,
+                is_glass: false,
             }
         };
 
@@ -135,10 +132,51 @@ fn main() -> Result<()> {
             center: AlignedVec3::new(-500.0, 200.0, 700.0),
             radius: 200.0,
             material: Material {
-                emissive_strength: AlignedVec4::new(10., 10., 10., 1.),
+                emissive_strength: AlignedVec4::new(15., 15., 15., 1.),
                 base_colour: AlignedVec4::new(1., 0.99, 0.9, 1.),
                 reflectivity: Alignedf32(0.),
                 roughness: Alignedf32(0.),
+                ior: 0.,
+                is_glass: false,
+            }
+        };
+
+        *spheres_ptr.add(4) = Sphere {
+            center: AlignedVec3::new(0.8, -1., 2.0),
+            radius: 0.3,
+            material: Material {
+                emissive_strength: AlignedVec4::default(),
+                base_colour: AlignedVec4::new(0.1, 0.99, 0.6, 1.),
+                reflectivity: Alignedf32(1.),
+                roughness: Alignedf32(0.25),
+                ior: 0.,
+                is_glass: false,
+            }
+        };
+
+        *spheres_ptr.add(5) = Sphere {
+            center: AlignedVec3::new(-1.6, -0.8, 3.0),
+            radius: 0.3,
+            material: Material {
+                emissive_strength: AlignedVec4::default(),
+                base_colour: AlignedVec4::new(0., 0.5, 0.9, 1.),
+                reflectivity: Alignedf32(1.),
+                roughness: Alignedf32(0.),
+                ior: 0.,
+                is_glass: false,
+            }
+        };
+
+        *spheres_ptr.add(6) = Sphere {
+            center: AlignedVec3::new(-3., -0.4, 7.0),
+            radius: 0.8,
+            material: Material {
+                emissive_strength: AlignedVec4::new(2., 1.5, 0., 1.),
+                base_colour: AlignedVec4::new(1., 0.99, 0.9, 1.),
+                reflectivity: Alignedf32(0.),
+                roughness: Alignedf32(0.),
+                ior: 0.,
+                is_glass: false,
             }
         };
 
@@ -226,7 +264,6 @@ struct AppData {
     accumulator_image: vk::Image,
     // sampler
     sampler: vk::Sampler,
-
 }
 
 /// Our Vulkan app.
@@ -281,8 +318,8 @@ impl App {
 
     /// Renders a frame for our Vulkan app.
     unsafe fn render(&mut self, window: &Window) -> Result<()> {
-
-        self.device.wait_for_fences(&[self.data.compute_in_flight_fences], true, u64::MAX)?;
+        self.device
+            .wait_for_fences(&[self.data.compute_in_flight_fences], true, u64::MAX)?;
 
         let result = self.device.acquire_next_image_khr(
             self.data.swapchain,
@@ -304,13 +341,16 @@ impl App {
 
         // self.data.images_in_flight[image_index] = in_flight_fence;
 
-
-        self.device.reset_command_buffer(self.data.compute_command_buffer, vk::CommandBufferResetFlags::empty())?;
+        self.device.reset_command_buffer(
+            self.data.compute_command_buffer,
+            vk::CommandBufferResetFlags::empty(),
+        )?;
 
         self.update_uniform_buffer(image_index)?;
         run_command_buffer(&self.device, &mut self.data, image_index)?;
 
-        self.device.reset_fences(&[self.data.compute_in_flight_fences])?;
+        self.device
+            .reset_fences(&[self.data.compute_in_flight_fences])?;
 
         let image_semaphores = &[self.data.image_available_semaphores];
         let compute_command_buffer = &[self.data.compute_command_buffer];
@@ -321,8 +361,11 @@ impl App {
             .command_buffers(compute_command_buffer)
             .signal_semaphores(finish_semaphores);
 
-        self.device
-            .queue_submit(self.data.compute_queue, &[submit_info], self.data.compute_in_flight_fences)?;
+        self.device.queue_submit(
+            self.data.compute_queue,
+            &[submit_info],
+            self.data.compute_in_flight_fences,
+        )?;
 
         let swapchains = &[self.data.swapchain];
         let image_indices = &[image_index as u32];
@@ -332,8 +375,11 @@ impl App {
             .swapchains(swapchains)
             .image_indices(image_indices);
 
-        let result = self.device.queue_present_khr(self.data.present_queue, &present_info);
-        let changed = result == Ok(vk::SuccessCode::SUBOPTIMAL_KHR) || result == Err(vk::ErrorCode::OUT_OF_DATE_KHR);
+        let result = self
+            .device
+            .queue_present_khr(self.data.present_queue, &present_info);
+        let changed = result == Ok(vk::SuccessCode::SUBOPTIMAL_KHR)
+            || result == Err(vk::ErrorCode::OUT_OF_DATE_KHR);
         if self.resized || changed {
             self.resized = false;
             // self.recreate_swapchain(window)?;
@@ -371,23 +417,39 @@ impl App {
 
         // proj[1][1] *= -1.0;
 
-        let origin = Vec3::new(0., 0., 0.);
+        let origin = Vec4::new(0., 0., 0., 0.);
 
-        let ratio = self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32;
+        let ratio =
+            self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32;
         let (u, v) = if ratio > 1. {
             (ratio, 1.0f32)
         } else {
-            (1., 1./ratio)
+            (1., 1. / ratio)
         };
         let size = 2.0f32;
 
-
         let ubo = UniformBufferObject {
-            resolution: Vec2::new(self.data.swapchain_extent.width as f32, self.data.swapchain_extent.height as f32),
+            resolution: Vec2::new(
+                self.data.swapchain_extent.width as f32,
+                self.data.swapchain_extent.height as f32,
+            ),
             view_port_uv: Vec2::new(u, v) * size,
-            focal_length: 1.5,
-            time: self.frame as u32,
-            origin,
+            focal_length: Alignedf32(1.5),
+            time: Alignedu32(self.frame as u32),
+            origin: AlignedVec4(origin),
+            rotation: {
+                let m = Matrix4::look_at_rh(
+                    Point3::from_vec(origin.truncate()),
+                    Point3::new(0.0, 0.0, -5.0),
+                    Vector3::unit_y(),
+                );
+                AlignedMat4(Matrix4::from_cols(
+                    m.x.truncate().extend(0.0),
+                    m.y.truncate().extend(0.0),
+                    m.z.truncate().extend(0.0),
+                    Vector4::new(0.0, 0.0, 0.0, 1.0),
+                ))
+            },
         };
 
         // Copy
@@ -463,7 +525,6 @@ impl App {
     }
 }
 
-
 #[derive(Copy, Clone, Debug)]
 struct QueueFamilyIndices {
     graphics: u32,
@@ -472,13 +533,21 @@ struct QueueFamilyIndices {
 }
 
 impl QueueFamilyIndices {
-    unsafe fn get(instance: &Instance, data: &AppData, physical_device: vk::PhysicalDevice) -> Result<Self> {
+    unsafe fn get(
+        instance: &Instance,
+        data: &AppData,
+        physical_device: vk::PhysicalDevice,
+    ) -> Result<Self> {
         let properties = instance.get_physical_device_queue_family_properties(physical_device);
         if let Some(index) = properties.iter().enumerate().find_map(|(i, p)| {
             if p.queue_flags.contains(vk::QueueFlags::GRAPHICS)
                 && p.queue_flags.contains(vk::QueueFlags::COMPUTE)
                 && instance
-                    .get_physical_device_surface_support_khr(physical_device, i as u32, data.surface)
+                    .get_physical_device_surface_support_khr(
+                        physical_device,
+                        i as u32,
+                        data.surface,
+                    )
                     .unwrap_or(false)
             {
                 Some(i as u32)
@@ -492,7 +561,9 @@ impl QueueFamilyIndices {
                 present: index,
             })
         } else {
-            Err(anyhow!(SuitabilityError("Missing required queue families.")))
+            Err(anyhow!(SuitabilityError(
+                "Missing required queue families."
+            )))
         }
     }
 }
@@ -505,11 +576,18 @@ struct SwapchainSupport {
 }
 
 impl SwapchainSupport {
-    unsafe fn get(instance: &Instance, data: &AppData, physical_device: vk::PhysicalDevice) -> Result<Self> {
+    unsafe fn get(
+        instance: &Instance,
+        data: &AppData,
+        physical_device: vk::PhysicalDevice,
+    ) -> Result<Self> {
         Ok(Self {
-            capabilities: instance.get_physical_device_surface_capabilities_khr(physical_device, data.surface)?,
-            formats: instance.get_physical_device_surface_formats_khr(physical_device, data.surface)?,
-            present_modes: instance.get_physical_device_surface_present_modes_khr(physical_device, data.surface)?,
+            capabilities: instance
+                .get_physical_device_surface_capabilities_khr(physical_device, data.surface)?,
+            formats: instance
+                .get_physical_device_surface_formats_khr(physical_device, data.surface)?,
+            present_modes: instance
+                .get_physical_device_surface_present_modes_khr(physical_device, data.surface)?,
         })
     }
 }
@@ -519,9 +597,10 @@ impl SwapchainSupport {
 struct UniformBufferObject {
     resolution: Vec2,
     view_port_uv: Vec2,
-    focal_length: f32,
-    time: u32,
-    origin: Vec3,
+    focal_length: Alignedf32,
+    time: Alignedu32,
+    origin: AlignedVec4,
+    rotation: AlignedMat4,
 }
 
 #[repr(C)]
@@ -533,6 +612,11 @@ impl AlignedVec3 {
         Self(Vec3::new(x, y, z))
     }
 }
+
+#[repr(C)]
+#[repr(align(16))]
+#[derive(Copy, Clone, Debug)]
+pub struct AlignedMat4(pub Mat4);
 
 #[repr(C)]
 #[repr(align(16))]
@@ -554,12 +638,19 @@ impl AlignedVec4 {
 pub struct Alignedf32(pub f32);
 
 #[repr(C)]
+#[repr(align(4))]
+#[derive(Copy, Clone, Debug)]
+pub struct Alignedu32(pub u32);
+
+#[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct Material {
     base_colour: AlignedVec4,
     emissive_strength: AlignedVec4,
     reflectivity: Alignedf32,
     roughness: Alignedf32,
+    is_glass: bool,
+    ior: f32,
 }
 
 #[repr(C)]
