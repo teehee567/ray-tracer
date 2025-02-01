@@ -55,6 +55,7 @@ const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 
 type Vec2 = cgmath::Vector2<f32>;
 type Vec3 = cgmath::Vector3<f32>;
+type Vec4 = cgmath::Vector4<f32>;
 type Mat4 = cgmath::Matrix4<f32>;
 
 #[rustfmt::skip]
@@ -92,43 +93,53 @@ fn main() -> Result<()> {
             1024,
             vk::MemoryMapFlags::empty(),
         )?;
-        
         let sbo_header_ptr = mapped_ptr as *mut SphereShaderBufferObject;
-        
         (*sbo_header_ptr).count = 4;
-        
-        // 4) Compute where the spheres should begin in that same buffer
-        //    We rely on #[repr(C)] to ensure the header is at offset 0.
-        //    The spheres start at the offset right after the header.
         let spheres_offset = std::mem::size_of::<SphereShaderBufferObject>();
         let spheres_ptr = (mapped_ptr as *mut u8).add(spheres_offset) as *mut Sphere;
 
         *spheres_ptr.add(0) = Sphere {
             center: AlignedVec3::new(3.0, 0.5, 5.0),
             radius: 1.5,
-            emissive: false,
-            color: AlignedVec3::new(0.99, 0.43, 0.33),
+            material: Material {
+                emissive_strength: AlignedVec4::default(),
+                base_colour: AlignedVec4::new(1., 0.1, 0.1, 0.),
+                reflectivity: Alignedf32(1.),
+                roughness: Alignedf32(0.003),
+            }
         };
 
         *spheres_ptr.add(1) = Sphere {
             center: AlignedVec3::new(0.0, 0.0, 5.0),
             radius: 1.0,
-            emissive: false,
-            color: AlignedVec3::new(0.48, 0.62, 0.89),
+            material: Material {
+                emissive_strength: AlignedVec4::default(),
+                base_colour: AlignedVec4::new(0.48, 0.62, 0.89, 1.),
+                reflectivity: Alignedf32(1.),
+                roughness: Alignedf32(0.1),
+            }
         };
 
         *spheres_ptr.add(2) = Sphere {
             center: AlignedVec3::new(0.0, -100.0, 5.0),
             radius: 99.0,
-            emissive: false,
-            color: AlignedVec3::new(0.89, 0.7, 0.48),
+            material: Material {
+                emissive_strength: AlignedVec4::default(),
+                base_colour: AlignedVec4::new(0.5, 0.5, 0.5, 1.),
+                reflectivity: Alignedf32(0.),
+                roughness: Alignedf32(0.),
+            }
         };
 
         *spheres_ptr.add(3) = Sphere {
             center: AlignedVec3::new(-500.0, 200.0, 700.0),
             radius: 200.0,
-            emissive: true,
-            color: AlignedVec3::new(1., 0.99, 0.9),
+            material: Material {
+                emissive_strength: AlignedVec4::new(10., 10., 10., 1.),
+                base_colour: AlignedVec4::new(1., 0.99, 0.9, 1.),
+                reflectivity: Alignedf32(0.),
+                roughness: Alignedf32(0.),
+            }
         };
 
         app.device.unmap_memory(app.data.compute_ssbo_buffer_memory);
@@ -524,13 +535,40 @@ impl AlignedVec3 {
 }
 
 #[repr(C)]
+#[repr(align(16))]
+#[derive(Copy, Clone, Debug)]
+pub struct AlignedVec4(pub Vec4);
+impl AlignedVec4 {
+    pub fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
+        Self(Vec4::new(x, y, z, w))
+    }
+
+    pub fn default() -> Self {
+        Self(Vec4::new(0., 0., 0., 0.))
+    }
+}
+
+#[repr(C)]
+#[repr(align(4))]
+#[derive(Copy, Clone, Debug)]
+pub struct Alignedf32(pub f32);
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct Material {
+    base_colour: AlignedVec4,
+    emissive_strength: AlignedVec4,
+    reflectivity: Alignedf32,
+    roughness: Alignedf32,
+}
+
+#[repr(C)]
 #[derive(Copy, Clone, Debug)]
 #[repr(align(16))]
 struct Sphere {
     radius: f32,
-    emissive: bool,
-    color: AlignedVec3,
     center: AlignedVec3,
+    material: Material,
 }
 
 #[repr(C)]
