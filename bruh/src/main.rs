@@ -8,6 +8,7 @@
     clippy::unnecessary_wraps
 )]
 
+use std::collections::VecDeque;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
 use std::time::Instant;
@@ -22,6 +23,7 @@ use vulkan::command_pool::create_command_pool;
 use vulkan::descriptors::{
     create_compute_descriptor_set_layout, create_descriptor_pool, create_descriptor_sets,
 };
+use vulkan::fps_counter::FPSCounter;
 use vulkan::instance::create_instance;
 use vulkan::logical_device::create_logical_device;
 use vulkan::physical_device::{pick_physical_device, SuitabilityError};
@@ -79,32 +81,32 @@ fn main() -> Result<()> {
 
 
 
-        info_buffer.append(3);
+        info_buffer.append(4);
         info_buffer.pad(12);
 
         // Ground Sphere
         info_buffer.append(Mesh {
-            is_sphere: 1,
-            sphere_radius: 99.,
+            // is_sphere: 0,
             triangle_count: 0,
             offset: triangle_buffer.get_relative_offset::<Triangle>()? as u32,
             material: Material {
-                base_colour: AlignedVec4::new(0.5, 0.5, 0.5, 1.),
+                base_colour: AlignedVec4::new(0.7, 0.7, 0.7, 1.),
                 emissive_strength: AlignedVec4::default(),
-                reflectivity: Alignedf32(1.),
-                roughness: Alignedf32(1.),
-                is_glass: AlignedBool(false),
+                reflectivity: Alignedf32(0.),
+                roughness: Alignedf32(0.),
+                is_glass: Alignedu32(0),
                 ior: Alignedf32(0.),
-                shade_smooth: AlignedBool(false),
+                shade_smooth: Alignedu32(0),
             },
         });
 
-        triangle_buffer.append_with_size(Vec3::new(0., -100., 5.), size_of::<Triangle>());
+        triangle_buffer.append_with_size(Sphere {
+            center: AlignedVec3::new(0., -100., 5.),
+            radius: Alignedf32(99.),
+        }, size_of::<Triangle>());
 
         // Sun Sphere
         info_buffer.append(Mesh {
-            is_sphere: 1,
-            sphere_radius: 200.,
             triangle_count: 0,
             offset: triangle_buffer.get_relative_offset::<Triangle>()? as u32,
             material: Material {
@@ -112,165 +114,97 @@ fn main() -> Result<()> {
                 emissive_strength: AlignedVec4::new(15., 15., 15., 1.),
                 reflectivity: Alignedf32(0.),
                 roughness: Alignedf32(0.),
-                is_glass: AlignedBool(false),
+                is_glass: Alignedu32(0),
                 ior: Alignedf32(0.),
-                shade_smooth: AlignedBool(false),
+                shade_smooth: Alignedu32(0),
             },
         });
-        triangle_buffer.append_with_size(Vec3::new(-500., 200., 700.), size_of::<Triangle>());
+        triangle_buffer.append_with_size(Sphere {
+            center: AlignedVec3::new(-500., 200., 700.),
+            radius: Alignedf32(200.),
+        }, size_of::<Triangle>());
+
+        let cube_tris: [i32; 108] = [
+            0,0,0, 1,1,0, 1,0,0,
+            0,0,0, 0,1,0, 1,1,0,
+            1,0,0, 1,1,1, 1,0,1,
+            1,0,0, 1,1,0, 1,1,1,
+            1,0,1, 0,1,1, 1,1,1,
+            1,0,1, 0,0,1, 0,1,1,
+            0,0,1, 0,1,0, 0,0,0,
+            0,0,1, 0,1,1, 0,1,0,
+            0,1,0, 1,1,1, 1,1,0,
+            0,1,0, 0,1,1, 1,1,1,
+            0,0,0, 1,0,1, 1,0,0,
+            0,0,0, 0,0,1, 1,0,1,
+        ];
 
 
         // Test Triangle
         info_buffer.append(Mesh {
-            is_sphere: 0,
-            sphere_radius: 0.,
-            triangle_count: 1,
+            triangle_count: 12,
             offset: triangle_buffer.get_relative_offset::<Triangle>()? as u32,
             material: Material {
-                base_colour: AlignedVec4::new(1., 1., 1., 1.),
+                base_colour: AlignedVec4::new(0.7, 0.1, 0.1, 1.),
                 emissive_strength: AlignedVec4::default(),
                 reflectivity: Alignedf32(0.),
                 roughness: Alignedf32(0.),
-                is_glass: AlignedBool(true),
+                is_glass: Alignedu32(1),
                 ior: Alignedf32(1.4),
-                shade_smooth: AlignedBool(false),
+                shade_smooth: Alignedu32(0),
             },
         });
 
-        triangle_buffer.append(Triangle {
-            vertices: [
-                AlignedVec4::new(-3.0, 0.4, 7.0, 0.),
-                AlignedVec4::new(2.0, -0.4, 3.0, 0.),
-                AlignedVec4::new(2.0, 1.0, 5.0, 0.),
-            ],
-            normals: [
-                AlignedVec4::default(),
-                AlignedVec4::default(),
-                AlignedVec4::default(),
-            ]
+        for triangle in 0..12 {
+            triangle_buffer.append(Triangle {
+                vertices: [
+                    AlignedVec4::new(-1.0 + (cube_tris[triangle * 9 + 0] as f32) * 2.0, -1.0 + (cube_tris[triangle * 9 + 1] as f32) * 2.0, 3.0 + (cube_tris[triangle * 9 + 2] as f32) * 2.0, 0.0),
+                    AlignedVec4::new(-1.0 + (cube_tris[triangle * 9 + 3] as f32) * 2.0, -1.0 + (cube_tris[triangle * 9 + 4] as f32) * 2.0, 3.0 + (cube_tris[triangle * 9 + 5] as f32) * 2.0, 0.0),
+                    AlignedVec4::new(-1.0 + (cube_tris[triangle * 9 + 6] as f32) * 2.0, -1.0 + (cube_tris[triangle * 9 + 7] as f32) * 2.0, 3.0 + (cube_tris[triangle * 9 + 8] as f32) * 2.0, 0.0),
+                ],
+                normals: [AlignedVec4::default(); 3],
+            });
+        }
+
+        info_buffer.append(Mesh {
+            triangle_count: 12,
+            offset: triangle_buffer.get_relative_offset::<Triangle>()? as u32,
+            material: Material {
+                base_colour: AlignedVec4::new(0.2, 0.3, 0.8, 1.),
+                emissive_strength: AlignedVec4::default(),
+                reflectivity: Alignedf32(0.),
+                roughness: Alignedf32(0.),
+                is_glass: Alignedu32(0),
+                ior: Alignedf32(1.4),
+                shade_smooth: Alignedu32(0),
+            },
         });
+
+        for triangle in 0..12 {
+            triangle_buffer.append(Triangle {
+                vertices: [
+                    AlignedVec4::new(1.0 + (cube_tris[triangle * 9 + 0] as f32) / 2.0, -1.0 + (cube_tris[triangle * 9 + 1] as f32) / 2.0, 2.0 + (cube_tris[triangle * 9 + 2] as f32) / 2.0, 0.0),
+                    AlignedVec4::new(1.0 + (cube_tris[triangle * 9 + 3] as f32) / 2.0, -1.0 + (cube_tris[triangle * 9 + 4] as f32) / 2.0, 2.0 + (cube_tris[triangle * 9 + 5] as f32) / 2.0, 0.0),
+                    AlignedVec4::new(1.0 + (cube_tris[triangle * 9 + 6] as f32) / 2.0, -1.0 + (cube_tris[triangle * 9 + 7] as f32) / 2.0, 2.0 + (cube_tris[triangle * 9 + 8] as f32) / 2.0, 0.0),
+                ],
+                normals: [AlignedVec4::default(); 3],
+            });
+        }
 
         create_descriptor_sets(&app.device, &mut app.data, info_buffer.get_offset() as u32)?;
 
         let mapped_ptr = app.device.map_memory(
             app.data.compute_ssbo_buffer_memory,
             0,
-            1024,
+            4096,
             vk::MemoryMapFlags::empty(),
         )?;
 
         info_buffer.write(mapped_ptr);
         triangle_buffer.write(mapped_ptr.byte_add( info_buffer.get_offset()));
 
-        // let sbo_header_ptr = mapped_ptr as *mut Mesh;
-        // (*sbo_header_ptr).count = 7;
-        // let spheres_offset = std::mem::size_of::<SphereShaderBufferObject>();
-        // let spheres_ptr = (mapped_ptr as *mut u8).add(spheres_offset) as *mut Sphere;
+        println!("Total memory: {}", info_buffer.get_offset() + triangle_buffer.get_offset());
 
-
-        // let mapped_ptr = app.device.map_memory(
-        //     app.data.compute_ssbo_buffer_memory,
-        //     0,
-        //     1024,
-        //     vk::MemoryMapFlags::empty(),
-        // )?;
-        // let sbo_header_ptr = mapped_ptr as *mut SphereShaderBufferObject;
-        // (*sbo_header_ptr).count = 7;
-        // let spheres_offset = std::mem::size_of::<SphereShaderBufferObject>();
-        // let spheres_ptr = (mapped_ptr as *mut u8).add(spheres_offset) as *mut Sphere;
-
-        // *spheres_ptr.add(0) = Sphere {
-        //     center: AlignedVec3::new(3.0, 0.5, 5.0),
-        //     radius: 1.5,
-        //     material: Material {
-        //         emissive_strength: AlignedVec4::default(),
-        //         base_colour: AlignedVec4::new(1., 0.1, 0.1, 0.),
-        //         reflectivity: Alignedf32(0.),
-        //         roughness: Alignedf32(0.003),
-        //         is_glass: AlignedBool(false),
-        //         ior: Alignedf32(0.),
-        //     }
-        // };
-
-        // *spheres_ptr.add(1) = Sphere {
-        //     center: AlignedVec3::new(0.0, 0.0, 5.0),
-        //     radius: 1.0,
-        //     material: Material {
-        //         emissive_strength: AlignedVec4::default(),
-        //         base_colour: AlignedVec4::new(1., 1., 1., 1.),
-        //         reflectivity: Alignedf32(0.),
-        //         roughness: Alignedf32(0.),
-        //         is_glass: AlignedBool(true),
-        //         ior: Alignedf32(1.45),
-        //     }
-        // };
-
-        // *spheres_ptr.add(2) = Sphere {
-        //     center: AlignedVec3::new(0.0, -100.0, 5.0),
-        //     radius: 99.0,
-        //     material: Material {
-        //         emissive_strength: AlignedVec4::default(),
-        //         base_colour: AlignedVec4::new(0.5, 0.5, 0.5, 1.),
-        //         reflectivity: Alignedf32(0.0),
-        //         roughness: Alignedf32(0.),
-        //         is_glass: AlignedBool(false),
-        //         ior: Alignedf32(0.),
-        //     }
-        // };
-
-        // *spheres_ptr.add(3) = Sphere {
-        //     center: AlignedVec3::new(-500.0, 200.0, 700.0),
-        //     radius: 200.0,
-        //     material: Material {
-        //         emissive_strength: AlignedVec4::new(15., 15., 15., 1.),
-        //         base_colour: AlignedVec4::new(1., 0.99, 0.9, 1.),
-        //         reflectivity: Alignedf32(0.),
-        //         roughness: Alignedf32(0.),
-        //         is_glass: AlignedBool(false),
-        //         ior: Alignedf32(0.),
-        //     }
-        // };
-
-        // *spheres_ptr.add(4) = Sphere {
-        //     center: AlignedVec3::new(0.8, -1., 2.0),
-        //     radius: 0.3,
-        //     material: Material {
-        //         emissive_strength: AlignedVec4::default(),
-        //         base_colour: AlignedVec4::new(0.1, 0.99, 0.6, 1.),
-        //         reflectivity: Alignedf32(1.),
-        //         roughness: Alignedf32(0.25),
-        //         is_glass: AlignedBool(false),
-        //         ior: Alignedf32(0.),
-        //     }
-        // };
-
-        // *spheres_ptr.add(5) = Sphere {
-        //     center: AlignedVec3::new(-1.6, -0.8, 3.0),
-        //     radius: 0.3,
-        //     material: Material {
-        //         emissive_strength: AlignedVec4::default(),
-        //         base_colour: AlignedVec4::new(0., 0.5, 0.9, 1.),
-        //         reflectivity: Alignedf32(1.),
-        //         roughness: Alignedf32(0.),
-        //         is_glass: AlignedBool(false),
-        //         ior: Alignedf32(0.),
-        //     }
-        // };
-
-        // *spheres_ptr.add(6) = Sphere {
-        //     center: AlignedVec3::new(-3., -0.4, 7.0),
-        //     radius: 0.8,
-        //     material: Material {
-        //         emissive_strength: AlignedVec4::new(2., 1.5, 0., 1.),
-        //         base_colour: AlignedVec4::new(1., 0.99, 0.9, 1.),
-        //         reflectivity: Alignedf32(0.),
-        //         roughness: Alignedf32(0.),
-        //         is_glass: AlignedBool(false),
-        //         ior: Alignedf32(0.),
-        //     }
-        // };
-
-        // app.device.unmap_memory(app.data.compute_ssbo_buffer_memory);
     }
 
 
@@ -367,6 +301,7 @@ struct App {
     frame: usize,
     resized: bool,
     start: Instant,
+    fps_counter: FPSCounter,
 }
 
 impl App {
@@ -404,11 +339,15 @@ impl App {
             frame: 0,
             resized: false,
             start: Instant::now(),
+            fps_counter: FPSCounter::new(15)
         })
     }
 
     /// Renders a frame for our Vulkan app.
     unsafe fn render(&mut self, window: &Window) -> Result<()> {
+        self.fps_counter.update();
+        // self.fps_counter.print();
+
         self.device
             .wait_for_fences(&[self.data.compute_in_flight_fences], true, u64::MAX)?;
 
@@ -486,28 +425,7 @@ impl App {
     /// Updates the uniform buffer object for our Vulkan app.
     unsafe fn update_uniform_buffer(&self, image_index: usize) -> Result<()> {
         // MVP
-
         let time = (self.start.elapsed()).as_secs_f32();
-        // println!("{}", time);
-
-        // let model = Mat4::from_axis_angle(vec3(0.0, 0.0, 1.0), Deg(90.0) * time);
-        // let model = Mat4::from_axis_angle(Vec3::new(-0.5, 2., 1.).normalize(), Deg(time * 90.));
-
-        // let view = Mat4::look_at_rh(
-        //     point3::<f32>(2.0, 2.0, 2.0),
-        //     point3::<f32>(0.0, 0.0, 0.0),
-        //     vec3(0.0, 0.0, 1.0),
-        // );
-
-        // let mut proj = cgmath::perspective(
-        //     Deg(45.0),
-        //     self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32,
-        //     0.1,
-        //     10.0,
-        // );
-
-        // proj[1][1] *= -1.0;
-
         let origin = Vec4::new(0., 0., 0., 0.);
 
         let ratio =
@@ -742,9 +660,9 @@ pub struct Material {
     emissive_strength: AlignedVec4,
     reflectivity: Alignedf32,
     roughness: Alignedf32,
-    is_glass: AlignedBool,
+    is_glass: Alignedu32,
     ior: Alignedf32,
-    shade_smooth: AlignedBool,
+    shade_smooth: Alignedu32,
 }
 
 
@@ -758,9 +676,14 @@ struct Triangle {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
+struct Sphere {
+    center: AlignedVec3,
+    radius: Alignedf32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
 struct Mesh {
-    is_sphere: i32,
-    sphere_radius: f32,
     triangle_count: u32,
     offset: u32,
     material: Material

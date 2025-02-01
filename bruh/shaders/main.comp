@@ -1,8 +1,8 @@
 #version 460
 
 #define SAMPLES 32
-#define BOUNCES 32
-#define EPSILON 0.00001
+#define BOUNCES 8
+#define EPSILON 0.0001
 
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_scalar_block_layout : enable
@@ -44,8 +44,6 @@ struct Material {
  * material             is the material of the object;
  */
 struct Mesh {
-    int is_sphere;
-    float sphere_radius;
     uint triangle_count;
     uint offset;
     Material material;
@@ -101,7 +99,7 @@ layout(std430, set = 0, binding = 2) readonly buffer TriangleBuffer {
 } tri_buf;
 
 layout(set = 0, binding = 3, rgba8) uniform image2D accumulator; 
-layout(set = 0, binding = 4) writeonly uniform image2D framebuffer; 
+layout(set = 0, binding = 4) writeonly uniform image2D framebuffer;
 
 
 Ray generate_ray(vec2 frag_coord) {
@@ -131,98 +129,6 @@ Ray generate_ray(vec2 frag_coord) {
     ray.origin = ray_origin;
     return ray;
 }
-
-// Möller-Trumbore intersection algorithm (https://www.graphics.cornell.edu/pubs/1997/MT97.pdf)
-HitRecord hit_triangle(Triangle triangle, Ray ray) {
-    // todo: explain this better by summarizing the proof
-    
-    HitRecord hit;
-    
-    // Get the normal vector of the plane the triangle lays on.
-    // This is done by performing a cross product between two of the sides of the triangle.
-    vec3 ab = triangle.vertices[1] - triangle.vertices[0];
-    vec3 ac = triangle.vertices[2] - triangle.vertices[0];
-    vec3 plane_normal = normalize(cross(ab, ac));
-
-    // Check if the ray is parallel to the plane, in which case no hit can ahppen
-    if (abs(dot(plane_normal, ray.direction)) < EPSILON) {
-        hit.did_hit = false;
-        return hit;
-    }
-
-    vec3 o = ray.origin - triangle.vertices[0];
-    vec3 p = cross(ray.direction, ac);
-    vec3 q = cross(o, ab);
-
-    // Calculate the [t, u, v] vector where t is the parameter for the ray equation
-    // and u, v are two of the barycentric coordinates for the triangle
-    vec3 tuv = 1 / dot(p, ab) * vec3(dot(q, ac), dot(p, o), dot(q, ray.direction));
-
-    // Check bounds of the barycentric coordinates.
-    hit.did_hit = !any(lessThan(tuv.yz, vec2(0, 0))) && !any(greaterThan(tuv.yz, vec2(1, 1)));
-
-    float w = 1 - tuv.y - tuv.z;
-    hit.did_hit = hit.did_hit && (w > 0.0 && w < 1.0);
-    hit.did_hit = hit.did_hit && tuv.x > EPSILON;
-
-    hit.t = tuv.x;
-    hit.pos = ray_at(ray, tuv.x);
-
-    // todo: interpolate across vector normals for smooth shading
-    hit.normal = dot(ray.direction, plane_normal) > 0 ? -plane_normal : plane_normal;
-
-    return hit;
-}
-
-HitRecord hit_sphere(float radius, vec3 center, Ray ray) {
-    /*  line (parametric):
-            x = orig_x + dir_x * t
-            y = orig_y + dir_y * t   ->   p = orig + dir * t
-            z = orig_z + dir_z * t
-
-        sphere formula:
-            (x - c_x)^2 + (y - c_y)^2 + (z - c_z)^2 <= radius^2    ->    (p - center).(p - center) <= radius^2
-
-        now we plug the line in the sphere formula and solve for t:
-            (orig + dir * t - center).(orig + dir * t - center) <= r^2
-
-            [...]
-
-            a = dir.dir
-            b = 2dir.(orig - center)
-            c = (center - orig).(center - orig) - radius^2
-
-        referring to the quadratic formula, we can tell whether the ray intersected the sphere by the discriminant:
-            hit_sphere = (b^2 - 4ac >= 0)
-    */
-    vec3 delta = (center - ray.origin);
-
-    // todo: apply the simpler formula for b multiples of 2
-    float a = dot(ray.direction, ray.direction);
-    float b = -2 * dot(ray.direction, delta);
-    float c = dot(delta, delta) - radius * radius;
-
-    float discriminant = b*b - 4*a*c;
-    float t = (-b - sqrt(discriminant)) / 2*a;
-
-    HitRecord hit;
-
-    hit.t = t;
-    hit.pos = ray_at(ray, t);
-    hit.normal = normalize(hit.pos - center);
-
-    bool did_not_hit = discriminant < 0;
-    bool is_behind = t < EPSILON; // avoid floating point precisions
-
-    // todo: could be solved by avoiding intersections with the same sphere and type twice in a row (eg. cannot enter sphere 2 twice in a row)
-    // Done by keeping track of last enter / exit (+2 if enter, -2 if exit), and checking if it's the same.
-    // Entering / exiting could be stored in the hit to avoid computing it in the glass shader (and other ones)
-
-    hit.did_hit = !(did_not_hit || is_behind);
-
-    return hit;
-}
-
 
 vec3 background_color(Ray ray) {
     float blend = 0.5 * ray.direction.y + 0.5;
@@ -281,6 +187,10 @@ void glass_shader(inout Ray ray, HitRecord hit) {
 void weighted_lambertian_shader(inout Ray ray, HitRecord hit) {
     ray.origin = hit.pos;
 
+    // flip the normal if we are hitting from the "inside"
+    if (dot(ray.direction, hit.normal) > 0.0)
+        hit.normal *= -1;
+
     // reflectivity: randomly pick between reflecting and opaque based how reflective the material is
     if (pgc_random(seed) < hit.material.reflectivity) {
         ray.direction = ray.direction - 2 * dot(hit.normal, ray.direction) * hit.normal;
@@ -289,6 +199,164 @@ void weighted_lambertian_shader(inout Ray ray, HitRecord hit) {
         ray.direction = normalize(hit.normal + random_unit_vector(seed)); // https://www.iue.tuwien.ac.at/phd/ertl/node100.html
     }
 }
+
+// Möller-Trumbore intersection algorithm (https://www.graphics.cornell.edu/pubs/1997/MT97.pdf)
+HitRecord hit_triangle(Triangle triangle, Ray ray) {
+    // todo: explain this better by summarizing the proof
+    
+    HitRecord hit;
+    
+    // Get the normal vector of the plane the triangle lays on.
+    // This is done by performing a cross product between two of the sides of the triangle.
+    vec3 ab = triangle.vertices[1] - triangle.vertices[0];
+    vec3 ac = triangle.vertices[2] - triangle.vertices[0];
+    vec3 plane_normal = normalize(cross(ab, ac));
+
+    // Check if the ray is parallel to the plane, in which case no hit can ahppen
+    if (abs(dot(plane_normal, ray.direction)) < EPSILON) {
+        hit.did_hit = false;
+        return hit;
+    }
+
+    vec3 o = ray.origin - triangle.vertices[0];
+    vec3 p = cross(ray.direction, ac);
+    vec3 q = cross(o, ab);
+
+    // Calculate the [t, u, v] vector where t is the parameter for the ray equation
+    // and u, v are two of the barycentric coordinates for the triangle
+    vec3 tuv = 1 / dot(p, ab) * vec3(dot(q, ac), dot(p, o), dot(q, ray.direction));
+
+    // Check bounds of the barycentric coordinates.
+    hit.did_hit = !any(lessThan(tuv.yz, vec2(0, 0))) && !any(greaterThan(tuv.yz, vec2(1, 1)));
+
+    float w = 1 - tuv.y - tuv.z;
+    hit.did_hit = hit.did_hit && (w > 0.0 && w < 1.0);
+    hit.did_hit = hit.did_hit && tuv.x > EPSILON;
+
+    hit.t = tuv.x;
+    hit.pos = ray_at(ray, tuv.x);
+
+    // todo: interpolate across vector normals for smooth shading
+    hit.normal = plane_normal;
+
+    return hit;
+}
+
+HitRecord hit_sphere(vec3 center, float radius, Ray ray) {
+    /*  line (parametric):
+            x = orig_x + dir_x * t
+            y = orig_y + dir_y * t   ->   p = orig + dir * t
+            z = orig_z + dir_z * t
+
+        sphere formula:
+            (x - c_x)^2 + (y - c_y)^2 + (z - c_z)^2 <= radius^2    ->    (p - center).(p - center) <= radius^2
+
+        now we plug the line in the sphere formula and solve for t:
+            (orig + dir * t - center).(orig + dir * t - center) <= r^2
+
+            [...]
+
+            a = dir.dir
+            b = 2dir.(orig - center)
+            c = (center - orig).(center - orig) - radius^2
+
+        referring to the quadratic formula, we can tell whether the ray intersected the sphere by the discriminant:
+            hit_sphere = (b^2 - 4ac >= 0)
+    */
+    vec3 delta = (center - ray.origin);
+
+    // todo: apply the simpler formula for b multiples of 2
+    float a = dot(ray.direction, ray.direction);
+    float b = -2 * dot(ray.direction, delta);
+    float c = dot(delta, delta) - radius * radius;
+
+    float discriminant = b*b - 4*a*c;
+    float t = (-b - sqrt(discriminant)) / 2*a;
+
+    HitRecord hit;
+
+    hit.t = t;
+    hit.pos = ray_at(ray, t);
+    hit.normal = normalize(hit.pos - center);
+
+    bool did_not_hit = discriminant < 0;
+    bool is_behind = t < EPSILON; // avoid floating point imprecisions
+
+    // todo: could be solved by avoiding intersections with the same sphere and type twice in a row (eg. cannot enter sphere 2 twice in a row)
+    // Done by keeping track of last enter / exit (+2 if enter, -2 if exit), and checking if it's the same.
+    // Entering / exiting could be stored in the hit to avoid computing it in the glass shader (and other ones)
+
+    hit.did_hit = !(did_not_hit || is_behind);
+
+    return hit;
+}
+
+/*
+ * This is a version of hit_meshes where during the search for the closest object
+ * only the index of the found mesh and/or triangle are stored, and one last ray
+ * trace is performed at the end to obtain more details. This avoids a bunch of 
+ * memory writes and yields alone a 20% performance improvement over the older.
+ */
+HitRecord hit_meshes(Ray ray) {
+    float t = 1.0 / 0.0; // infinity
+    uint triIdx = uint(-1);
+    uint meshIdx;
+
+    for (int i = 0; i < mesh_info.mesh_count; i++) {
+        Mesh mesh = mesh_info.meshes[i];
+        HitRecord current_hit;
+
+        // automatically skipped for spheres
+        for (int tri = 0; tri < mesh.triangle_count; tri++) {
+            Triangle triangle = tri_buf.triangles[mesh.offset + tri];
+
+            current_hit = hit_triangle(triangle, ray);
+
+            if (current_hit.did_hit && current_hit.t < t) {
+                t = current_hit.t;
+                meshIdx = i;
+                triIdx = tri;
+            }
+        }
+
+        if (mesh.triangle_count == 0) {
+            vec3 center = tri_buf.triangles[mesh.offset].vertices[0];
+            float radius = tri_buf.triangles[mesh.offset].vertices[1].r;
+
+            current_hit = hit_sphere(center, radius, ray);
+
+            if (current_hit.did_hit && current_hit.t < t) {
+                t = current_hit.t;
+                meshIdx = i;
+                triIdx = uint(-1);
+            }
+        }
+    }
+
+    HitRecord hit;
+    hit.did_hit = false;
+
+    if (t < 1.0 / 0.0) {
+        uint offset = mesh_info.meshes[meshIdx].offset;
+
+        if (triIdx != uint(-1)) {
+            Triangle triangle = tri_buf.triangles[offset + triIdx];
+
+            hit = hit_triangle(triangle, ray);
+            hit.material = mesh_info.meshes[meshIdx].material;
+
+        } else {
+            vec3 center = tri_buf.triangles[offset].vertices[0];
+            float radius = tri_buf.triangles[offset].vertices[1].r;
+
+            hit = hit_sphere(center, radius, ray);
+            hit.material = mesh_info.meshes[meshIdx].material;
+        }
+    }
+
+    return hit;
+}
+
 
 vec3 ray_color(Ray ray) {
     /*  The ray only gets light when it hits something emissive.
@@ -306,51 +374,21 @@ vec3 ray_color(Ray ray) {
     vec3 incoming_light = vec3(0);
 
     for (int bounce = 0; bounce < BOUNCES + 1; bounce++) {
-        HitRecord hit;
-        hit.t = 1.0 / 0.0; // infinity
-        hit.did_hit = false;
-
-        for (int i = 0; i < mesh_info.mesh_count; i++) {
-            Mesh mesh = mesh_info.meshes[i];
-
-            HitRecord current_hit;
-            if (mesh.is_sphere == 1) {
-                vec3 center = tri_buf.triangles[mesh.offset].vertices[0];
-                current_hit = hit_sphere(mesh.sphere_radius, center, ray);
-
-            } else {
-                Triangle triangle = tri_buf.triangles[mesh.offset];
-                current_hit = hit_triangle(triangle, ray);
-            }
-
-            if (current_hit.did_hit && current_hit.t < hit.t) {
-                current_hit.material = mesh.material; 
-                hit = current_hit;
-            }
-        }
-
-        //return hit.normal;
+        HitRecord hit = hit_meshes(ray);
 
         if (hit.did_hit) {
+            Material material = hit.material;
             incoming_light += ray_color * hit.material.emissive_strength.xyz;
 
-            if (hit.material.is_glass) {
+            if (material.is_glass) {
                 glass_shader(ray, hit);
             } else {
                 weighted_lambertian_shader(ray, hit);
             }
 
-            ray_color *= hit.material.base_color.xyz;
+            ray_color *= material.base_color.xyz;
 
-            //return hit.material.emissive_strength.xyz;
-
-        //if (bounce == 1)
-        //    return vec3(1,0,0);
         } else {
-            //if (bounce > 0) {
-            //    // why is nothing arrivbing here at boucne 1???
-            //    return background_color(ray);
-            //}
             incoming_light += background_color(ray) * ray_color;
             break;
         }
