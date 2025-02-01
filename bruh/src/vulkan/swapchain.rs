@@ -1,15 +1,20 @@
 
+use log::info;
 use vulkanalia::{prelude::v1_0::*, vk::KhrSwapchainExtension};
 use winit::window::Window;
 
-use crate::{AppData, QueueFamilyIndices, SwapchainSupport};
-use anyhow::Result;
+use crate::{vulkan::physical_device::SuitabilityError, AppData, QueueFamilyIndices, SwapchainSupport};
+use anyhow::{anyhow, Result};
 
 pub unsafe fn create_swapchain(window: &Window, instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
     // Image
 
     let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
     let support = SwapchainSupport::get(instance, data, data.physical_device)?;
+
+    if !support.capabilities.supported_usage_flags.contains(vk::ImageUsageFlags::SAMPLED.union(vk::ImageUsageFlags::STORAGE)) {
+        return Err(anyhow!(SuitabilityError("Current GPU's swapchain images do not support being rendered to from a compute shader")));
+    }
 
     let surface_format = get_swapchain_surface_format(&support.formats);
     let present_mode = get_swapchain_present_mode(&support.present_modes);
@@ -24,9 +29,14 @@ pub unsafe fn create_swapchain(window: &Window, instance: &Instance, device: &De
     }
 
     let mut queue_family_indices = vec![];
-    let image_sharing_mode = if indices.graphics != indices.present {
+    let image_sharing_mode = if indices.graphics != indices.present
+        && indices.graphics != indices.compute
+        && indices.present != indices.compute
+    {
         queue_family_indices.push(indices.graphics);
         queue_family_indices.push(indices.present);
+        queue_family_indices.push(indices.compute);
+        info!("Queues are split");
         vk::SharingMode::CONCURRENT
     } else {
         vk::SharingMode::EXCLUSIVE
@@ -41,7 +51,7 @@ pub unsafe fn create_swapchain(window: &Window, instance: &Instance, device: &De
         .image_color_space(surface_format.color_space)
         .image_extent(extent)
         .image_array_layers(1)
-        .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+        .image_usage(vk::ImageUsageFlags::STORAGE)
         .image_sharing_mode(image_sharing_mode)
         .queue_family_indices(&queue_family_indices)
         .pre_transform(support.capabilities.current_transform)
@@ -65,7 +75,7 @@ pub fn get_swapchain_surface_format(formats: &[vk::SurfaceFormatKHR]) -> vk::Sur
     formats
         .iter()
         .cloned()
-        .find(|f| f.format == vk::Format::B8G8R8A8_SRGB && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR)
+        .find(|f| f.format == vk::Format::B8G8R8A8_UNORM && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR)
         .unwrap_or_else(|| formats[0])
 }
 

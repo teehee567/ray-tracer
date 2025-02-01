@@ -10,3 +10,5 @@ pub mod pipeline;
 pub mod swapchain;
 pub mod sync_objects;
 pub mod utils;
+pub mod accumulate_image;
+pub mod sampler;

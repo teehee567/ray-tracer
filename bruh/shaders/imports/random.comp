@@ -1,22 +1,9 @@
-float antialias_samples[] = {
-    3.0/8.0, -1.0/8.0,
-    1.0/8.0, 3.0/8.0,
-    -1.0/8.0, -3.0/8.0,
-    -3.0/8.0, 1.0/8.0,
-};
-
-int antialias_state = 0;
-
 float pgc_random(inout uint state) {
-    #ifdef ANTIALIAS_SAMPLES
-       return antialias_samples[antialias_state++ % 8] + 0.5;
-    #else
-        // minimal PCG32 code / (c) 2014 M.E. O'Neill / pcg-random.org
-        // Licensed under Apache License 2.0 (NO WARRANTY, etc. see website)
-        state = state * 747796405u + 2891336453u;
-        uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-        return float(word) / 4294967295.0;
-    #endif
+    // minimal PCG32 code / (c) 2014 M.E. O'Neill / pcg-random.org
+    // Licensed under Apache License 2.0 (NO WARRANTY, etc. see website)
+    state = state * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return float(word) / 4294967295.0;
 }
 
 vec2 random_square_offset(inout uint seed) {
@@ -26,6 +13,7 @@ vec2 random_square_offset(inout uint seed) {
     return vec2(x, y);
 }
 
+// todo: better way to do this?
 vec3 random_unit_vector(inout uint seed) {
     vec3 random;
     do {
