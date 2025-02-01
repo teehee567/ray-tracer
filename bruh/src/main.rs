@@ -13,7 +13,7 @@ use std::ptr::copy_nonoverlapping as memcpy;
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
-use cgmath::{vec2, vec3, EuclideanSpace, Matrix3, Matrix4, Point3, Vector3, Vector4};
+use glam::{Mat4, Vec2, Vec3, Vec4};
 use vulkan::accumulate_image::{create_image, transition_image_layout};
 use vulkan::bufferbuilder::BufferBuilder;
 use vulkan::buffers::{create_shader_buffers, create_uniform_buffer};
@@ -54,11 +54,6 @@ const VALIDATION_LAYER: vk::ExtensionName =
 const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[vk::KHR_SWAPCHAIN_EXTENSION.name];
 /// The Vulkan SDK version that started requiring the portability subset extension for macOS.
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
-
-type Vec2 = cgmath::Vector2<f32>;
-type Vec3 = cgmath::Vector3<f32>;
-type Vec4 = cgmath::Vector4<f32>;
-type Mat4 = cgmath::Matrix4<f32>;
 
 const TILE_SIZE: u32 = 16;
 
@@ -536,10 +531,10 @@ impl App {
             time: Alignedu32(self.frame as u32),
             origin: AlignedVec4(origin),
             rotation: 
-                AlignedMat4(Matrix4::look_at_rh(
-                    Point3::from_vec(origin.truncate()),
-                    Point3::new(0.0, 0.0, -3.5),
-                    Vector3::unit_y(),
+                AlignedMat4(Mat4::look_at_rh(
+                    origin.truncate(),
+                    Vec3::new(0.0, 0.0, -3.5),
+                    Vec3::Y,
                 )),
             };
 
