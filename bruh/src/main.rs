@@ -15,6 +15,7 @@ use std::time::Instant;
 use anyhow::{anyhow, Result};
 use cgmath::{vec2, vec3, EuclideanSpace, Matrix3, Matrix4, Point3, Vector3, Vector4};
 use vulkan::accumulate_image::{create_image, transition_image_layout};
+use vulkan::bufferbuilder::BufferBuilder;
 use vulkan::buffers::{create_shader_buffers, create_uniform_buffer};
 use vulkan::command_buffers::{create_command_buffer, run_command_buffer};
 use vulkan::command_pool::create_command_pool;
@@ -78,109 +79,203 @@ fn main() -> Result<()> {
     let mut app = unsafe { App::create(&window)? };
 
     unsafe {
+        let mut info_buffer = BufferBuilder::new();
+        let mut triangle_buffer = BufferBuilder::new();
+
+
+
+        info_buffer.append(3);
+        info_buffer.pad(12);
+
+        // Ground Sphere
+        info_buffer.append(Mesh {
+            is_sphere: 1,
+            sphere_radius: 99.,
+            triangle_count: 0,
+            offset: triangle_buffer.get_relative_offset::<Triangle>()? as u32,
+            material: Material {
+                base_colour: AlignedVec4::new(0.5, 0.5, 0.5, 1.),
+                emissive_strength: AlignedVec4::default(),
+                reflectivity: Alignedf32(1.),
+                roughness: Alignedf32(1.),
+                is_glass: AlignedBool(false),
+                ior: Alignedf32(0.),
+                shade_smooth: AlignedBool(false),
+            },
+        });
+
+        triangle_buffer.append_with_size(Vec3::new(0., -100., 5.), size_of::<Triangle>());
+
+        // Sun Sphere
+        info_buffer.append(Mesh {
+            is_sphere: 1,
+            sphere_radius: 200.,
+            triangle_count: 0,
+            offset: triangle_buffer.get_relative_offset::<Triangle>()? as u32,
+            material: Material {
+                base_colour: AlignedVec4::default(),
+                emissive_strength: AlignedVec4::new(15., 15., 15., 1.),
+                reflectivity: Alignedf32(0.),
+                roughness: Alignedf32(0.),
+                is_glass: AlignedBool(false),
+                ior: Alignedf32(0.),
+                shade_smooth: AlignedBool(false),
+            },
+        });
+        triangle_buffer.append_with_size(Vec3::new(-500., 200., 700.), size_of::<Triangle>());
+
+
+        // Test Triangle
+        info_buffer.append(Mesh {
+            is_sphere: 0,
+            sphere_radius: 0.,
+            triangle_count: 1,
+            offset: triangle_buffer.get_relative_offset::<Triangle>()? as u32,
+            material: Material {
+                base_colour: AlignedVec4::new(1., 1., 1., 1.),
+                emissive_strength: AlignedVec4::default(),
+                reflectivity: Alignedf32(0.),
+                roughness: Alignedf32(0.),
+                is_glass: AlignedBool(true),
+                ior: Alignedf32(1.4),
+                shade_smooth: AlignedBool(false),
+            },
+        });
+
+        triangle_buffer.append(Triangle {
+            vertices: [
+                AlignedVec4::new(-3.0, 0.4, 7.0, 0.),
+                AlignedVec4::new(2.0, -0.4, 3.0, 0.),
+                AlignedVec4::new(2.0, 1.0, 5.0, 0.),
+            ],
+            normals: [
+                AlignedVec4::default(),
+                AlignedVec4::default(),
+                AlignedVec4::default(),
+            ]
+        });
+
+        create_descriptor_sets(&app.device, &mut app.data, info_buffer.get_offset() as u32)?;
+
         let mapped_ptr = app.device.map_memory(
             app.data.compute_ssbo_buffer_memory,
             0,
             1024,
             vk::MemoryMapFlags::empty(),
         )?;
-        let sbo_header_ptr = mapped_ptr as *mut SphereShaderBufferObject;
-        (*sbo_header_ptr).count = 7;
-        let spheres_offset = std::mem::size_of::<SphereShaderBufferObject>();
-        let spheres_ptr = (mapped_ptr as *mut u8).add(spheres_offset) as *mut Sphere;
 
-        *spheres_ptr.add(0) = Sphere {
-            center: AlignedVec3::new(3.0, 0.5, 5.0),
-            radius: 1.5,
-            material: Material {
-                emissive_strength: AlignedVec4::default(),
-                base_colour: AlignedVec4::new(1., 0.1, 0.1, 0.),
-                reflectivity: Alignedf32(0.),
-                roughness: Alignedf32(0.003),
-                ior: 0.,
-                is_glass: false,
-            }
-        };
+        info_buffer.write(mapped_ptr);
+        triangle_buffer.write(mapped_ptr.byte_add( info_buffer.get_offset()));
 
-        *spheres_ptr.add(1) = Sphere {
-            center: AlignedVec3::new(0.0, 0.0, 5.0),
-            radius: 1.0,
-            material: Material {
-                emissive_strength: AlignedVec4::default(),
-                base_colour: AlignedVec4::new(1., 1., 1., 1.),
-                reflectivity: Alignedf32(0.),
-                roughness: Alignedf32(0.),
-                ior: 1.45,
-                is_glass: true,
-            }
-        };
+        // let sbo_header_ptr = mapped_ptr as *mut Mesh;
+        // (*sbo_header_ptr).count = 7;
+        // let spheres_offset = std::mem::size_of::<SphereShaderBufferObject>();
+        // let spheres_ptr = (mapped_ptr as *mut u8).add(spheres_offset) as *mut Sphere;
 
-        *spheres_ptr.add(2) = Sphere {
-            center: AlignedVec3::new(0.0, -100.0, 5.0),
-            radius: 99.0,
-            material: Material {
-                emissive_strength: AlignedVec4::default(),
-                base_colour: AlignedVec4::new(0.5, 0.5, 0.5, 1.),
-                reflectivity: Alignedf32(0.),
-                roughness: Alignedf32(0.),
-                ior: 0.,
-                is_glass: false,
-            }
-        };
 
-        *spheres_ptr.add(3) = Sphere {
-            center: AlignedVec3::new(-500.0, 200.0, 700.0),
-            radius: 200.0,
-            material: Material {
-                emissive_strength: AlignedVec4::new(15., 15., 15., 1.),
-                base_colour: AlignedVec4::new(1., 0.99, 0.9, 1.),
-                reflectivity: Alignedf32(0.),
-                roughness: Alignedf32(0.),
-                ior: 0.,
-                is_glass: false,
-            }
-        };
+        // let mapped_ptr = app.device.map_memory(
+        //     app.data.compute_ssbo_buffer_memory,
+        //     0,
+        //     1024,
+        //     vk::MemoryMapFlags::empty(),
+        // )?;
+        // let sbo_header_ptr = mapped_ptr as *mut SphereShaderBufferObject;
+        // (*sbo_header_ptr).count = 7;
+        // let spheres_offset = std::mem::size_of::<SphereShaderBufferObject>();
+        // let spheres_ptr = (mapped_ptr as *mut u8).add(spheres_offset) as *mut Sphere;
 
-        *spheres_ptr.add(4) = Sphere {
-            center: AlignedVec3::new(0.8, -1., 2.0),
-            radius: 0.3,
-            material: Material {
-                emissive_strength: AlignedVec4::default(),
-                base_colour: AlignedVec4::new(0.1, 0.99, 0.6, 1.),
-                reflectivity: Alignedf32(1.),
-                roughness: Alignedf32(0.25),
-                ior: 0.,
-                is_glass: false,
-            }
-        };
+        // *spheres_ptr.add(0) = Sphere {
+        //     center: AlignedVec3::new(3.0, 0.5, 5.0),
+        //     radius: 1.5,
+        //     material: Material {
+        //         emissive_strength: AlignedVec4::default(),
+        //         base_colour: AlignedVec4::new(1., 0.1, 0.1, 0.),
+        //         reflectivity: Alignedf32(0.),
+        //         roughness: Alignedf32(0.003),
+        //         is_glass: AlignedBool(false),
+        //         ior: Alignedf32(0.),
+        //     }
+        // };
 
-        *spheres_ptr.add(5) = Sphere {
-            center: AlignedVec3::new(-1.6, -0.8, 3.0),
-            radius: 0.3,
-            material: Material {
-                emissive_strength: AlignedVec4::default(),
-                base_colour: AlignedVec4::new(0., 0.5, 0.9, 1.),
-                reflectivity: Alignedf32(1.),
-                roughness: Alignedf32(0.),
-                ior: 0.,
-                is_glass: false,
-            }
-        };
+        // *spheres_ptr.add(1) = Sphere {
+        //     center: AlignedVec3::new(0.0, 0.0, 5.0),
+        //     radius: 1.0,
+        //     material: Material {
+        //         emissive_strength: AlignedVec4::default(),
+        //         base_colour: AlignedVec4::new(1., 1., 1., 1.),
+        //         reflectivity: Alignedf32(0.),
+        //         roughness: Alignedf32(0.),
+        //         is_glass: AlignedBool(true),
+        //         ior: Alignedf32(1.45),
+        //     }
+        // };
 
-        *spheres_ptr.add(6) = Sphere {
-            center: AlignedVec3::new(-3., -0.4, 7.0),
-            radius: 0.8,
-            material: Material {
-                emissive_strength: AlignedVec4::new(2., 1.5, 0., 1.),
-                base_colour: AlignedVec4::new(1., 0.99, 0.9, 1.),
-                reflectivity: Alignedf32(0.),
-                roughness: Alignedf32(0.),
-                ior: 0.,
-                is_glass: false,
-            }
-        };
+        // *spheres_ptr.add(2) = Sphere {
+        //     center: AlignedVec3::new(0.0, -100.0, 5.0),
+        //     radius: 99.0,
+        //     material: Material {
+        //         emissive_strength: AlignedVec4::default(),
+        //         base_colour: AlignedVec4::new(0.5, 0.5, 0.5, 1.),
+        //         reflectivity: Alignedf32(0.0),
+        //         roughness: Alignedf32(0.),
+        //         is_glass: AlignedBool(false),
+        //         ior: Alignedf32(0.),
+        //     }
+        // };
 
-        app.device.unmap_memory(app.data.compute_ssbo_buffer_memory);
+        // *spheres_ptr.add(3) = Sphere {
+        //     center: AlignedVec3::new(-500.0, 200.0, 700.0),
+        //     radius: 200.0,
+        //     material: Material {
+        //         emissive_strength: AlignedVec4::new(15., 15., 15., 1.),
+        //         base_colour: AlignedVec4::new(1., 0.99, 0.9, 1.),
+        //         reflectivity: Alignedf32(0.),
+        //         roughness: Alignedf32(0.),
+        //         is_glass: AlignedBool(false),
+        //         ior: Alignedf32(0.),
+        //     }
+        // };
+
+        // *spheres_ptr.add(4) = Sphere {
+        //     center: AlignedVec3::new(0.8, -1., 2.0),
+        //     radius: 0.3,
+        //     material: Material {
+        //         emissive_strength: AlignedVec4::default(),
+        //         base_colour: AlignedVec4::new(0.1, 0.99, 0.6, 1.),
+        //         reflectivity: Alignedf32(1.),
+        //         roughness: Alignedf32(0.25),
+        //         is_glass: AlignedBool(false),
+        //         ior: Alignedf32(0.),
+        //     }
+        // };
+
+        // *spheres_ptr.add(5) = Sphere {
+        //     center: AlignedVec3::new(-1.6, -0.8, 3.0),
+        //     radius: 0.3,
+        //     material: Material {
+        //         emissive_strength: AlignedVec4::default(),
+        //         base_colour: AlignedVec4::new(0., 0.5, 0.9, 1.),
+        //         reflectivity: Alignedf32(1.),
+        //         roughness: Alignedf32(0.),
+        //         is_glass: AlignedBool(false),
+        //         ior: Alignedf32(0.),
+        //     }
+        // };
+
+        // *spheres_ptr.add(6) = Sphere {
+        //     center: AlignedVec3::new(-3., -0.4, 7.0),
+        //     radius: 0.8,
+        //     material: Material {
+        //         emissive_strength: AlignedVec4::new(2., 1.5, 0., 1.),
+        //         base_colour: AlignedVec4::new(1., 0.99, 0.9, 1.),
+        //         reflectivity: Alignedf32(0.),
+        //         roughness: Alignedf32(0.),
+        //         is_glass: AlignedBool(false),
+        //         ior: Alignedf32(0.),
+        //     }
+        // };
+
+        // app.device.unmap_memory(app.data.compute_ssbo_buffer_memory);
     }
 
 
@@ -264,6 +359,7 @@ struct AppData {
     accumulator_image: vk::Image,
     // sampler
     sampler: vk::Sampler,
+
 }
 
 /// Our Vulkan app.
@@ -302,7 +398,7 @@ impl App {
         transition_image_layout(&device, &mut data)?;
         create_descriptor_pool(&device, &mut data)?;
         create_sampler(&device, &mut data)?;
-        create_descriptor_sets(&device, &mut data)?;
+        // create_descriptor_sets(&device, &mut data)?;
         create_command_buffer(&device, &mut data)?;
         create_sync_objects(&device, &mut data)?;
         Ok(Self {
@@ -433,24 +529,19 @@ impl App {
                 self.data.swapchain_extent.width as f32,
                 self.data.swapchain_extent.height as f32,
             ),
-            view_port_uv: Vec2::new(u, v) * size,
-            focal_length: Alignedf32(1.5),
+            view_port_uv: Vec2::new(u, v),
+            focal_length: Alignedf32(0.6),
+            focus_distance: Alignedf32(4.8),
+            aperture_radius: Alignedf32(0.0),
             time: Alignedu32(self.frame as u32),
             origin: AlignedVec4(origin),
-            rotation: {
-                let m = Matrix4::look_at_rh(
+            rotation: 
+                AlignedMat4(Matrix4::look_at_rh(
                     Point3::from_vec(origin.truncate()),
-                    Point3::new(0.0, 0.0, -5.0),
+                    Point3::new(0.0, 0.0, -3.5),
                     Vector3::unit_y(),
-                );
-                AlignedMat4(Matrix4::from_cols(
-                    m.x.truncate().extend(0.0),
-                    m.y.truncate().extend(0.0),
-                    m.z.truncate().extend(0.0),
-                    Vector4::new(0.0, 0.0, 0.0, 1.0),
-                ))
-            },
-        };
+                )),
+            };
 
         // Copy
 
@@ -598,6 +689,8 @@ struct UniformBufferObject {
     resolution: Vec2,
     view_port_uv: Vec2,
     focal_length: Alignedf32,
+    focus_distance: Alignedf32,
+    aperture_radius: Alignedf32,
     time: Alignedu32,
     origin: AlignedVec4,
     rotation: AlignedMat4,
@@ -643,30 +736,39 @@ pub struct Alignedf32(pub f32);
 pub struct Alignedu32(pub u32);
 
 #[repr(C)]
+#[repr(align(4))]
+#[derive(Copy, Clone, Debug)]
+pub struct AlignedBool(pub bool);
+
+#[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct Material {
     base_colour: AlignedVec4,
     emissive_strength: AlignedVec4,
     reflectivity: Alignedf32,
     roughness: Alignedf32,
-    is_glass: bool,
-    ior: f32,
+    is_glass: AlignedBool,
+    ior: Alignedf32,
+    shade_smooth: AlignedBool,
+}
+
+
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+struct Triangle {
+    vertices: [AlignedVec4; 3],
+    normals: [AlignedVec4; 3],
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
-#[repr(align(16))]
-struct Sphere {
-    radius: f32,
-    center: AlignedVec3,
-    material: Material,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-struct SphereShaderBufferObject {
-    count: u32,
-    spheres: [Sphere; 0],
+struct Mesh {
+    is_sphere: i32,
+    sphere_radius: f32,
+    triangle_count: u32,
+    offset: u32,
+    material: Material
 }
 
 #[repr(C)]
