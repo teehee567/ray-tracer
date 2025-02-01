@@ -1,16 +1,28 @@
-float pgc_random(inout uint state) {
+int state = 0;
+int subdivisions_per_axis = 2;
+
+// 0..1
+float pgc_random(inout uint seed) {
     // minimal PCG32 code / (c) 2014 M.E. O'Neill / pcg-random.org
     // Licensed under Apache License 2.0 (NO WARRANTY, etc. see website)
-    state = state * 747796405u + 2891336453u;
-    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    seed = seed * 747796405u + 2891336453u;
+    uint word = ((seed >> ((seed >> 28u) + 4u)) ^ seed) * 277803737u;
     return float(word) / 4294967295.0;
 }
 
-vec2 random_square_offset(inout uint seed) {
-    float x = pgc_random(seed) - 0.5;
-    float y = pgc_random(seed) - 0.5;
+// this subdivides the randomness into quadrants as a form of basic low-discrepancy noise.
+// might be expensive.
+vec2 pixel_offset(inout uint seed) {
+    float offset = 1.0 / float(subdivisions_per_axis);
 
-    return vec2(x, y);
+    float x = pgc_random(seed) * offset;
+    float y = pgc_random(seed) * offset;
+
+    x += float(state % subdivisions_per_axis) * offset;
+    y += float(state / subdivisions_per_axis) * offset;
+
+    state = (state + 1) % (subdivisions_per_axis * subdivisions_per_axis);
+    return vec2(x - 0.5, y - 0.5);
 }
 
 // todo: better way to do this?
@@ -18,7 +30,7 @@ vec3 random_unit_vector(inout uint seed) {
     vec3 random;
     do {
         random = vec3(pgc_random(seed) * 2.0 - 1.0, pgc_random(seed) * 2.0 - 1.0, pgc_random(seed) * 2.0 - 1.0);
-    } while (length(random) > 1);
+    } while (length(random) > 1.0);
 
     return normalize(random);
 }

@@ -7,34 +7,31 @@
 #include "imports/ray.comp"
 #include "imports/random.comp"
 
+struct Material {
+    vec4 base_color;
+    vec4 emissive_strength; // can be above 1
+    float reflectivity;
+    float roughness;
+};
+
 struct HitRecord {
     bool did_hit;
-    bool emissive;
     vec3 pos;
     vec3 normal;
-    vec3 color;
     float t;
+    Material material;
 };
 
 struct Sphere {
     float radius;
-    bool emissive;
-    //float reflectance;
-    vec3 color;
     vec3 center;
+    Material material;
 };
-
-//struct Material {
-//    vec3 base_color;
-//    vec3 emissive_color;
-//    float reflectance;
-    
-//}
 
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 // todo: look into inline uniform buffers for speed and small data
-layout(std140, set = 0, binding = 0) uniform CameraUBO {
+layout(std140, set = 0, binding = 0) uniform Camera {
     vec2 resolution; // todo: move this to (unsinged) integers
     vec2 uv;
     float focal_len;
@@ -74,7 +71,7 @@ Ray calculate_ray(vec2 frag_coord) {
                         vec3(pixel_delta/2, 0);  // to center the pixel
 
     // get a random offset for anti-aliasing
-    vec2 offset = random_square_offset(seed);
+    vec2 offset = pixel_offset(seed);
     vec3 pixel_sample = pixel_origin + 
                         vec3(pixel_delta * (frag_coord + offset), 0);
 
@@ -121,8 +118,7 @@ HitRecord hit_sphere(Sphere sphere, Ray ray) {
     hit.t = t;
     hit.pos = ray_at(ray, t);
     hit.normal = normalize(hit.pos - sphere.center);
-    hit.color = sphere.color;
-    hit.emissive = sphere.emissive;
+    hit.material = sphere.material;
 
     bool did_not_hit = discriminant < 0;
     bool is_inside = dot(hit.normal, ray.direction) > 0;
@@ -168,18 +164,29 @@ vec3 ray_color(Ray ray) {
         }
 
         if (hit.did_hit) {
-            ray_color *= hit.color;
-            incoming_light += hit.emissive ? ray_color * 10 : vec3(0.0);
+            ray_color *= hit.material.base_color.xyz;
+            incoming_light += ray_color * hit.material.emissive_strength.xyz;
         } else {
             incoming_light += background_color(ray) * ray_color;
             break;
         }
 
         ray.origin = hit.pos;
-        ray.direction = random_unit_in_hemisphere(seed, hit.normal);
+
+        // reflectivity: randomly pick between reflecting and opaque based how reflective the material is
+        if (pgc_random(seed) < hit.material.reflectivity) {
+            ray.direction = ray.direction - 2 * dot(hit.normal, ray.direction) * hit.normal;
+            ray.direction = normalize(ray.direction + random_unit_vector(seed) * hit.material.roughness); // fuzzy reflection
+        } else {
+            ray.direction = random_unit_in_hemisphere(seed, hit.normal);
+        }
     }
 
     return incoming_light;
+}
+
+vec4 gamma_correction(vec4 color) {
+    return sqrt(color);
 }
 
 void main() {
@@ -199,9 +206,8 @@ void main() {
 
         vec4 old_pixel = imageLoad(accumulator, coordinates);
         vec4 new_pixel = (old_pixel * (camera.frame) + vec4(color, 1.0)) / (camera.frame + 1);
-
         imageStore(accumulator, coordinates, new_pixel);
-        imageStore(framebuffer, coordinates, new_pixel);
+        imageStore(framebuffer, coordinates, gamma_correction(new_pixel));
 
         //imageStore(framebuffer, coordinates, vec4(color, 1));
     }
