@@ -39,6 +39,7 @@ pub unsafe fn create_buffer(
 pub unsafe fn copy_buffer(
     device: &Device,
     data: &AppData,
+    queue: &vk::Queue,
     source: vk::Buffer,
     destination: vk::Buffer,
     size: vk::DeviceSize,
@@ -54,7 +55,8 @@ pub unsafe fn copy_buffer(
 
     // Commands
 
-    let info = vk::CommandBufferBeginInfo::builder().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+    let info = vk::CommandBufferBeginInfo::builder()
+        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
     device.begin_command_buffer(command_buffer, &info)?;
 
@@ -68,8 +70,8 @@ pub unsafe fn copy_buffer(
     let command_buffers = &[command_buffer];
     let info = vk::SubmitInfo::builder().command_buffers(command_buffers);
 
-    device.queue_submit(data.graphics_queue, &[info], vk::Fence::null())?;
-    device.queue_wait_idle(data.graphics_queue)?;
+    device.queue_submit(*queue, &[info], vk::Fence::null())?;
+    device.queue_wait_idle(*queue)?;
 
     // Cleanup
 
