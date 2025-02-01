@@ -1,5 +1,7 @@
-int state = 0;
+int quadrant = 0;
 int subdivisions_per_axis = 2;
+const float PI = 3.1415926;
+uint seed;
 
 // 0..1
 float pgc_random(inout uint seed) {
@@ -18,20 +20,25 @@ vec2 pixel_offset(inout uint seed) {
     float x = pgc_random(seed) * offset;
     float y = pgc_random(seed) * offset;
 
-    x += float(state % subdivisions_per_axis) * offset;
-    y += float(state / subdivisions_per_axis) * offset;
+    x += float(quadrant % subdivisions_per_axis) * offset;
+    y += float(quadrant / subdivisions_per_axis) * offset;
 
-    state = (state + 1) % (subdivisions_per_axis * subdivisions_per_axis);
+    quadrant = (quadrant + 1) % (subdivisions_per_axis * subdivisions_per_axis);
     return vec2(x - 0.5, y - 0.5);
 }
 
-// todo: better way to do this?
-vec3 random_unit_vector(inout uint seed) {
-    vec3 random;
-    do {
-        random = vec3(pgc_random(seed) * 2.0 - 1.0, pgc_random(seed) * 2.0 - 1.0, pgc_random(seed) * 2.0 - 1.0);
-    } while (length(random) > 1.0);
+// https://www.semanticscholar.org/paper/A-Note-on-the-Generation-of-Random-Normal-Deviates-Box-Muller/bdbf5ecc09facb88308f2325dbf0b458f812ab2e
+float random_normal(inout uint seed) {
+    float a = sqrt(-2.0 * log(1.0 - pgc_random(seed)));
+    float b = 2.0 * PI * pgc_random(seed);
 
+    return cos(b) * min(a, 1000000000.0); //todo: figure out why this is exploding
+}
+
+// Since normal distributions are spherically symmetric, sampling it for each coordinate
+//  generates vectors uniformly distributed within the sphere.
+vec3 random_unit_vector(inout uint seed) {
+    vec3 random = vec3(random_normal(seed), random_normal(seed), random_normal(seed));
     return normalize(random);
 }
 
@@ -43,4 +50,9 @@ vec3 random_unit_in_hemisphere(inout uint seed, in vec3 normal) {
     } else {
         return -vector;
     }
+}
+
+vec2 random_disc(inout uint seed) {
+    vec2 random = vec2(random_normal(seed), random_normal(seed));
+    return normalize(random) * pgc_random(seed); // random direction * random radius
 }

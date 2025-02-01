@@ -1,7 +1,8 @@
 #version 460
 
-#define SAMPLES 64
-#define BOUNCES 6
+#define SAMPLES 32
+#define BOUNCES 32
+#define EPSILON 0.00001
 
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_scalar_block_layout : enable
@@ -9,26 +10,70 @@
 #include "imports/ray.comp"
 #include "imports/random.comp"
 
+/* Material of a Mesh.
+ *
+ * base_color           is the base color of the mesh;
+ * emissive_strength    is strenght of the emitted light by the object per channel;
+ * reflectivity         describes how reflective the object is (blends between lambertian and metallic);
+ * roughness            describes how rough the reflective surface is;
+ * is_glass             indicates whether the material will be rendered with a glass shader;
+ * ior                  is the index of refractivity of the glass material, if is_glass is true;         
+ * shaded_smooth        only valid for triangle meshes, determines whether normals are interpolated;
+ */
 struct Material {
     vec4 base_color;
-    vec4 emissive_strength; // can be above 1
+    vec4 emissive_strength;
     float reflectivity;
     float roughness;
     bool is_glass;
     float ior;
+    bool shaded_smooth;
 };
 
+/* Description of a Mesh.
+ *
+ * If is_sphere == True:
+ *   sphere_radius      is the radius of the sphere;
+ *   triangle_count     is undefined;
+ *   offset             points to the triangle whose first vec3 is the center of the sphere;
+ * Else
+ *   sphere_radius      is undefined;
+ *   triangle_count     is the amount of triangles in the mesh;
+ *   offset             is the offset of those triangles in the triangle buffer;
+ * 
+ * material             is the material of the object;
+ */
+struct Mesh {
+    int is_sphere;
+    float sphere_radius;
+    uint triangle_count;
+    uint offset;
+    Material material;
+};
+
+// perf: 96 bytes per triangle is pretty bad.
+// Since if not shaded smooth the normals are ignored, then they can be used to 
+// store 2 triangle per triangle...
+// Or maybe just remove the normals altogether
+struct Triangle {
+    vec3[3] vertices;
+    vec3[3] normals;
+};
+
+/* Record of a ray intersection.
+ *
+ * did_hit      indicates whether an intesection even happened;
+ *              !! If no intersection happened, then the following fields are undefined !!
+ * pos          is the physical location of the intersection;
+ * normal       is the normal vector of the intersected surface;
+ * t            is the value of the parametric variable for the ray equation;
+ * material     is the material of the intersected mesh;
+ */
 struct HitRecord {
     bool did_hit;
     vec3 pos;
     vec3 normal;
     float t;
-    Material material;
-};
-
-struct Sphere {
-    float radius;
-    vec3 center;
     Material material;
 };
 
@@ -39,63 +84,97 @@ layout(std430, set = 0, binding = 0) uniform Camera {
     vec2 resolution; // todo: move this to (unsinged) integers
     vec2 uv;
     float focal_len;
+    float focus_distance;
+    float aperture_radius;
     uint frame;
     vec4 origin;
-    mat3 rotation;
+    mat4 rotation;
 } camera;
 
-layout(std430, set = 0, binding = 1) readonly buffer SphereSBO {
-    uint count;
-    Sphere spheres[];
-} sphere_sbo;
+layout(std430, set = 0, binding = 1) readonly buffer MeshInfoBuffer {
+    uint mesh_count;
+    Mesh meshes[];
+} mesh_info;
 
-layout(set = 0, binding = 2, rgba8) uniform image2D accumulator; 
-layout(set = 0, binding = 3) writeonly uniform image2D framebuffer; 
+layout(std430, set = 0, binding = 2) readonly buffer TriangleBuffer {
+    Triangle triangles[];
+} tri_buf;
 
-//layout(location = 0) out vec4 out_color;
+layout(set = 0, binding = 3, rgba8) uniform image2D accumulator; 
+layout(set = 0, binding = 4) writeonly uniform image2D framebuffer; 
 
-uint seed;
 
-Ray calculate_ray(vec2 frag_coord) {
-    /*  We are starting from -uv/2 on each axys, and we need to reach +uv/2.
-        Expressed as a formula:
-            -uv/2 + pixel_delta * res = +uv/2
-            pixel_delta = uv / res
+Ray generate_ray(vec2 frag_coord) {
+    // Scale the virtual camera to make the UV plane coincide with the focus plane
+    vec2 focus_plane_uv = camera.uv * (camera.focus_distance / camera.focal_len);
 
-        The Y component is inverted because as the pixels' y axys grows in value
-        we want to descend in the 3D space.
+    // The distance between pixels in world-space
+    vec2 pixel_delta = focus_plane_uv / camera.resolution;
+    pixel_delta *= vec2(1, -1); // Y grows downwards in vulkan, so we have to invert it
 
-        Some of this could be moved to the CPU as a uniform, but is left here
-        for now for clarity and because the performance impact is minor.
-    */
+    vec3 viewport_origin = vec3(-focus_plane_uv.x/2, focus_plane_uv.y/2, camera.focus_distance) + // Top left of focus plane
+                           vec3(pixel_delta/2, 0);  // Center the pixel
 
-    float focus_distance = 5.0;
-    vec2 defocus_disk = vec2(0.5);
+    vec3 pixel_coords = viewport_origin + 
+                        vec3(pixel_delta * (frag_coord + pixel_offset(seed)), 0); // Jitter for anti-aliasing
 
-    vec2 pixel_delta = camera.uv/camera.resolution;
-    pixel_delta *= vec2(1, -1);
+    vec3 aperture_offset = vec3(random_disc(seed), 0) * camera.aperture_radius;
 
-    vec3 pixel_origin = vec3(-camera.uv.x/2, camera.uv.y/2, camera.focal_len) + // the top left is at x=-u but y=v (up is +)
-                        camera.origin.xyz +  // to place it correctly in world-space
-                        vec3(pixel_delta/2, 0);  // to center the pixel
+    // Vector from origin to pixel, rotated
+    vec3 ray_direction = mat3(camera.rotation) * normalize(pixel_coords - aperture_offset);
 
-    // get a random offset for anti-aliasing
-    vec2 offset = pixel_offset(seed);
-    vec3 pixel_sample = pixel_origin + 
-                        vec3(pixel_delta * (frag_coord + offset), 0);
+    // Rotated aperture offset, shifted by camera origin 
+    vec3 ray_origin = (mat3(camera.rotation) * aperture_offset) + camera.origin.xyz;
 
-    vec3 direction = normalize(pixel_sample - camera.origin.xyz);
-
-    direction = mat3(camera.rotation) * direction;
-
-    Ray ray;
-    ray.direction = direction; // vector from origin to pixel
-    ray.origin = camera.origin.xyz;
-
+    Ray ray; 
+    ray.direction = ray_direction;
+    ray.origin = ray_origin;
     return ray;
 }
 
-HitRecord hit_sphere(Sphere sphere, Ray ray) {
+// Möller-Trumbore intersection algorithm (https://www.graphics.cornell.edu/pubs/1997/MT97.pdf)
+HitRecord hit_triangle(Triangle triangle, Ray ray) {
+    // todo: explain this better by summarizing the proof
+    
+    HitRecord hit;
+    
+    // Get the normal vector of the plane the triangle lays on.
+    // This is done by performing a cross product between two of the sides of the triangle.
+    vec3 ab = triangle.vertices[1] - triangle.vertices[0];
+    vec3 ac = triangle.vertices[2] - triangle.vertices[0];
+    vec3 plane_normal = normalize(cross(ab, ac));
+
+    // Check if the ray is parallel to the plane, in which case no hit can ahppen
+    if (abs(dot(plane_normal, ray.direction)) < EPSILON) {
+        hit.did_hit = false;
+        return hit;
+    }
+
+    vec3 o = ray.origin - triangle.vertices[0];
+    vec3 p = cross(ray.direction, ac);
+    vec3 q = cross(o, ab);
+
+    // Calculate the [t, u, v] vector where t is the parameter for the ray equation
+    // and u, v are two of the barycentric coordinates for the triangle
+    vec3 tuv = 1 / dot(p, ab) * vec3(dot(q, ac), dot(p, o), dot(q, ray.direction));
+
+    // Check bounds of the barycentric coordinates.
+    hit.did_hit = !any(lessThan(tuv.yz, vec2(0, 0))) && !any(greaterThan(tuv.yz, vec2(1, 1)));
+
+    float w = 1 - tuv.y - tuv.z;
+    hit.did_hit = hit.did_hit && (w > 0.0 && w < 1.0);
+    hit.did_hit = hit.did_hit && tuv.x > EPSILON;
+
+    hit.t = tuv.x;
+    hit.pos = ray_at(ray, tuv.x);
+
+    // todo: interpolate across vector normals for smooth shading
+    hit.normal = dot(ray.direction, plane_normal) > 0 ? -plane_normal : plane_normal;
+
+    return hit;
+}
+
+HitRecord hit_sphere(float radius, vec3 center, Ray ray) {
     /*  line (parametric):
             x = orig_x + dir_x * t
             y = orig_y + dir_y * t   ->   p = orig + dir * t
@@ -116,12 +195,12 @@ HitRecord hit_sphere(Sphere sphere, Ray ray) {
         referring to the quadratic formula, we can tell whether the ray intersected the sphere by the discriminant:
             hit_sphere = (b^2 - 4ac >= 0)
     */
-    vec3 delta = (sphere.center - ray.origin);
+    vec3 delta = (center - ray.origin);
 
     // todo: apply the simpler formula for b multiples of 2
     float a = dot(ray.direction, ray.direction);
     float b = -2 * dot(ray.direction, delta);
-    float c = dot(delta, delta) - sphere.radius * sphere.radius;
+    float c = dot(delta, delta) - radius * radius;
 
     float discriminant = b*b - 4*a*c;
     float t = (-b - sqrt(discriminant)) / 2*a;
@@ -130,16 +209,20 @@ HitRecord hit_sphere(Sphere sphere, Ray ray) {
 
     hit.t = t;
     hit.pos = ray_at(ray, t);
-    hit.normal = normalize(hit.pos - sphere.center);
-    hit.material = sphere.material;
+    hit.normal = normalize(hit.pos - center);
 
     bool did_not_hit = discriminant < 0;
-    bool is_behind = t < 0.0001; // avoid floating point precisions
+    bool is_behind = t < EPSILON; // avoid floating point precisions
+
+    // todo: could be solved by avoiding intersections with the same sphere and type twice in a row (eg. cannot enter sphere 2 twice in a row)
+    // Done by keeping track of last enter / exit (+2 if enter, -2 if exit), and checking if it's the same.
+    // Entering / exiting could be stored in the hit to avoid computing it in the glass shader (and other ones)
 
     hit.did_hit = !(did_not_hit || is_behind);
 
     return hit;
 }
+
 
 vec3 background_color(Ray ray) {
     float blend = 0.5 * ray.direction.y + 0.5;
@@ -147,14 +230,14 @@ vec3 background_color(Ray ray) {
     //return vec3(0);
 }
 
-// Schlick approximation for Fresnel effect on glass
+// Schlick approximation of Fresnel on glass
 float schlick_reflectance(float cos_angle, float ior) {
     float r0 = (1 - ior) / (1 + ior);
     r0 = r0 * r0;
     return r0 + (1 - r0) * pow((1 - cos_angle), 5);
 }
 
-// todo: this does not handle intersecting spheres gracefully, the ratios must be pre-divided for that
+// this does not handle intersecting spheres gracefully, the ratios must be pre-divided for that
 void glass_shader(inout Ray ray, HitRecord hit) {
     vec3 normal = hit.normal;
     vec3 dir = ray.direction;
@@ -202,7 +285,6 @@ void weighted_lambertian_shader(inout Ray ray, HitRecord hit) {
     if (pgc_random(seed) < hit.material.reflectivity) {
         ray.direction = ray.direction - 2 * dot(hit.normal, ray.direction) * hit.normal;
         ray.direction = normalize(ray.direction + random_unit_vector(seed) * hit.material.roughness); // fuzzy reflection
-    
     } else {
         ray.direction = normalize(hit.normal + random_unit_vector(seed)); // https://www.iue.tuwien.ac.at/phd/ertl/node100.html
     }
@@ -228,13 +310,26 @@ vec3 ray_color(Ray ray) {
         hit.t = 1.0 / 0.0; // infinity
         hit.did_hit = false;
 
-        for (int i = 0; i < sphere_sbo.count; i++) {
-            HitRecord current_hit = hit_sphere(sphere_sbo.spheres[i], ray);
+        for (int i = 0; i < mesh_info.mesh_count; i++) {
+            Mesh mesh = mesh_info.meshes[i];
+
+            HitRecord current_hit;
+            if (mesh.is_sphere == 1) {
+                vec3 center = tri_buf.triangles[mesh.offset].vertices[0];
+                current_hit = hit_sphere(mesh.sphere_radius, center, ray);
+
+            } else {
+                Triangle triangle = tri_buf.triangles[mesh.offset];
+                current_hit = hit_triangle(triangle, ray);
+            }
 
             if (current_hit.did_hit && current_hit.t < hit.t) {
+                current_hit.material = mesh.material; 
                 hit = current_hit;
             }
         }
+
+        //return hit.normal;
 
         if (hit.did_hit) {
             incoming_light += ray_color * hit.material.emissive_strength.xyz;
@@ -245,10 +340,17 @@ vec3 ray_color(Ray ray) {
                 weighted_lambertian_shader(ray, hit);
             }
 
-            // reduce the strength of light rays grazing the surface as light gets distributed
             ray_color *= hit.material.base_color.xyz;
 
+            //return hit.material.emissive_strength.xyz;
+
+        //if (bounce == 1)
+        //    return vec3(1,0,0);
         } else {
+            //if (bounce > 0) {
+            //    // why is nothing arrivbing here at boucne 1???
+            //    return background_color(ray);
+            //}
             incoming_light += background_color(ray) * ray_color;
             break;
         }
@@ -267,11 +369,11 @@ void main() {
 
     if (coordinates.x < size.x && coordinates.y < size.y) {
         //seed = uint(coordinates.x + camera.resolution.x * coordinates.y);
-        seed = uint(coordinates.x + camera.resolution.x * coordinates.y + camera.frame * coordinates.y);
+        seed = uint(coordinates.x + camera.resolution.x * coordinates.y + camera.frame * coordinates.y * coordinates.x);
 
         vec3 color = vec3(0);
         for (int i = 0; i < SAMPLES; i++) {
-            Ray ray = calculate_ray(coordinates.xy);
+            Ray ray = generate_ray(coordinates.xy);
 
             color += ray_color(ray) / float(SAMPLES);
         }
@@ -283,5 +385,6 @@ void main() {
         imageStore(framebuffer, coordinates, gamma_correction(new_pixel));
 
         //imageStore(framebuffer, coordinates, gamma_correction(vec4(color, 1.0)));
+        //imageStore(framebuffer, coordinates, gamma_correction(vec4(triangle_sbo.triangles[0].first, 1.0)));
     }
 }

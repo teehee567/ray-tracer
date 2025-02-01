@@ -12,3 +12,4 @@ pub mod sync_objects;
 pub mod utils;
 pub mod accumulate_image;
 pub mod sampler;
+pub mod bufferbuilder;
