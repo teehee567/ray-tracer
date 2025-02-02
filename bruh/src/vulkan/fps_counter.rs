@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 #[derive(Clone, Debug)]
 pub struct FPSCounter {

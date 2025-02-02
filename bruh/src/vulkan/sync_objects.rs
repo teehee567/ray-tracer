@@ -1,7 +1,7 @@
 
 use vulkanalia::prelude::v1_0::*;
 
-use crate::{AppData};
+use crate::AppData;
 use anyhow::Result;
 
 pub unsafe fn create_sync_objects(device: &Device, data: &mut AppData) -> Result<()> {

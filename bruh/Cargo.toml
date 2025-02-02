@@ -10,6 +10,7 @@ glam = "0.29.2"
 log = "0.4"
 png = "0.17"
 pretty_env_logger = "0.5"
+serde_yaml = "0.9.34"
 thiserror = "1"
 tobj = { version = "3", features = ["log"] }
 vulkanalia = { version = "0.25.0", features = ["libloading", "provisional", "window"] }
