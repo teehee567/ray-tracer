@@ -14,3 +14,4 @@ pub mod accumulate_image;
 pub mod sampler;
 pub mod bufferbuilder;
 pub mod fps_counter;
+pub mod scene;
