@@ -1,11 +1,12 @@
 #version 460
 
-#define SAMPLES 32
-#define BOUNCES 8
+#define SAMPLES 8
+#define BOUNCES 12
 #define EPSILON 0.0001
 
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_debug_printf : enable
 
 #include "imports/ray.comp"
 #include "imports/random.comp"
@@ -13,7 +14,7 @@
 /* Material of a Mesh.
  *
  * base_color           is the base color of the mesh;
- * emissive_strength    is strenght of the emitted light by the object per channel;
+ * emission             is strenght of the emitted light by the object per channel;
  * reflectivity         describes how reflective the object is (blends between lambertian and metallic);
  * roughness            describes how rough the reflective surface is;
  * is_glass             indicates whether the material will be rendered with a glass shader;
@@ -22,22 +23,21 @@
  */
 struct Material {
     vec4 base_color;
-    vec4 emissive_strength;
+    vec4 emission;
     float reflectivity;
     float roughness;
-    bool is_glass;
     float ior;
+    bool is_glass;
     bool shaded_smooth;
 };
 
 /* Description of a Mesh.
  *
- * If is_sphere == True:
- *   sphere_radius      is the radius of the sphere;
- *   triangle_count     is undefined;
- *   offset             points to the triangle whose first vec3 is the center of the sphere;
+ * If it's a sphere:
+ *   triangle_count     is 0;
+ *   offset             points to the triangle whose first vec3 is the center of
+ *                      the sphere, and second.x is the center;
  * Else
- *   sphere_radius      is undefined;
  *   triangle_count     is the amount of triangles in the mesh;
  *   offset             is the offset of those triangles in the triangle buffer;
  * 
@@ -69,6 +69,7 @@ struct Triangle {
  */
 struct HitRecord {
     bool did_hit;
+    bool is_exiting;
     vec3 pos;
     vec3 normal;
     float t;
@@ -150,14 +151,16 @@ void glass_shader(inout Ray ray, HitRecord hit) {
     
     // Check if we're entering or exiting the glass
     float ior_ratio;
-    if (dot(normal, dir) > 0) {
-        ior_ratio = hit.material.ior / 1.0;
+    if (hit.is_exiting) {
+        ior_ratio = hit.material.ior;
+        normal = -normal;
     } else {
         ior_ratio = 1.0 / hit.material.ior;
     }
 
     float cos_angle = min(dot(-dir, normal), 1.0);
-    float sin_angle = sqrt(1 - cos_angle * cos_angle); // todo: faster sin algos?
+    //float sin_angle = sqrt(1 - cos_angle * cos_angle); // todo: faster sin algos? len(cross
+    float sin_angle = length(cross(-dir, normal));
 
     bool total_reflection = ior_ratio * sin_angle > 1;
     bool schlick_reflection = pgc_random(seed) < schlick_reflectance(cos_angle, ior_ratio);
@@ -188,7 +191,7 @@ void weighted_lambertian_shader(inout Ray ray, HitRecord hit) {
     ray.origin = hit.pos;
 
     // flip the normal if we are hitting from the "inside"
-    if (dot(ray.direction, hit.normal) > 0.0)
+    if (hit.is_exiting)
         hit.normal *= -1;
 
     // reflectivity: randomly pick between reflecting and opaque based how reflective the material is
@@ -201,43 +204,75 @@ void weighted_lambertian_shader(inout Ray ray, HitRecord hit) {
 }
 
 // Möller-Trumbore intersection algorithm (https://www.graphics.cornell.edu/pubs/1997/MT97.pdf)
-HitRecord hit_triangle(Triangle triangle, Ray ray) {
-    // todo: explain this better by summarizing the proof
-    
+HitRecord hit_triangle(Triangle triangle, Ray ray, bool interpolate_normals) {
+    /* This algorithm uses barycentric coordinates to determine whether the intersection falls within
+     * the triangle.
+     *
+     * O = ray.origin; D = ray.dir; A, B, C = triangle points; u, v, w = barycentric coords.
+     * Check where they intersect by equating the coords to the ray function:
+     *      O + t*D = w*A + u*B + v*C
+     *      O + t*D = (1-u-v)*A + u*B + v*C
+     *      -t*D + u*(B - A) + v*(C - A) = O - A
+     *
+     * That is a linear equation with the following form:
+     * (uppercase is vector, represent a column)
+     *      |             |   | t |   |     |
+     *      | D, B-A, C-A | * | u | = | O-A |
+     *      |             |   | v |   |     |
+     *            (M        *  tuv  =   OA)
+     *
+     * To solve the equation, cramer's rule is used:
+     *      t = det(M with OA replacing 1st col) / det(M)
+     *      u = det(M with OA replacing 2nd col) / det(M)
+     *      v = det(M with OA replacing 3rd col) / det(M)
+     *
+     * Finally, the determinants are calculated using the scalar triple product:
+     *      det(M) = (D × C-A) ⋅ B-A = dot(cross(D, C-A), B-A)
+     */
     HitRecord hit;
-    
+    hit.did_hit = false;
+
     // Get the normal vector of the plane the triangle lays on.
     // This is done by performing a cross product between two of the sides of the triangle.
     vec3 ab = triangle.vertices[1] - triangle.vertices[0];
     vec3 ac = triangle.vertices[2] - triangle.vertices[0];
     vec3 plane_normal = normalize(cross(ab, ac));
 
-    // Check if the ray is parallel to the plane, in which case no hit can ahppen
-    if (abs(dot(plane_normal, ray.direction)) < EPSILON) {
-        hit.did_hit = false;
-        return hit;
-    }
+    // Check if the ray is parallel to the plane, in which case no hit can happen
+    if (abs(dot(plane_normal, ray.direction)) < EPSILON) return hit;
 
     vec3 o = ray.origin - triangle.vertices[0];
     vec3 p = cross(ray.direction, ac);
     vec3 q = cross(o, ab);
+    float inv_det = 1 / dot(p, ab);
 
-    // Calculate the [t, u, v] vector where t is the parameter for the ray equation
-    // and u, v are two of the barycentric coordinates for the triangle
-    vec3 tuv = 1 / dot(p, ab) * vec3(dot(q, ac), dot(p, o), dot(q, ray.direction));
+    // Find t using cramer's rule, and make sure the intersection happens in front
+    // of the camera
+    float t = dot(q, ac) * inv_det;
+    if (t < EPSILON) return hit;
+
+    // Find the barycentric coordinates
+    float u = dot(p, o) * inv_det;
+    float v = dot(q, ray.direction) * inv_det;
+    float w = 1 - u - v;    // to avoid gaps due to precision issues
 
     // Check bounds of the barycentric coordinates.
-    hit.did_hit = !any(lessThan(tuv.yz, vec2(0, 0))) && !any(greaterThan(tuv.yz, vec2(1, 1)));
+    vec3 coords = vec3(u, v, w);
+    if (any(lessThan(coords, vec3(0))) || any(greaterThan(coords, vec3(1)))) return hit;
 
-    float w = 1 - tuv.y - tuv.z;
-    hit.did_hit = hit.did_hit && (w > 0.0 && w < 1.0);
-    hit.did_hit = hit.did_hit && tuv.x > EPSILON;
+    hit.did_hit = true;
+    hit.t = t;
+    hit.pos = ray_at(ray, t);
+    hit.is_exiting = dot(plane_normal, ray.direction) > 0;
 
-    hit.t = tuv.x;
-    hit.pos = ray_at(ray, tuv.x);
-
-    // todo: interpolate across vector normals for smooth shading
-    hit.normal = plane_normal;
+    if (interpolate_normals) {
+        // interpolate across the normals using the barycentric coordinates
+        hit.normal = triangle.normals[0] * w +
+                     triangle.normals[1] * u +
+                     triangle.normals[2] * v;
+    } else {
+        hit.normal = plane_normal;
+    }
 
     return hit;
 }
@@ -287,6 +322,7 @@ HitRecord hit_sphere(vec3 center, float radius, Ray ray) {
     // Entering / exiting could be stored in the hit to avoid computing it in the glass shader (and other ones)
 
     hit.did_hit = !(did_not_hit || is_behind);
+    hit.is_exiting = dot(hit.normal, ray.direction) > 0;
 
     return hit;
 }
@@ -310,7 +346,7 @@ HitRecord hit_meshes(Ray ray) {
         for (int tri = 0; tri < mesh.triangle_count; tri++) {
             Triangle triangle = tri_buf.triangles[mesh.offset + tri];
 
-            current_hit = hit_triangle(triangle, ray);
+            current_hit = hit_triangle(triangle, ray, false);
 
             if (current_hit.did_hit && current_hit.t < t) {
                 t = current_hit.t;
@@ -342,7 +378,7 @@ HitRecord hit_meshes(Ray ray) {
         if (triIdx != uint(-1)) {
             Triangle triangle = tri_buf.triangles[offset + triIdx];
 
-            hit = hit_triangle(triangle, ray);
+            hit = hit_triangle(triangle, ray, mesh_info.meshes[meshIdx].material.shaded_smooth);
             hit.material = mesh_info.meshes[meshIdx].material;
 
         } else {
@@ -378,7 +414,7 @@ vec3 ray_color(Ray ray) {
 
         if (hit.did_hit) {
             Material material = hit.material;
-            incoming_light += ray_color * hit.material.emissive_strength.xyz;
+            incoming_light += ray_color * hit.material.emission.xyz;
 
             if (material.is_glass) {
                 glass_shader(ray, hit);

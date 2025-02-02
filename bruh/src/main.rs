@@ -8,7 +8,6 @@
     clippy::unnecessary_wraps
 )]
 
-use std::collections::VecDeque;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
 use std::time::Instant;
@@ -29,6 +28,7 @@ use vulkan::logical_device::create_logical_device;
 use vulkan::physical_device::{pick_physical_device, SuitabilityError};
 use vulkan::pipeline::{create_compute_pipeline, create_render_pass};
 use vulkan::sampler::create_sampler;
+use vulkan::scene::Scene;
 use vulkan::swapchain::{create_swapchain, create_swapchain_image_views};
 use vulkan::sync_objects::create_sync_objects;
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
@@ -73,130 +73,22 @@ fn main() -> Result<()> {
 
     // App
 
-    let mut app = unsafe { App::create(&window)? };
+    let scene = Scene::new("./fancy.yaml")?;
 
+    let mut app = unsafe { App::create(&window, scene)? };
     unsafe {
         let mut info_buffer = BufferBuilder::new();
         let mut triangle_buffer = BufferBuilder::new();
 
+        app.data.scene.populate_buffers(&mut info_buffer, &mut triangle_buffer)?;
 
+        println!("sizes: {}, {}", info_buffer.get_offset(), triangle_buffer.get_offset());
 
-        info_buffer.append(4);
-        info_buffer.pad(12);
-
-        // Ground Sphere
-        info_buffer.append(Mesh {
-            // is_sphere: 0,
-            triangle_count: 0,
-            offset: triangle_buffer.get_relative_offset::<Triangle>()? as u32,
-            material: Material {
-                base_colour: AlignedVec4::new(0.7, 0.7, 0.7, 1.),
-                emissive_strength: AlignedVec4::default(),
-                reflectivity: Alignedf32(0.),
-                roughness: Alignedf32(0.),
-                is_glass: Alignedu32(0),
-                ior: Alignedf32(0.),
-                shade_smooth: Alignedu32(0),
-            },
-        });
-
-        triangle_buffer.append_with_size(Sphere {
-            center: AlignedVec3::new(0., -100., 5.),
-            radius: Alignedf32(99.),
-        }, size_of::<Triangle>());
-
-        // Sun Sphere
-        info_buffer.append(Mesh {
-            triangle_count: 0,
-            offset: triangle_buffer.get_relative_offset::<Triangle>()? as u32,
-            material: Material {
-                base_colour: AlignedVec4::default(),
-                emissive_strength: AlignedVec4::new(15., 15., 15., 1.),
-                reflectivity: Alignedf32(0.),
-                roughness: Alignedf32(0.),
-                is_glass: Alignedu32(0),
-                ior: Alignedf32(0.),
-                shade_smooth: Alignedu32(0),
-            },
-        });
-        triangle_buffer.append_with_size(Sphere {
-            center: AlignedVec3::new(-500., 200., 700.),
-            radius: Alignedf32(200.),
-        }, size_of::<Triangle>());
-
-        let cube_tris: [i32; 108] = [
-            0,0,0, 1,1,0, 1,0,0,
-            0,0,0, 0,1,0, 1,1,0,
-            1,0,0, 1,1,1, 1,0,1,
-            1,0,0, 1,1,0, 1,1,1,
-            1,0,1, 0,1,1, 1,1,1,
-            1,0,1, 0,0,1, 0,1,1,
-            0,0,1, 0,1,0, 0,0,0,
-            0,0,1, 0,1,1, 0,1,0,
-            0,1,0, 1,1,1, 1,1,0,
-            0,1,0, 0,1,1, 1,1,1,
-            0,0,0, 1,0,1, 1,0,0,
-            0,0,0, 0,0,1, 1,0,1,
-        ];
-
-
-        // Test Triangle
-        info_buffer.append(Mesh {
-            triangle_count: 12,
-            offset: triangle_buffer.get_relative_offset::<Triangle>()? as u32,
-            material: Material {
-                base_colour: AlignedVec4::new(0.7, 0.1, 0.1, 1.),
-                emissive_strength: AlignedVec4::default(),
-                reflectivity: Alignedf32(0.),
-                roughness: Alignedf32(0.),
-                is_glass: Alignedu32(1),
-                ior: Alignedf32(1.4),
-                shade_smooth: Alignedu32(0),
-            },
-        });
-
-        for triangle in 0..12 {
-            triangle_buffer.append(Triangle {
-                vertices: [
-                    AlignedVec4::new(-1.0 + (cube_tris[triangle * 9 + 0] as f32) * 2.0, -1.0 + (cube_tris[triangle * 9 + 1] as f32) * 2.0, 3.0 + (cube_tris[triangle * 9 + 2] as f32) * 2.0, 0.0),
-                    AlignedVec4::new(-1.0 + (cube_tris[triangle * 9 + 3] as f32) * 2.0, -1.0 + (cube_tris[triangle * 9 + 4] as f32) * 2.0, 3.0 + (cube_tris[triangle * 9 + 5] as f32) * 2.0, 0.0),
-                    AlignedVec4::new(-1.0 + (cube_tris[triangle * 9 + 6] as f32) * 2.0, -1.0 + (cube_tris[triangle * 9 + 7] as f32) * 2.0, 3.0 + (cube_tris[triangle * 9 + 8] as f32) * 2.0, 0.0),
-                ],
-                normals: [AlignedVec4::default(); 3],
-            });
-        }
-
-        info_buffer.append(Mesh {
-            triangle_count: 12,
-            offset: triangle_buffer.get_relative_offset::<Triangle>()? as u32,
-            material: Material {
-                base_colour: AlignedVec4::new(0.2, 0.3, 0.8, 1.),
-                emissive_strength: AlignedVec4::default(),
-                reflectivity: Alignedf32(0.),
-                roughness: Alignedf32(0.),
-                is_glass: Alignedu32(0),
-                ior: Alignedf32(1.4),
-                shade_smooth: Alignedu32(0),
-            },
-        });
-
-        for triangle in 0..12 {
-            triangle_buffer.append(Triangle {
-                vertices: [
-                    AlignedVec4::new(1.0 + (cube_tris[triangle * 9 + 0] as f32) / 2.0, -1.0 + (cube_tris[triangle * 9 + 1] as f32) / 2.0, 2.0 + (cube_tris[triangle * 9 + 2] as f32) / 2.0, 0.0),
-                    AlignedVec4::new(1.0 + (cube_tris[triangle * 9 + 3] as f32) / 2.0, -1.0 + (cube_tris[triangle * 9 + 4] as f32) / 2.0, 2.0 + (cube_tris[triangle * 9 + 5] as f32) / 2.0, 0.0),
-                    AlignedVec4::new(1.0 + (cube_tris[triangle * 9 + 6] as f32) / 2.0, -1.0 + (cube_tris[triangle * 9 + 7] as f32) / 2.0, 2.0 + (cube_tris[triangle * 9 + 8] as f32) / 2.0, 0.0),
-                ],
-                normals: [AlignedVec4::default(); 3],
-            });
-        }
-
-        create_descriptor_sets(&app.device, &mut app.data, info_buffer.get_offset() as u32)?;
 
         let mapped_ptr = app.device.map_memory(
             app.data.compute_ssbo_buffer_memory,
             0,
-            4096,
+            (info_buffer.get_offset() + triangle_buffer.get_offset()) as u64,
             vk::MemoryMapFlags::empty(),
         )?;
 
@@ -244,6 +136,8 @@ fn main() -> Result<()> {
 /// The Vulkan handles and associated properties used by our Vulkan app.
 #[derive(Clone, Debug, Default)]
 struct AppData {
+    scene: Scene,
+
     messenger: vk::DebugUtilsMessengerEXT,
     swapchain: vk::SwapchainKHR,
     swapchain_extent: vk::Extent2D,
@@ -306,10 +200,12 @@ struct App {
 
 impl App {
     /// Creates our Vulkan app.
-    unsafe fn create(window: &Window) -> Result<Self> {
+    unsafe fn create(window: &Window, scene: Scene) -> Result<Self> {
         let loader = LibloadingLoader::new(LIBRARY)?;
         let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
         let mut data = AppData::default();
+        data.scene = scene;
+        let scene_sizes = data.scene.get_buffer_sizes()?;
         let instance = create_instance(window, &entry, &mut data)?;
         data.surface = vk_window::create_surface(&instance, &window, &window)?;
         pick_physical_device(&instance, &mut data)?;
@@ -323,13 +219,14 @@ impl App {
         create_command_pool(&instance, &device, &mut data)?;
         // create_vertex_buffer(&instance, &device, &mut data)?;
         create_uniform_buffer(&instance, &device, &mut data)?;
-        create_shader_buffers(&instance, &device, &mut data)?;
+        create_shader_buffers(&instance, &device, &mut data, (scene_sizes.0 + scene_sizes.1) as u64)?;
         create_image(&instance, &device, &mut data)?;
         transition_image_layout(&device, &mut data)?;
         create_descriptor_pool(&device, &mut data)?;
         create_sampler(&device, &mut data)?;
         // create_descriptor_sets(&device, &mut data)?;
         create_command_buffer(&device, &mut data)?;
+        create_descriptor_sets(&device, &mut data, scene_sizes.0 as u32)?;
         create_sync_objects(&device, &mut data)?;
         Ok(Self {
             entry,
@@ -426,7 +323,9 @@ impl App {
     unsafe fn update_uniform_buffer(&self, image_index: usize) -> Result<()> {
         // MVP
         let time = (self.start.elapsed()).as_secs_f32();
-        let origin = Vec4::new(0., 0., 0., 0.);
+
+        // let origin = Vec4::new(0., 0., 0., 0.);
+        let origin = Vec4::new(0., 1., 3., 0.);
 
         let ratio =
             self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32;
@@ -437,23 +336,24 @@ impl App {
         };
         let size = 2.0f32;
 
-        let ubo = UniformBufferObject {
+        let ubo = CameraBufferObject {
             resolution: Vec2::new(
                 self.data.swapchain_extent.width as f32,
                 self.data.swapchain_extent.height as f32,
             ),
             view_port_uv: Vec2::new(u, v),
-            focal_length: Alignedf32(0.6),
+            focal_length: Alignedf32(1.),
             focus_distance: Alignedf32(4.8),
             aperture_radius: Alignedf32(0.0),
             time: Alignedu32(self.frame as u32),
             origin: AlignedVec4(origin),
             rotation: 
-                AlignedMat4(Mat4::look_at_rh(
-                    origin.truncate(),
-                    Vec3::new(0.0, 0.0, -3.5),
-                    Vec3::Y,
-                )),
+                AlignedMat4(Mat4::from_rotation_y(3.14)),
+                // AlignedMat4(Mat4::look_at_rh(
+                //     origin.truncate(),
+                //     Vec3::new(0.0, 0.0, -3.5),
+                //     Vec3::new(0., 1., 0.),
+                // )),
             };
 
         // Copy
@@ -461,7 +361,7 @@ impl App {
         let memory = self.device.map_memory(
             self.data.uniform_buffer_memory,
             0,
-            size_of::<UniformBufferObject>() as u64,
+            size_of::<CameraBufferObject>() as u64,
             vk::MemoryMapFlags::empty(),
         )?;
 
@@ -598,7 +498,7 @@ impl SwapchainSupport {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
-struct UniformBufferObject {
+struct CameraBufferObject {
     resolution: Vec2,
     view_port_uv: Vec2,
     focal_length: Alignedf32,
@@ -657,15 +557,13 @@ pub struct AlignedBool(pub bool);
 #[derive(Copy, Clone, Debug)]
 pub struct Material {
     base_colour: AlignedVec4,
-    emissive_strength: AlignedVec4,
+    emission: AlignedVec4,
     reflectivity: Alignedf32,
     roughness: Alignedf32,
-    is_glass: Alignedu32,
     ior: Alignedf32,
+    is_glass: Alignedu32,
     shade_smooth: Alignedu32,
 }
-
-
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]

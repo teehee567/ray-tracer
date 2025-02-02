@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 
 const INITIAL_SIZE: usize = 16;
 
+#[derive(Debug)]
 pub struct BufferBuilder {
     buffer: Vec<u8>,
 }
@@ -52,7 +53,7 @@ impl BufferBuilder {
             return Ok(0);
         }
         if self.buffer.len() % type_size != 0 {
-            anyhow!("Trying to get offset with regards to type not granular enough");
+            return Err(anyhow!("Trying to get offset with regards to type not granular enough"));
         }
         Ok(self.buffer.len() / type_size)
     }
