@@ -45,6 +45,7 @@ use vulkanalia::vk::KhrSurfaceExtension;
 use vulkanalia::vk::KhrSwapchainExtension;
 
 mod vulkan;
+mod accelerators;
 
 /// Whether the validation layers should be enabled.
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
@@ -570,6 +571,24 @@ pub struct Material {
 struct Triangle {
     vertices: [AlignedVec4; 3],
     normals: [AlignedVec4; 3],
+}
+
+impl Triangle {
+    pub fn min_bound(&self) -> Vec3 {
+        Vec3 {
+            x: self.vertices.iter().map(|v| v.0.x).fold(f32::INFINITY, f32::min),
+            y: self.vertices.iter().map(|v| v.0.y).fold(f32::INFINITY, f32::min),
+            z: self.vertices.iter().map(|v| v.0.z).fold(f32::INFINITY, f32::min),
+        }
+    }
+
+    pub fn max_bound(&self) -> Vec3 {
+        Vec3 {
+            x: self.vertices.iter().map(|v| v.0.x).fold(f32::NEG_INFINITY, f32::max),
+            y: self.vertices.iter().map(|v| v.0.y).fold(f32::NEG_INFINITY, f32::max),
+            z: self.vertices.iter().map(|v| v.0.z).fold(f32::NEG_INFINITY, f32::max),
+        }
+    }
 }
 
 #[repr(C)]
