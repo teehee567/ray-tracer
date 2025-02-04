@@ -1,4 +1,16 @@
-version: '0.1'
+version: '0.2'
+camera:
+  resolution:
+  - 1920
+  - 1080
+  focal_length: 1.
+  focus_distance: 4.8
+  aperture_radius: 0
+  location:
+  - 0.0
+  - 1.0
+  - 3.0
+  rotation: [0, 1, 0]
 scene:
 - type: TriMesh
   material:

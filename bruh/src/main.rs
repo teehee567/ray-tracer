@@ -12,10 +12,11 @@ use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
 use std::time::Instant;
 
+use accelerators::bvhfromotherland::BvhNode;
+use accelerators::Primitive;
 use anyhow::{anyhow, Result};
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use vulkan::accumulate_image::{create_image, transition_image_layout};
-use vulkan::bufferbuilder::BufferBuilder;
 use vulkan::buffers::{create_shader_buffers, create_uniform_buffer};
 use vulkan::command_buffers::{create_command_buffer, run_command_buffer};
 use vulkan::command_pool::create_command_pool;
@@ -74,29 +75,24 @@ fn main() -> Result<()> {
 
     // App
 
-    let scene = Scene::new("./fancy.yaml")?;
+    let scene = Scene::new("./cornell.yaml")?;
 
     let mut app = unsafe { App::create(&window, scene)? };
     unsafe {
-        let mut info_buffer = BufferBuilder::new();
-        let mut triangle_buffer = BufferBuilder::new();
 
-        app.data.scene.populate_buffers(&mut info_buffer, &mut triangle_buffer)?;
-
-        println!("sizes: {}, {}", info_buffer.get_offset(), triangle_buffer.get_offset());
-
-
+        let sizes = app.data.scene.get_buffer_sizes();
+        let total_size = sizes.0 + sizes.1 + sizes.2;
         let mapped_ptr = app.device.map_memory(
             app.data.compute_ssbo_buffer_memory,
             0,
-            (info_buffer.get_offset() + triangle_buffer.get_offset()) as u64,
+            total_size as u64,
             vk::MemoryMapFlags::empty(),
         )?;
 
-        info_buffer.write(mapped_ptr);
-        triangle_buffer.write(mapped_ptr.byte_add( info_buffer.get_offset()));
+        app.data.scene.write_buffers(mapped_ptr);
 
-        println!("Total memory: {}", info_buffer.get_offset() + triangle_buffer.get_offset());
+        println!("sizes: {}, {}, {}", sizes.0, sizes.1, sizes.2);
+        println!("Total memory: {}", total_size);
 
     }
 
@@ -206,7 +202,7 @@ impl App {
         let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
         let mut data = AppData::default();
         data.scene = scene;
-        let scene_sizes = data.scene.get_buffer_sizes()?;
+        let scene_sizes = data.scene.get_buffer_sizes();
         let instance = create_instance(window, &entry, &mut data)?;
         data.surface = vk_window::create_surface(&instance, &window, &window)?;
         pick_physical_device(&instance, &mut data)?;
@@ -220,14 +216,14 @@ impl App {
         create_command_pool(&instance, &device, &mut data)?;
         // create_vertex_buffer(&instance, &device, &mut data)?;
         create_uniform_buffer(&instance, &device, &mut data)?;
-        create_shader_buffers(&instance, &device, &mut data, (scene_sizes.0 + scene_sizes.1) as u64)?;
+        create_shader_buffers(&instance, &device, &mut data, (scene_sizes.0 + scene_sizes.1 + scene_sizes.2) as u64)?;
         create_image(&instance, &device, &mut data)?;
         transition_image_layout(&device, &mut data)?;
         create_descriptor_pool(&device, &mut data)?;
         create_sampler(&device, &mut data)?;
         // create_descriptor_sets(&device, &mut data)?;
         create_command_buffer(&device, &mut data)?;
-        create_descriptor_sets(&device, &mut data, scene_sizes.0 as u32)?;
+        create_descriptor_sets(&device, &mut data, scene_sizes.0 as u64, scene_sizes.1 as u64)?;
         create_sync_objects(&device, &mut data)?;
         Ok(Self {
             entry,
@@ -347,7 +343,7 @@ impl App {
             focus_distance: Alignedf32(4.8),
             aperture_radius: Alignedf32(0.0),
             time: Alignedu32(self.frame as u32),
-            origin: AlignedVec4(origin),
+            location: AlignedVec4(origin),
             rotation: 
                 AlignedMat4(Mat4::from_rotation_y(3.14)),
                 // AlignedMat4(Mat4::look_at_rh(
@@ -498,7 +494,7 @@ impl SwapchainSupport {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 struct CameraBufferObject {
     resolution: Vec2,
     view_port_uv: Vec2,
@@ -506,13 +502,13 @@ struct CameraBufferObject {
     focus_distance: Alignedf32,
     aperture_radius: Alignedf32,
     time: Alignedu32,
-    origin: AlignedVec4,
+    location: AlignedVec4,
     rotation: AlignedMat4,
 }
 
 #[repr(C)]
 #[repr(align(16))]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct AlignedVec3(pub Vec3);
 impl AlignedVec3 {
     pub fn new(x: f32, y: f32, z: f32) -> Self {
@@ -520,14 +516,20 @@ impl AlignedVec3 {
     }
 }
 
+impl From<[f32; 3]> for AlignedVec3 {
+    fn from(value: [f32; 3]) -> Self {
+        AlignedVec3::new(value[0], value[1], value[2])
+    }
+}
+
 #[repr(C)]
 #[repr(align(16))]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct AlignedMat4(pub Mat4);
 
 #[repr(C)]
 #[repr(align(16))]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct AlignedVec4(pub Vec4);
 impl AlignedVec4 {
     pub fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
@@ -541,24 +543,24 @@ impl AlignedVec4 {
 
 #[repr(C)]
 #[repr(align(4))]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct Alignedf32(pub f32);
 
 #[repr(C)]
 #[repr(align(4))]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct Alignedu32(pub u32);
 
 #[repr(C)]
 #[repr(align(4))]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct AlignedBool(pub bool);
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct Material {
-    base_colour: AlignedVec4,
-    emission: AlignedVec4,
+    base_colour: AlignedVec3,
+    emission: AlignedVec3,
     reflectivity: Alignedf32,
     roughness: Alignedf32,
     ior: Alignedf32,
@@ -567,10 +569,22 @@ pub struct Material {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 struct Triangle {
-    vertices: [AlignedVec4; 3],
-    normals: [AlignedVec4; 3],
+    material_index: Alignedu32,
+    is_sphere: Alignedu32,
+    vertices: [AlignedVec3; 3],
+    normals: [AlignedVec3; 3],
+}
+
+impl Primitive for Triangle {
+    fn centroid(&self) -> Vec3 {
+        (self.vertices[0].0 + self.vertices[1].0 + self.vertices[2].0) * 0.3333333f32
+    }
+
+    fn aabb(&self) -> accelerators::aabb::AABB {
+        accelerators::aabb::AABB::new(self.vertices[0].0, self.vertices[1].0).grow(self.vertices[2].0)
+    }
 }
 
 impl Triangle {
@@ -589,6 +603,14 @@ impl Triangle {
             z: self.vertices.iter().map(|v| v.0.z).fold(f32::NEG_INFINITY, f32::max),
         }
     }
+}
+
+#[derive(Clone, Debug, Default)]
+struct SceneComponents {
+    camera: CameraBufferObject,
+    bvh: Vec<BvhNode>,
+    materials: Vec<Material>,
+    triangles: Vec<Triangle>
 }
 
 #[repr(C)]

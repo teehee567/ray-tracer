@@ -105,9 +105,12 @@ impl Mesh {
         }
 
         // make bvh
-        // let sah = SAH::new(2., 1.);
-        // let max_leaf_size = 4;
-        // let bvh_root: Option<BVH<Triangle>> = Some(BVH::build(triangles.as_slice(), &vertices, sah, max_leaf_size));
+        let sah = SAH::new(2., 1.);
+        let max_leaf_size = 4;
+        let bvh_root: Option<BVH<Triangle>> = Some(BVH::build(triangles.as_slice(), &vertices, sah, max_leaf_size));
+        println!("{}", bvh_root.unwrap().compute_debug_info());
+        
+        
         let bvh_root = Some(BinSahBVH2::build(triangles.as_mut_slice(), &vertices, 16));
 
         Self {

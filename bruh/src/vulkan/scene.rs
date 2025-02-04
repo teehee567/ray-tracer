@@ -1,272 +1,432 @@
-use std::fs::File;
-use std::io::Read;
+use glam::{Mat4, UVec2, Vec2, Vec3, Vec4};
 use serde_yaml::Value;
-use anyhow::{anyhow, Result};
+use std::fs::File;
+use std::os::raw::c_void;
+use std::time::Instant;
 
-use crate::{AlignedVec3, AlignedVec4, Alignedf32, Alignedu32, Material, Mesh, Sphere, Triangle};
+use crate::accelerators::bvh::BvhBuilder;
+use crate::{
+    AlignedMat4, AlignedVec3, AlignedVec4, Alignedf32, Alignedu32, CameraBufferObject, Material,
+    SceneComponents, Triangle,
+};
+
+const CONFIG_VERSION: &str = "0.2";
+
+use anyhow::{anyhow, bail, Result};
 
 use super::bufferbuilder::BufferBuilder;
 
-const CONFIG_VERSION: &'static str = "0.1";
-
-#[derive(Clone, Debug, Default)]
+/// A scene loaded from a YAML file.
+#[derive(Default, Clone, Debug)]
 pub struct Scene {
-    scene_file: Value,
+    root: Value,
+    components: SceneComponents,
 }
 
 impl Scene {
+    /// Creates a new scene from a file at `path`.
     pub fn new(path: &'static str) -> Result<Self> {
-        let mut file= File::open(path)?;
-        let mut file_content = String::new();
-        file.read_to_string(&mut file_content)?;
-        let scene_file: Value = serde_yaml::from_str(&file_content)?;
-        let scene = Scene { scene_file };
+        let file = File::open(path)?;
+        let root: Value = serde_yaml::from_reader(file)?;
+        let mut scene = Scene {
+            root,
+            components: SceneComponents::default(),
+        };
+
+        // Validate the file and load its components.
         scene.validate_file()?;
+        // scene.load_camera_controls()?;
+        scene.load_meshes()?;
+        scene.build_bvh();
+        println!("Triangles: {}", scene.components.triangles.len());
         Ok(scene)
     }
 
-    pub fn get_buffer_sizes(&self) -> Result<(usize, usize)> {
-        let mut meshes = BufferBuilder::new();
-        let mut triangles = BufferBuilder::new();
-        self.populate_buffers(&mut meshes, &mut triangles)?;
-        Ok((meshes.get_offset(), triangles.get_offset()))
-    }
+    /// Computes buffer sizes for the BVH, material, and triangle buffers.
+    pub fn get_buffer_sizes(&self) -> (usize, usize, usize) {
+        let mut bvh_buf = BufferBuilder::new();
+        let mut mat_buf = BufferBuilder::new();
+        let mut tri_buf = BufferBuilder::new();
 
-    /// Reads the scene “meshes” and appends data to the given buffers.
-    pub fn populate_buffers(
-        &self,
-        meshes: &mut BufferBuilder,
-        triangles: &mut BufferBuilder,
-    ) -> Result<()> {
-        // dbg!(&self.scene_file);
-        // The YAML file is expected to have a "scene" key with a sequence of mesh definitions.
-        let scene_array = self
-            .scene_file
-            .get("scene")
-            .and_then(Value::as_sequence)
-            .ok_or(anyhow!("Missing or invalid 'scene' sequence"))?;
-        let mesh_count = scene_array.len() as u32;
-        meshes.append(mesh_count);
-        meshes.pad(12); // pad according to alignment rules
-
-        for mesh in scene_array {
-            let mesh_type = mesh
-                .get("type")
-                .and_then(Value::as_str)
-                .ok_or(anyhow!("Missing 'type' field in mesh"))?;
-            match mesh_type {
-                "TriMesh" => self.populate_trimesh(mesh, meshes, triangles)?,
-                "Sphere" => self.populate_sphere(mesh, meshes, triangles)?,
-                other => return Err(anyhow!("Unknown mesh type: {}", other)),
-            }
+        for node in &self.components.bvh {
+            bvh_buf.append(*node);
         }
-        Ok(())
+        for material in &self.components.materials {
+            mat_buf.append(*material);
+        }
+        for triangle in &self.components.triangles {
+            tri_buf.append(*triangle);
+        }
+        (
+            bvh_buf.get_offset(),
+            mat_buf.get_offset(),
+            tri_buf.get_offset(),
+        )
     }
 
-    /// Validates the YAML file:
-    ///
-    /// - The `"version"` key must match `CONFIG_VERSION`.
-    /// - Each mesh must have the expected data (for example, a TriMesh must have matching
-    ///   `vertices` and `normals` sequences, and the number of vertex values must be a multiple of 9).
-    pub fn validate_file(&self) -> Result<()> {
-        let version = self
-            .scene_file
+    // pub fn get_total_size(&self) -> usize {
+    //     let a = self.get_buffer_sizes();
+    //     a.
+    // }
+
+    /// Writes all buffers into the given memory (dummy implementation).
+    pub fn write_buffers(&self, memory: *mut c_void) {
+        let mut memory_buf = BufferBuilder::new();
+        for node in &self.components.bvh {
+            memory_buf.append(*node);
+        }
+        for material in &self.components.materials {
+            memory_buf.append(*material);
+        }
+        for triangle in &self.components.triangles {
+            memory_buf.append(*triangle);
+        }
+        unsafe {
+            memory_buf.write(memory);
+        }
+    }
+
+    pub fn get_camera_controls(&self) -> CameraBufferObject {
+        self.components.camera
+        // CameraBufferObject {
+        //     resolution: UVec2::new(900, 900),
+        //     focal_length: Alignedf32(1.0),
+        //     focus_distance: Alignedf32(4.8),
+        //     aperture_radius: Alignedf32(0.),
+        //     location: AlignedVec3::new(0., 1., 3.),
+        //     rotation: AlignedMat4(Mat4::from_rotation_y(3.14)),
+        //     ..Default::default()
+        // }
+    }
+
+    /// Checks that the YAML file is valid.
+    fn validate_file(&self) -> Result<()> {
+        // Check the version.
+        let config_version = self
+            .root
             .get("version")
-            .and_then(Value::as_str)
-            .ok_or(anyhow!("Missing 'version' field"))?;
-        if version != CONFIG_VERSION {
-            return Err(anyhow!("Scene file is of incompatible version!"));
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing version field"))?;
+        if config_version != CONFIG_VERSION {
+            bail!(
+                "Config version mismatch: expected {}, got {}",
+                CONFIG_VERSION,
+                config_version
+            );
+        }
+        if let Some(camera_nodes) = self.root.get("camera") {
+            let resolution = camera_nodes
+                .get("resolution")
+                .and_then(|v| v.as_sequence())
+                .ok_or_else(|| anyhow!("Resolution not correct"))?;
+            camera_nodes
+                .get("focal_length")
+                .and_then(|v| v.as_f64())
+                .ok_or_else(|| anyhow!("focal_length not correct"))?;
+            camera_nodes
+                .get("focus_distance")
+                .and_then(|v| v.as_f64())
+                .ok_or_else(|| anyhow!("Aperture_radius not correct"))?;
+            let location = camera_nodes
+                .get("location")
+                .and_then(|v| v.as_sequence())
+                .ok_or_else(|| anyhow!("location not correct"))?;
+            let rotation = camera_nodes
+                .get("rotation")
+                .and_then(|v| v.as_sequence())
+                .ok_or_else(|| anyhow!("rotation not correct"))?;
+
+            if resolution.len() != 2 {
+                bail!("Resolution incorrect size")
+            }
+            if location.len() != 3 {
+                bail!("location incorrect size")
+            }
+            if rotation.len() != 3 {
+                bail!("rotation incorrect size")
+            }
+        } else {
+            bail!("No camera")
         }
 
-        let scene_array = self
-            .scene_file
-            .get("scene")
-            .and_then(Value::as_sequence)
-            .ok_or(anyhow!("Missing or invalid 'scene' sequence"))?;
-
-        for mesh in scene_array {
-            let mesh_type = mesh
-                .get("type")
-                .and_then(Value::as_str)
-                .ok_or(anyhow!("Missing 'type' field in mesh"))?;
-            if mesh_type == "TriMesh" {
-                let data = mesh.get("data").ok_or(anyhow!("Missing 'data' in TriMesh"))?;
-                let vertices = data.get("vertices")
-                    .and_then(Value::as_sequence)
-                    .ok_or(anyhow!("vertices is not a sequence"))?;
-                let normals = data.get("normals")
-                    .and_then(Value::as_sequence)
-                    .ok_or(anyhow!("normals is not a sequence"))?;
-                if vertices.len() != normals.len() {
-                    return Err(anyhow!("vertices and normals count mismatch"));
-                }
-                if vertices.len() % 9 != 0 {
-                    return Err(anyhow!("vertices size is not a multiple of 9"));
-                }
-            } else if mesh_type == "Sphere" {
-                let data = mesh.get("data").ok_or(anyhow!("Missing 'data' in Sphere"))?;
-                if !data.get("center").map_or(false, |v| v.is_sequence()) {
-                    return Err(anyhow!("center is not a sequence"));
-                }
-                if !data.get("radius").map_or(false, |v| v.is_number()) {
-                    return Err(anyhow!("radius is not a scalar"));
+        // Check that the data fields in each mesh are well-formed.
+        if let Some(scene_nodes) = self.root.get("scene").and_then(|v| v.as_sequence()) {
+            for mesh in scene_nodes {
+                let mesh_type = mesh
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow!("Mesh missing type field"))?;
+                if mesh_type == "TriMesh" {
+                    let data = mesh
+                        .get("data")
+                        .ok_or_else(|| anyhow!("Mesh missing data field"))?;
+                    let vertices = data
+                        .get("vertices")
+                        .and_then(|v| v.as_sequence())
+                        .ok_or_else(|| anyhow!("TriMesh vertices not a sequence"))?;
+                    let normals = data
+                        .get("normals")
+                        .and_then(|v| v.as_sequence())
+                        .ok_or_else(|| anyhow!("TriMesh normals not a sequence"))?;
+                    if vertices.len() != normals.len() {
+                        bail!("Vertices and normals have different sizes");
+                    }
+                    if vertices.len() % 9 != 0 {
+                        bail!("Vertices size is not a multiple of 9");
+                    }
+                    if vertices.is_empty() {
+                        bail!("Vertices are empty");
+                    }
+                } else if mesh_type == "Sphere" {
+                    let data = mesh
+                        .get("data")
+                        .ok_or_else(|| anyhow!("Mesh missing data field"))?;
+                    if data.get("center").and_then(|v| v.as_sequence()).is_none() {
+                        bail!("Sphere center is not a sequence");
+                    }
+                    if data.get("radius").and_then(|v| v.as_f64()).is_none() {
+                        bail!("Sphere radius is not a scalar");
+                    }
                 }
             }
         }
         Ok(())
     }
 
-    /// Populates the buffers with triangle data for a TriMesh.
-    fn populate_trimesh(
-        &self,
-        mesh: &Value,
-        meshes: &mut BufferBuilder,
-        triangles: &mut BufferBuilder,
-    ) -> Result<()> {
-        // Read the material information.
-        let material = get_material(
-            mesh.get("material")
-                .ok_or(anyhow!("Missing 'material' in TriMesh"))?,
-        )?;
-        // Get the vertex data.
-        let data = mesh.get("data").ok_or(anyhow!("Missing 'data' in TriMesh"))?;
-        let verts_seq = data
-            .get("vertices")
-            .and_then(Value::as_sequence)
-            .ok_or(anyhow!("Missing vertices sequence"))?;
-        let norms_seq = data
-            .get("normals")
-            .and_then(Value::as_sequence)
-            .ok_or(anyhow!("Missing normals sequence"))?;
+    /// Loads the camera controls.
+    fn load_camera_controls(&mut self) -> Result<()> {
+        let camera = self.root.get("camera").unwrap();
 
-        // Convert YAML sequences into Vec<f32>.
-        let verts: Vec<f32> = verts_seq
-            .iter()
-            .map(|v| v.as_f64().unwrap() as f32)
-            .collect();
-        let norms: Vec<f32> = norms_seq
-            .iter()
-            .map(|v| v.as_f64().unwrap() as f32)
-            .collect();
+        let resolution: [f32; 2] =
+            serde_yaml::from_value(camera.get("resolution").unwrap().clone())?;
+        let focal_length: f32 =
+            serde_yaml::from_value(camera.get("focal_length").unwrap().clone())?;
+        let focus_distance: f32 =
+            serde_yaml::from_value(camera.get("focus_distance").unwrap().clone())?;
+        let aperture_radius: f32 =
+            serde_yaml::from_value(camera.get("aperture_radius").unwrap().clone())?;
+        let location: [f32; 3] = serde_yaml::from_value(camera.get("location").unwrap().clone())?;
 
-        let triangle_amt = (verts.len() / 9) as u32;
-
-        // Create and append the mesh info.
-        let mesh_info = Mesh {
-            triangle_count: triangle_amt,
-            offset: triangles.get_relative_offset::<Triangle>()? as u32,
-            material,
+        let mut ubo = CameraBufferObject {
+            resolution: Vec2::from(resolution),
+            focal_length: Alignedf32(focal_length),
+            focus_distance: Alignedf32(focus_distance),
+            aperture_radius: Alignedf32(aperture_radius),
+            location: AlignedVec4(Vec4::new(location[0], location[1], location[2], 0.)),
+            ..Default::default()
         };
-        meshes.append(mesh_info);
 
-        // Create each triangle from three vertices and normals.
-        for i in 0..(triangle_amt as usize) {
+        let rotation: [f32; 3] = serde_yaml::from_value(
+            camera
+                .get("rotation")
+                .ok_or_else(|| anyhow!("Missing 'rotation' field"))?
+                .clone(),
+        )?;
+        ubo.rotation = AlignedMat4(Mat4::from_rotation_x(rotation[0].to_radians())
+            * Mat4::from_rotation_y(rotation[1].to_radians())
+            * Mat4::from_rotation_z(rotation[2].to_radians()));
+
+
+        let ratio = resolution[0] as f32 / resolution[1] as f32;
+        let (u, v) = if ratio > 1.0 {
+            (ratio, 1.0)
+        } else {
+            (1.0, 1.0 / ratio)
+        };
+        ubo.view_port_uv = Vec2::new(u, v);
+
+        self.components.camera = ubo;
+        Ok(())
+    }
+
+    /// Loads meshes from the YAML file.
+    fn load_meshes(&mut self) -> Result<()> {
+        let scene_nodes = self
+            .root
+            .get("scene")
+            .and_then(|v| v.as_sequence())
+            .ok_or_else(|| anyhow!("Scene field missing or not a sequence"))?
+            .clone();
+        for mesh in scene_nodes {
+            let mesh_type = mesh
+                .get("type")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow!("Mesh missing type field"))?;
+            if mesh_type == "TriMesh" {
+                self.load_tri_mesh(&mesh)?;
+            } else if mesh_type == "Sphere" {
+                self.load_sphere(&mesh)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Loads a triangle mesh.
+    fn load_tri_mesh(&mut self, mesh: &Value) -> Result<()> {
+        let data = mesh
+            .get("data")
+            .ok_or_else(|| anyhow!("Mesh missing data field"))?;
+        let verts: Vec<f32> = serde_yaml::from_value(
+            data.get("vertices")
+                .ok_or_else(|| anyhow!("Missing vertices"))?
+                .clone(),
+        )?;
+        let norms: Vec<f32> = serde_yaml::from_value(
+            data.get("normals")
+                .ok_or_else(|| anyhow!("Missing normals"))?
+                .clone(),
+        )?;
+        if verts.len() % 9 != 0 {
+            bail!("Vertices length not a multiple of 9");
+        }
+        let triangle_amt = verts.len() / 9;
+
+        // Append the material.
+        let material_node = mesh
+            .get("material")
+            .ok_or_else(|| anyhow!("Missing material field"))?;
+        let material = self.get_material(material_node)?;
+        let material_index = self.components.materials.len() as u32;
+        self.components.materials.push(material);
+
+        // Append triangles.
+        for i in 0..triangle_amt {
             let mut tri = Triangle {
-                vertices: [AlignedVec4::default(); 3],
-                normals: [AlignedVec4::default(); 3],
+                material_index: Alignedu32(material_index),
+                is_sphere: Alignedu32(0),
+                vertices: [
+                    AlignedVec3::default(),
+                    AlignedVec3::default(),
+                    AlignedVec3::default(),
+                ],
+                normals: [
+                    AlignedVec3::default(),
+                    AlignedVec3::default(),
+                    AlignedVec3::default(),
+                ],
             };
             for j in 0..3 {
                 let off = i * 9 + j * 3;
-                tri.vertices[j] = AlignedVec4::new(verts[off], verts[off + 1], verts[off + 2], 0.0);
-                tri.normals[j] = AlignedVec4::new(norms[off], norms[off + 1], norms[off + 2], 0.0);
+                tri.vertices[j] = AlignedVec3::new(verts[off], verts[off + 1], verts[off + 2]);
+                tri.normals[j] = AlignedVec3::new(norms[off], norms[off + 1], norms[off + 2]);
             }
-            triangles.append(tri);
+            self.components.triangles.push(tri);
         }
         Ok(())
     }
 
-    /// Populates the buffers with a Sphere.
-    fn populate_sphere(
-        &self,
-        mesh: &Value,
-        meshes: &mut BufferBuilder,
-        triangles: &mut BufferBuilder,
-    ) -> Result<()> {
-        let material = get_material(
-            mesh.get("material")
-                .ok_or(anyhow!("Missing 'material' in Sphere"))?,
-        )?;
-        let mesh_info = Mesh {
-            triangle_count: 0,
-            offset: triangles.get_relative_offset::<Triangle>()? as u32,
-            material,
-        };
-        meshes.append(mesh_info);
+    /// Loads a sphere.
+    fn load_sphere(&mut self, sphere: &Value) -> Result<()> {
+        // Append the material.
+        let material_node = sphere
+            .get("material")
+            .ok_or_else(|| anyhow!("Missing material field"))?;
+        let material = self.get_material(material_node)?;
+        let material_index = self.components.materials.len() as u32;
+        self.components.materials.push(material);
 
-        let data = mesh.get("data").ok_or(anyhow!("Missing 'data' in Sphere"))?;
-        let center_seq = data
-            .get("center")
-            .and_then(Value::as_sequence)
-            .ok_or(anyhow!("Missing center sequence"))?;
-        let center_vals: Vec<f32> = center_seq
-            .iter()
-            .map(|v| v.as_f64().unwrap() as f32)
-            .collect();
-        let center = AlignedVec3::new(
-            *center_vals.get(0).unwrap_or(&0.0),
-            *center_vals.get(1).unwrap_or(&0.0),
-            *center_vals.get(2).unwrap_or(&0.0),
-        );
+        let data = sphere
+            .get("data")
+            .ok_or_else(|| anyhow!("Missing data field"))?;
+        let center: Vec<f32> = serde_yaml::from_value(
+            data.get("center")
+                .ok_or_else(|| anyhow!("Missing center field"))?
+                .clone(),
+        )?;
+        if center.len() < 3 {
+            bail!("Center does not have 3 components");
+        }
         let radius = data
             .get("radius")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0) as f32;
-        let sphere = Sphere {
-            center,
-            radius: Alignedf32(radius),
+            .and_then(|v| v.as_f64())
+            .ok_or_else(|| anyhow!("Missing or invalid radius field"))? as f32;
+        let mut tri = Triangle {
+            material_index: Alignedu32(material_index),
+            is_sphere: Alignedu32(1),
+            vertices: [
+                AlignedVec3::default(),
+                AlignedVec3::default(),
+                AlignedVec3::default(),
+            ],
+            normals: [
+                AlignedVec3::default(),
+                AlignedVec3::default(),
+                AlignedVec3::default(),
+            ],
         };
-        // Append the sphere into the triangle buffer. (We pass the alignment equal to the size
-        // of a Triangle so that subsequent data remains aligned as in the original code.)
-        triangles.append_with_size(sphere, std::mem::size_of::<Triangle>());
+        tri.vertices[0] = AlignedVec3::new(center[0], center[1], center[2]);
+        // The sphere is represented as a triangle that “stores” the radius.
+        tri.vertices[1] = AlignedVec3::new(radius, 0.0, 0.0);
+        self.components.triangles.push(tri);
         Ok(())
+    }
+
+    /// Builds the BVH from the triangles.
+    fn build_bvh(&mut self) {
+        println!("building BVH...");
+        let start = Instant::now();
+
+        let mut builder = BvhBuilder::new(&mut self.components.triangles);
+        self.components.bvh = builder.build_bvh();
+
+        // let sah = SAH::new(2., 1.);
+        // let max_leaf_size = 4;
+        // let bvh = BVH::build(self.components.triangles.as_slice(), sah, max_leaf_size);
+        // println!("{}", bvh.compute_debug_info());
+        // self.components.bvh = bvh.nodes;
+
+        println!("BVH built in :{:.2}s", start.elapsed().as_secs_f32());
+        println!("done!");
+    }
+
+    /// Constructs a Material from a YAML node.
+    fn get_material(&self, node: &Value) -> Result<Material> {
+        // Default color value.
+        let def: [f32; 3] = [0.0, 0.0, 0.0];
+
+        let base_colour: [f32; 3] = node
+            .get("base_color")
+            .and_then(|v| serde_yaml::from_value(v.clone()).ok())
+            .unwrap_or(def);
+        let emission: [f32; 3] = node
+            .get("emission")
+            .and_then(|v| serde_yaml::from_value(v.clone()).ok())
+            .unwrap_or(def);
+        let reflectivity = node
+            .get("reflectiveness")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0) as f32;
+        let roughness = node
+            .get("roughness")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0) as f32;
+        let ior = node.get("ior").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+        let is_glass = node
+            .get("is_glass")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let shade_smooth = node
+            .get("smooth_shading")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        Ok(Material {
+            base_colour: base_colour.into(),
+            emission: emission.into(),
+            reflectivity: Alignedf32(reflectivity),
+            roughness: Alignedf32(roughness),
+            ior: Alignedf32(ior),
+            is_glass: Alignedu32(if is_glass { 1 } else { 0 }),
+            shade_smooth: Alignedu32(if shade_smooth { 1 } else { 0 }),
+        })
     }
 }
 
-/// Constructs a Material from a YAML node containing material parameters.
-pub fn get_material(node: &Value) -> Result<Material> {
-    // A helper to convert a YAML sequence (of 3 numbers) into an AlignedVec4.
-    fn seq_to_aligned_vec4(seq: Option<&Value>) -> AlignedVec4 {
-        if let Some(val) = seq.and_then(|v| v.as_sequence()) {
-            let mut nums: Vec<f32> =
-                val.iter().map(|x| x.as_f64().unwrap_or(0.0) as f32).collect();
-            while nums.len() < 3 {
-                nums.push(0.0);
-            }
-            AlignedVec4::new(nums[0], nums[1], nums[2], 0.0)
-        } else {
-            AlignedVec4::default()
-        }
-    }
-
-    let base_colour = seq_to_aligned_vec4(node.get("base_color"));
-    let emission = seq_to_aligned_vec4(node.get("emission"));
-    let reflectivity =
-        Alignedf32(node.get("reflectiveness").and_then(Value::as_f64).unwrap_or(0.0) as f32);
-    let roughness =
-        Alignedf32(node.get("roughness").and_then(Value::as_f64).unwrap_or(0.0) as f32);
-    let ior = Alignedf32(node.get("ior").and_then(Value::as_f64).unwrap_or(0.0) as f32);
-    let is_glass = if node.get("is_glass").and_then(Value::as_bool).unwrap_or(false) {
-        1
-    } else {
-        0
-    };
-    let shade_smooth = if node
-        .get("smooth_shading")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
-        1
-    } else {
-        0
-    };
-
-    Ok(Material {
-        base_colour,
-        emission,
-        reflectivity,
-        roughness,
-        is_glass: Alignedu32(is_glass),
-        ior,
-        shade_smooth: Alignedu32(shade_smooth),
-    })
+fn identity_matrix() -> [[f32; 4]; 4] {
+    [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
 }
