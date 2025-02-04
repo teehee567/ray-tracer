@@ -3,6 +3,7 @@
 #define SAMPLES 8
 #define BOUNCES 12
 #define EPSILON 0.0001
+#define MAX_BVH_DEPTH 16
 
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_scalar_block_layout : enable
@@ -10,6 +11,17 @@
 
 #include "imports/ray.comp"
 #include "imports/random.comp"
+
+/* AABB node of the BVH tree */
+struct BvhNode {
+    uint idx;
+    uint amt;
+
+    uint left;
+
+    vec3 min;
+    vec3 max;
+};
 
 /* Material of a Mesh.
  *
@@ -20,6 +32,7 @@
  * is_glass             indicates whether the material will be rendered with a glass shader;
  * ior                  is the index of refractivity of the glass material, if is_glass is true;         
  * shaded_smooth        only valid for triangle meshes, determines whether normals are interpolated;
+ * is_sphere            temporary placeholder for spheres as a better indicator is figured out
  */
 struct Material {
     vec4 base_color;
@@ -31,29 +44,13 @@ struct Material {
     bool shaded_smooth;
 };
 
-/* Description of a Mesh.
- *
- * If it's a sphere:
- *   triangle_count     is 0;
- *   offset             points to the triangle whose first vec3 is the center of
- *                      the sphere, and second.x is the center;
- * Else
- *   triangle_count     is the amount of triangles in the mesh;
- *   offset             is the offset of those triangles in the triangle buffer;
- * 
- * material             is the material of the object;
- */
-struct Mesh {
-    uint triangle_count;
-    uint offset;
-    Material material;
-};
-
 // perf: 96 bytes per triangle is pretty bad.
 // Since if not shaded smooth the normals are ignored, then they can be used to 
 // store 2 triangle per triangle...
 // Or maybe just remove the normals altogether
 struct Triangle {
+    uint materialIdx;
+    bool is_sphere;
     vec3[3] vertices;
     vec3[3] normals;
 };
@@ -90,17 +87,20 @@ layout(std430, set = 0, binding = 0) uniform Camera {
     mat4 rotation;
 } camera;
 
-layout(std430, set = 0, binding = 1) readonly buffer MeshInfoBuffer {
-    uint mesh_count;
-    Mesh meshes[];
-} mesh_info;
+layout(std430, set = 0, binding = 1) readonly buffer BvhBuffer {
+    BvhNode nodes[];
+} bvh;
 
-layout(std430, set = 0, binding = 2) readonly buffer TriangleBuffer {
-    Triangle triangles[];
-} tri_buf;
+layout(std430, set = 0, binding = 2) readonly buffer MaterialBuffer {
+    Material get[]; // this makes the syntax a bit more readable: materials.get[3]
+} materials;
 
-layout(set = 0, binding = 3, rgba8) uniform image2D accumulator; 
-layout(set = 0, binding = 4) writeonly uniform image2D framebuffer;
+layout(std430, set = 0, binding = 3) readonly buffer TriangleBuffer {
+    Triangle get[];
+} triangles;
+
+layout(set = 0, binding = 4, rgba8) uniform image2D accumulator;
+layout(set = 0, binding = 5) writeonly uniform image2D framebuffer;
 
 
 Ray generate_ray(vec2 frag_coord) {
@@ -133,8 +133,8 @@ Ray generate_ray(vec2 frag_coord) {
 
 vec3 background_color(Ray ray) {
     float blend = 0.5 * ray.direction.y + 0.5;
-    return mix(vec3(0.6, 0.8, 1.0), vec3(0.2, 0.4, 1.0), blend);
-    //return vec3(0);
+    //return mix(vec3(0.6, 0.8, 1.0), vec3(0.2, 0.4, 1.0), blend);
+    return vec3(0);
 }
 
 // Schlick approximation of Fresnel on glass
@@ -328,73 +328,81 @@ HitRecord hit_sphere(vec3 center, float radius, Ray ray) {
 }
 
 /*
- * This is a version of hit_meshes where during the search for the closest object
- * only the index of the found mesh and/or triangle are stored, and one last ray
- * trace is performed at the end to obtain more details. This avoids a bunch of 
- * memory writes and yields alone a 20% performance improvement over the older.
+ * AABB intersection code using the Slab method.
+ *
+ * This works by first solving the t parameter for each plane intersection, and
+ * then checking if any of the intersections with the plane that should be closer
+ * to the camera end up further away than the intersections of the opposite plane.
+ *
+ * More info at https://en.wikipedia.org/wiki/Slab_method
  */
-HitRecord hit_meshes(Ray ray) {
-    float t = 1.0 / 0.0; // infinity
-    uint triIdx = uint(-1);
-    uint meshIdx;
+bool hit_aabb(Ray ray, BvhNode aabb) {
+    vec3 inv_dir = 1 / ray.direction;
 
-    for (int i = 0; i < mesh_info.mesh_count; i++) {
-        Mesh mesh = mesh_info.meshes[i];
-        HitRecord current_hit;
+    // Solve for the intersection points with all 6 planes:
+    //  origin_x + t * direction_x = x  (for all 3 dimensions)
+    vec3 t1 = (aabb.min - ray.origin) * inv_dir;
+    vec3 t2 = (aabb.max - ray.origin) * inv_dir;
 
-        // automatically skipped for spheres
-        for (int tri = 0; tri < mesh.triangle_count; tri++) {
-            Triangle triangle = tri_buf.triangles[mesh.offset + tri];
+    // Get the closest and furthest intersections for each dimension
+    vec3 d_min = min(t1, t2);
+    vec3 d_max = max(t1, t2);
 
-            current_hit = hit_triangle(triangle, ray, false);
+    float t_min = max(max(d_min.x, d_min.y), d_min.z);
+    float t_max = min(min(d_max.x, d_max.y), d_max.z);
 
-            if (current_hit.did_hit && current_hit.t < t) {
-                t = current_hit.t;
-                meshIdx = i;
-                triIdx = tri;
-            }
-        }
+    return t_min <= t_max;
+}
 
-        if (mesh.triangle_count == 0) {
-            vec3 center = tri_buf.triangles[mesh.offset].vertices[0];
-            float radius = tri_buf.triangles[mesh.offset].vertices[1].r;
-
-            current_hit = hit_sphere(center, radius, ray);
-
-            if (current_hit.did_hit && current_hit.t < t) {
-                t = current_hit.t;
-                meshIdx = i;
-                triIdx = uint(-1);
-            }
-        }
-    }
-
+// todo: this is recursive, might be optimizable to a loop
+HitRecord hit_meshes(Ray ray, inout uint mesh_tests) {
     HitRecord hit;
+    hit.t = 1.0 / 0.0; // infinity
     hit.did_hit = false;
 
-    if (t < 1.0 / 0.0) {
-        uint offset = mesh_info.meshes[meshIdx].offset;
+    // Setup stack for tree traversal
+    uint stack[MAX_BVH_DEPTH + 1], stack_ptr = 1;
+    stack[0] = 0;
 
-        if (triIdx != uint(-1)) {
-            Triangle triangle = tri_buf.triangles[offset + triIdx];
+    while (stack_ptr > 0) {
+        BvhNode node = bvh.nodes[stack[--stack_ptr]];
 
-            hit = hit_triangle(triangle, ray, mesh_info.meshes[meshIdx].material.shaded_smooth);
-            hit.material = mesh_info.meshes[meshIdx].material;
+        // If we hit the node, dig deeper, else pop the stack.
+        mesh_tests++;
+        if (hit_aabb(ray, node)) {
 
-        } else {
-            vec3 center = tri_buf.triangles[offset].vertices[0];
-            float radius = tri_buf.triangles[offset].vertices[1].r;
+            // todo: find better way to test for leaf
+            if (node.left == 0) {
+                for (int tri = 0; tri < node.amt; tri++) {
+                    mesh_tests++;
 
-            hit = hit_sphere(center, radius, ray);
-            hit.material = mesh_info.meshes[meshIdx].material;
+                    Triangle triangle = triangles.get[node.idx + tri];
+                    HitRecord current_hit;
+
+                    if (!triangle.is_sphere) {
+                        current_hit = hit_triangle(triangle, ray, false);
+                    } else {
+                        current_hit = hit_sphere(triangle.vertices[0], triangle.vertices[1].x, ray);
+                    }
+
+                    if (current_hit.did_hit && current_hit.t < hit.t) {
+                        hit = current_hit;
+                        hit.material = materials.get[triangle.materialIdx];
+                    }
+                }
+
+            // Else push both nodes on the stack
+            } else {
+                stack[stack_ptr++] = node.left + 1;
+                stack[stack_ptr++] = node.left;
+            }
         }
     }
 
     return hit;
 }
 
-
-vec3 ray_color(Ray ray) {
+vec3 ray_color(Ray ray, inout uint mesh_tests) {
     /*  The ray only gets light when it hits something emissive.
         The light that will be "received" from the emissive object
          will be tinted multiplicatively by all the surfaces the ray
@@ -410,7 +418,7 @@ vec3 ray_color(Ray ray) {
     vec3 incoming_light = vec3(0);
 
     for (int bounce = 0; bounce < BOUNCES + 1; bounce++) {
-        HitRecord hit = hit_meshes(ray);
+        HitRecord hit = hit_meshes(ray, mesh_tests);
 
         if (hit.did_hit) {
             Material material = hit.material;
@@ -444,12 +452,12 @@ void main() {
     if (coordinates.x < size.x && coordinates.y < size.y) {
         //seed = uint(coordinates.x + camera.resolution.x * coordinates.y);
         seed = uint(coordinates.x + camera.resolution.x * coordinates.y + camera.frame * coordinates.y * coordinates.x);
-
+        uint mesh_tests = 0;
         vec3 color = vec3(0);
         for (int i = 0; i < SAMPLES; i++) {
             Ray ray = generate_ray(coordinates.xy);
 
-            color += ray_color(ray) / float(SAMPLES);
+            color += ray_color(ray, mesh_tests) / float(SAMPLES);
         }
 
         vec4 old_pixel = imageLoad(accumulator, coordinates);
@@ -457,6 +465,10 @@ void main() {
 
         imageStore(accumulator, coordinates, new_pixel);
         imageStore(framebuffer, coordinates, gamma_correction(new_pixel));
+
+        // visualize triangle tests
+        //float tests = float(mesh_tests) / 10000.0f;
+        //imageStore(framebuffer, coordinates, gamma_correction(vec4(tests <= 1.0f ? vec3(tests) : vec3(1,0,0), 1.0)));
 
         //imageStore(framebuffer, coordinates, gamma_correction(vec4(color, 1.0)));
         //imageStore(framebuffer, coordinates, gamma_correction(vec4(triangle_sbo.triangles[0].first, 1.0)));
