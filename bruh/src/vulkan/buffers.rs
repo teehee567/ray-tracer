@@ -7,7 +7,6 @@ use super::utils::create_buffer;
 
 
 pub unsafe fn create_uniform_buffer(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
-
     let (uniform_buffer, uniform_buffer_memory) = create_buffer(
         instance,
         device,
