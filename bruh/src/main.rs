@@ -52,7 +52,8 @@ mod vulkan;
 mod accelerators;
 
 /// Whether the validation layers should be enabled.
-const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
+// const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
+const VALIDATION_ENABLED: bool = true;
 /// The name of the validation layers.
 const VALIDATION_LAYER: vk::ExtensionName =
     vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
@@ -240,8 +241,8 @@ impl App {
         create_descriptor_pool(&device, &mut data)?;
         create_sampler(&device, &mut data)?;
         // create_descriptor_sets(&device, &mut data)?;
+        create_descriptor_sets(&device, &mut data, scene_sizes.0 as u64, scene_sizes.1 as u64, scene_sizes.2 as u64)?;
         create_command_buffer(&device, &mut data)?;
-        create_descriptor_sets(&device, &mut data, scene_sizes.0 as u64, scene_sizes.1 as u64)?;
         create_sync_objects(&device, &mut data)?;
         info!("Finished initialisation of Vulkan Resources");
         Ok(Self {
@@ -483,6 +484,7 @@ impl SwapchainSupport {
 }
 
 #[repr(C)]
+#[repr(align(64))]
 #[derive(Copy, Clone, Debug, Default)]
 struct CameraBufferObject {
     resolution: AlignedUVec2,

@@ -2,27 +2,31 @@
 use log::{debug, info};
 use vulkanalia::prelude::v1_0::*;
 
-use crate::AppData;
+use crate::{AppData, CameraBufferObject};
 use anyhow::Result;
 
 pub unsafe fn create_descriptor_pool(device: &Device, data: &mut AppData) -> Result<()> {
     let max_sets = data.swapchain_image_views.len() as u32;
     let ubo_size = vk::DescriptorPoolSize::builder()
         .type_(vk::DescriptorType::UNIFORM_BUFFER)
-        .descriptor_count(max_sets);
+        .descriptor_count(max_sets)
+        .build();
     let sbo_size = vk::DescriptorPoolSize::builder()
         .type_(vk::DescriptorType::STORAGE_BUFFER)
-        .descriptor_count(2 * max_sets);
+        .descriptor_count(3 * max_sets)
+        .build();
     let sbo_size1 = vk::DescriptorPoolSize::builder()
         .type_(vk::DescriptorType::STORAGE_IMAGE)
-        .descriptor_count(2 * max_sets);
+        .descriptor_count(2 * max_sets)
+        .build();
 
 
 
     let pool_sizes = &[ubo_size, sbo_size, sbo_size1];
     let info = vk::DescriptorPoolCreateInfo::builder()
         .pool_sizes(pool_sizes)
-        .max_sets(data.swapchain_images.len() as u32);
+        .max_sets(max_sets)
+        .build();
 
     data.descriptor_pool = device.create_descriptor_pool(&info, None)?;
     info!("Created descriptor_pool: {:?}", info);
@@ -30,14 +34,21 @@ pub unsafe fn create_descriptor_pool(device: &Device, data: &mut AppData) -> Res
     Ok(())
 }
 
-pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData, bvh_size: u64, mat_size: u64) -> Result<()> {
+fn align_up(value: u64) -> u64 {
+    ((value + 15) / 16) * 16
+}
+
+#[no_mangle]
+pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData, bvh_size: u64, mat_size: u64, triangle_size: u64) -> Result<()> {
+    println!("{}, {}", bvh_size, mat_size);
     // Allocate
 
     let layouts = vec![data.descriptor_set_layout; data.swapchain_image_views.len()];
     debug!("Layouts: {:?}", layouts.len());
     let info = vk::DescriptorSetAllocateInfo::builder()
         .descriptor_pool(data.descriptor_pool)
-        .set_layouts(&layouts);
+        .set_layouts(&layouts)
+        .build();
 
     data.compute_descriptor_sets = device.allocate_descriptor_sets(&info)?;
     info!("Allocated Descriptor sets");
@@ -47,82 +58,94 @@ pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData, bvh_si
         let uniform_buffer_info = vk::DescriptorBufferInfo::builder()
             .buffer(data.uniform_buffer)
             .offset(0)
-            .range(vk::WHOLE_SIZE as u64);
+            .range(std::mem::size_of::<CameraBufferObject>() as u64)
+            .build();
 
         let bvh_buffer_info = vk::DescriptorBufferInfo::builder()
             .buffer(data.compute_ssbo_buffer)
             .offset(0)
-            .range(bvh_size);
+            .range(bvh_size)
+            .build();
 
         let material_buffer_info = vk::DescriptorBufferInfo::builder()
             .buffer(data.compute_ssbo_buffer)
             .offset(bvh_size)
-            .range(mat_size);
+            .range(mat_size)
+            .build();
 
         let triangle_buffer_info = vk::DescriptorBufferInfo::builder()
             .buffer(data.compute_ssbo_buffer)
             .offset(bvh_size + mat_size)
-            .range(vk::WHOLE_SIZE as u64);
+            .range(triangle_size)
+            .build();
 
         let accumulator_image_info = vk::DescriptorImageInfo::builder()
             .sampler(data.sampler)
             .image_view(data.accumulator_view)
-            .image_layout(vk::ImageLayout::GENERAL);
+            .image_layout(vk::ImageLayout::GENERAL)
+            .build();
 
         let swapchain_image_info = vk::DescriptorImageInfo::builder()
             .sampler(data.sampler)
             .image_view(data.swapchain_image_views[i])
-            .image_layout(vk::ImageLayout::GENERAL);
+            .image_layout(vk::ImageLayout::GENERAL)
+            .build();
 
+        let uniform_buffer_array = [uniform_buffer_info];
         let write_uniform = vk::WriteDescriptorSet::builder()
             .dst_set(data.compute_descriptor_sets[i])
             .dst_binding(0)
             .dst_array_element(0)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .buffer_info(&[uniform_buffer_info])
+            .buffer_info(&uniform_buffer_array)
             .build();
 
+        let bvh_buffer_array = [bvh_buffer_info];
         let bvh_shader = vk::WriteDescriptorSet::builder()
             .dst_set(data.compute_descriptor_sets[i])
             .dst_binding(1)
             .dst_array_element(0)
             .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-            .buffer_info(&[bvh_buffer_info])
+            .buffer_info(&bvh_buffer_array)
             .build();
 
+        let material_buffer_array = [material_buffer_info];
         let material_shader = vk::WriteDescriptorSet::builder()
             .dst_set(data.compute_descriptor_sets[i])
             .dst_binding(2)
             .dst_array_element(0)
             .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-            .buffer_info(&[material_buffer_info])
+            .buffer_info(&material_buffer_array)
             .build();
 
+        let triangle_buffer_array = [triangle_buffer_info];
         let triangle_shader = vk::WriteDescriptorSet::builder()
             .dst_set(data.compute_descriptor_sets[i])
             .dst_binding(3)
             .dst_array_element(0)
             .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-            .buffer_info(&[triangle_buffer_info])
+            .buffer_info(&triangle_buffer_array)
             .build();
 
+        let accumulator_image_array = [accumulator_image_info];
         let write_accumulator = vk::WriteDescriptorSet::builder()
             .dst_set(data.compute_descriptor_sets[i])
             .dst_binding(4)
             .dst_array_element(0)
             .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
-            .image_info(&[accumulator_image_info])
+            .image_info(&accumulator_image_array)
             .build();
 
+        let swapchain_image_array = [swapchain_image_info];
         let write_swapchain = vk::WriteDescriptorSet::builder()
             .dst_set(data.compute_descriptor_sets[i])
             .dst_binding(5)
             .dst_array_element(0)
             .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
-            .image_info(&[swapchain_image_info])
+            .image_info(&swapchain_image_array)
             .build();
 
-        let descriptor_writes = [
+        let descriptor_writes = &[
             write_uniform,
             bvh_shader,
             material_shader,
@@ -131,7 +154,7 @@ pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData, bvh_si
             write_swapchain,
         ];
 
-        device.update_descriptor_sets(&descriptor_writes, &[] as &[vk::CopyDescriptorSet]);
+        device.update_descriptor_sets(descriptor_writes, &[] as &[vk::CopyDescriptorSet]);
         info!("Updated Descriptor Sets");
     }
 

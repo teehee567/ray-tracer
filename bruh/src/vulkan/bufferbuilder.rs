@@ -16,6 +16,14 @@ impl BufferBuilder {
         }
     }
 
+    pub fn align_to_16(&mut self) {
+        let remainder = self.buffer.len() % 16;
+        if remainder != 0 {
+            let pad_size = 16 - remainder;
+            self.pad(pad_size);
+        }
+    }
+
     pub fn get_offset(&self) -> usize {
         self.buffer.len()
     }

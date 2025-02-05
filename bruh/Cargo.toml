@@ -19,4 +19,4 @@ vulkanalia = { version = "0.25.0", features = ["libloading", "provisional", "win
 winit = "0.29"
 
 [profile.release]
-debug = true
+debug = 2

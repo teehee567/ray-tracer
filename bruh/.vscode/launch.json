@@ -1,0 +1,13 @@
+{
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "raytracer.exe",
+            "program": "${workspaceFolder}/target/release/raytracer.exe",
+            "args": [],
+            "preLaunchTask": "rust: cargo build",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
