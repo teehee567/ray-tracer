@@ -16,6 +16,7 @@ use accelerators::bvhfromotherland::BvhNode;
 use accelerators::Primitive;
 use anyhow::{anyhow, Result};
 use glam::{Mat4, UVec2, Vec2, Vec3, Vec4};
+use log::info;
 use serde::ser::SerializeStruct;
 use serde::Serialize;
 use vulkan::accumulate_image::{create_image, transition_image_layout};
@@ -79,7 +80,7 @@ fn main() -> Result<()> {
     print_size!(Mesh);
     print_size!(Vertex);
 
-    let scene = Scene::new("./fancy.yaml")?;
+    let scene = Scene::new("./cornell.yaml")?;
 
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
@@ -242,6 +243,7 @@ impl App {
         create_command_buffer(&device, &mut data)?;
         create_descriptor_sets(&device, &mut data, scene_sizes.0 as u64, scene_sizes.1 as u64)?;
         create_sync_objects(&device, &mut data)?;
+        info!("Finished initialisation of Vulkan Resources");
         Ok(Self {
             entry,
             instance,

@@ -1,3 +1,4 @@
+use log::info;
 use vulkanalia::prelude::v1_0::*;
 
 use crate::{AppData, TILE_SIZE};
@@ -10,6 +11,7 @@ pub unsafe fn create_command_buffer(device: &Device, data: &mut AppData) -> Resu
         .command_buffer_count(1);
 
     data.compute_command_buffer = device.allocate_command_buffers(&allocate_info)?[0];
+    info!("Created command buffer for: {:?}", data.command_pool);
 
     Ok(())
 }

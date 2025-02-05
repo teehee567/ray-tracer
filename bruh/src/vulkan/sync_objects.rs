@@ -1,4 +1,5 @@
 
+use log::info;
 use vulkanalia::prelude::v1_0::*;
 
 use crate::AppData;
@@ -13,6 +14,7 @@ pub unsafe fn create_sync_objects(device: &Device, data: &mut AppData) -> Result
 
     data.compute_in_flight_fences = device.create_fence(&fence_info, None)?;
 
+    info!("Creatd Sync Objects");
     // data.images_in_flight = data.swapchain_images.iter().map(|_| vk::Fence::null()).collect();
 
     Ok(())
