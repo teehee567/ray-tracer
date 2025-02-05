@@ -61,12 +61,13 @@ pub unsafe fn create_swapchain(window: &Window, instance: &Instance, device: &De
         .old_swapchain(vk::SwapchainKHR::null());
 
     data.swapchain = device.create_swapchain_khr(&info, None)?;
+    info!("Created Swapchain: {:?}", data.swapchain);
 
     // Images
 
     data.swapchain_images = device.get_swapchain_images_khr(data.swapchain)?;
+    info!("Created {} Swapchain Images: {:?}",data.swapchain_images.len(), data.swapchain_images);
 
-    println!("{:?}", present_mode);
 
     Ok(())
 }
@@ -130,6 +131,7 @@ pub unsafe fn create_swapchain_image_views(device: &Device, data: &mut AppData) 
                 .components(components)
                 .subresource_range(subresource_range);
 
+            info!("Created a swapchain image_view for {:?}: {:?}", i, info);
             device.create_image_view(&info, None)
         })
         .collect::<Result<Vec<_>, _>>()?;
