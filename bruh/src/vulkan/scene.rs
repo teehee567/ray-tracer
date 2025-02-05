@@ -51,12 +51,15 @@ impl Scene {
         for node in &self.components.bvh {
             bvh_buf.append(*node);
         }
+        bvh_buf.align_to_16();
         for material in &self.components.materials {
             mat_buf.append(*material);
         }
+        mat_buf.align_to_16();
         for triangle in &self.components.triangles {
             tri_buf.append(*triangle);
         }
+        tri_buf.align_to_16();
         (
             bvh_buf.get_offset(),
             mat_buf.get_offset(),
@@ -75,12 +78,15 @@ impl Scene {
         for node in &self.components.bvh {
             memory_buf.append(*node);
         }
+        memory_buf.align_to_16();
         for material in &self.components.materials {
             memory_buf.append(*material);
         }
+        memory_buf.align_to_16();
         for triangle in &self.components.triangles {
             memory_buf.append(*triangle);
         }
+        memory_buf.align_to_16();
         unsafe {
             memory_buf.write(memory);
         }
