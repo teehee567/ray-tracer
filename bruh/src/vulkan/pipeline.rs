@@ -1,4 +1,5 @@
 
+use log::info;
 use vulkanalia::{bytecode::Bytecode, prelude::v1_0::*};
 
 use crate::AppData;
@@ -17,12 +18,14 @@ pub unsafe fn create_compute_pipeline(device: &Device, data: &mut AppData) -> Re
         .stage(vk::ShaderStageFlags::COMPUTE)
         .module(compute_shader)
         .name(b"main\0");
+    info!("Loaded Compute shader: {:?}", compute_shader);
 
     let pipeline_info = vk::ComputePipelineCreateInfo::builder()
         .layout(data.compute_pipeline_layout)
         .stage(compute_shader_stage_info);
 
     data.compute_pipeline = device.create_compute_pipelines(vk::PipelineCache::null(), &[pipeline_info], None)?.0[0];
+    info!("Created a Compute Pipeline: {:?}", data.compute_pipeline);
 
     device.destroy_shader_module(compute_shader, None);
 
@@ -74,6 +77,7 @@ pub unsafe fn create_render_pass(instance: &Instance, device: &Device, data: &mu
         .dependencies(dependencies);
 
     data.render_pass = device.create_render_pass(&info, None)?;
+    info!("Created a render_pass: {:?}", data.render_pass);
 
     Ok(())
 }

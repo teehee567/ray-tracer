@@ -1,4 +1,5 @@
 
+use log::{debug, info};
 use vulkanalia::prelude::v1_0::*;
 
 use crate::AppData;
@@ -24,6 +25,7 @@ pub unsafe fn create_descriptor_pool(device: &Device, data: &mut AppData) -> Res
         .max_sets(data.swapchain_images.len() as u32);
 
     data.descriptor_pool = device.create_descriptor_pool(&info, None)?;
+    info!("Created descriptor_pool: {:?}", info);
 
     Ok(())
 }
@@ -32,13 +34,16 @@ pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData, bvh_si
     // Allocate
 
     let layouts = vec![data.descriptor_set_layout; data.swapchain_image_views.len()];
+    debug!("Layouts: {:?}", layouts.len());
     let info = vk::DescriptorSetAllocateInfo::builder()
         .descriptor_pool(data.descriptor_pool)
         .set_layouts(&layouts);
 
     data.compute_descriptor_sets = device.allocate_descriptor_sets(&info)?;
+    info!("Allocated Descriptor sets");
 
     for (i, &swapchain_image_view) in data.swapchain_image_views.iter().enumerate() {
+        debug!("Started Update Descriptor Sets");
         let uniform_buffer_info = vk::DescriptorBufferInfo::builder()
             .buffer(data.uniform_buffer)
             .offset(0)
@@ -127,6 +132,7 @@ pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData, bvh_si
         ];
 
         device.update_descriptor_sets(&descriptor_writes, &[] as &[vk::CopyDescriptorSet]);
+        info!("Updated Descriptor Sets");
     }
 
     Ok(())
@@ -173,6 +179,7 @@ pub unsafe fn create_compute_descriptor_set_layout(device: &Device, data: &mut A
     let info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(bindings);
 
     data.descriptor_set_layout = device.create_descriptor_set_layout(&info, None)?;
+    info!("Created Desciptor set layout: {:?} with bindings: {:?}", data.descriptor_set_layout, bindings);
 
     Ok(())
 }

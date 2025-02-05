@@ -1,4 +1,5 @@
 
+use log::info;
 use vulkanalia::prelude::v1_0::*;
 
 use anyhow::Result;
@@ -7,6 +8,7 @@ use crate::AppData;
 
 
 pub unsafe fn create_sampler(device: &Device, data: &mut AppData) -> Result<()> {
+    info!("Creating sampler");
     let sampler_info = vk::SamplerCreateInfo::builder()
         .mag_filter(vk::Filter::NEAREST)
         .min_filter(vk::Filter::NEAREST)
