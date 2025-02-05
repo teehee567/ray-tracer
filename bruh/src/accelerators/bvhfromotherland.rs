@@ -3,6 +3,7 @@ use std::{cmp::Ordering, fmt};
 
 use crate::{AlignedVec3, Alignedu32, Vertex};
 use glam::Vec3;
+use serde::Serialize;
 
 use super::{aabb::AABB, Primitive};
 
@@ -61,7 +62,7 @@ impl Bin {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize)]
 #[repr(align(16))]
 pub struct BvhNode {
     pub idx: Alignedu32,

@@ -94,8 +94,8 @@ impl<'a> BvhBuilder<'a> {
 
         // Reorder the triangles according to the computed ordering.
         Self::apply_ordering(self.triangles, &indices);
-
-        // Return a copy of the BVH list.
+        
+        
         self.bvh_list.clone()
     }
 

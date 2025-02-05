@@ -1,6 +1,7 @@
 use glam::{Mat4, UVec2, Vec2, Vec3, Vec4};
 use serde_yaml::Value;
 use std::fs::File;
+use std::io::Write;
 use std::os::raw::c_void;
 use std::time::Instant;
 
@@ -87,16 +88,16 @@ impl Scene {
     }
 
     pub fn get_camera_controls(&self) -> CameraBufferObject {
-        self.components.camera
-        // CameraBufferObject {
-        //     resolution: UVec2::new(900, 900),
-        //     focal_length: Alignedf32(1.0),
-        //     focus_distance: Alignedf32(4.8),
-        //     aperture_radius: Alignedf32(0.),
-        //     location: AlignedVec3::new(0., 1., 3.),
-        //     rotation: AlignedMat4(Mat4::from_rotation_y(3.14)),
-        //     ..Default::default()
-        // }
+        // self.components.camera
+        CameraBufferObject {
+            resolution: Vec2::new(900., 900.),
+            focal_length: Alignedf32(1.0),
+            focus_distance: Alignedf32(4.8),
+            aperture_radius: Alignedf32(0.),
+            location: AlignedVec4::new(0., 1., 3., 0.),
+            rotation: AlignedMat4(Mat4::from_rotation_y(3.14)),
+            ..Default::default()
+        }
     }
 
     /// Checks that the YAML file is valid.
@@ -369,6 +370,10 @@ impl Scene {
         let mut builder = BvhBuilder::new(&mut self.components.triangles);
         self.components.bvh = builder.build_bvh();
 
+        let json = serde_json::to_string_pretty(&self.components.bvh).unwrap();
+        let mut file = File::create("output.json").unwrap();
+        file.write_all(json.as_bytes()).unwrap();
+
         // let sah = SAH::new(2., 1.);
         // let max_leaf_size = 4;
         // let bvh = BVH::build(self.components.triangles.as_slice(), sah, max_leaf_size);
@@ -422,11 +427,3 @@ impl Scene {
     }
 }
 
-fn identity_matrix() -> [[f32; 4]; 4] {
-    [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
-}
