@@ -3,7 +3,7 @@
 #define SAMPLES 8
 #define BOUNCES 12
 #define EPSILON 0.0001
-#define MAX_BVH_DEPTH 64
+#define MAX_BVH_DEPTH 16
 
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_scalar_block_layout : enable
@@ -14,10 +14,13 @@
 
 /* AABB node of the BVH tree */
 struct BvhNode {
-    vec3 min;
     uint idx;
-    vec3 max;
     uint amt;
+
+    uint left;
+
+    vec3 min;
+    vec3 max;
 };
 
 /* Material of a Mesh.
@@ -29,6 +32,7 @@ struct BvhNode {
  * is_glass             indicates whether the material will be rendered with a glass shader;
  * ior                  is the index of refractivity of the glass material, if is_glass is true;         
  * shaded_smooth        only valid for triangle meshes, determines whether normals are interpolated;
+ * is_sphere            temporary placeholder for spheres as a better indicator is figured out
  */
 struct Material {
     vec4 base_color;
@@ -40,7 +44,7 @@ struct Material {
     bool shaded_smooth;
 };
 
-// perf: these triangles are pretty huge.
+// perf: 96 bytes per triangle is pretty bad.
 // Since if not shaded smooth the normals are ignored, then they can be used to 
 // store 2 triangle per triangle...
 // Or maybe just remove the normals altogether
@@ -69,11 +73,11 @@ struct HitRecord {
     Material material;
 };
 
-layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 // todo: look into inline uniform buffers for speed and small data
 layout(std430, set = 0, binding = 0) uniform Camera {
-    uvec2 resolution;
+    vec2 resolution; // todo: move this to (unsinged) integers
     vec2 uv;
     float focal_len;
     float focus_distance;
@@ -332,7 +336,7 @@ HitRecord hit_sphere(vec3 center, float radius, Ray ray) {
  *
  * More info at https://en.wikipedia.org/wiki/Slab_method
  */
-float dist_aabb(Ray ray, BvhNode aabb) {
+bool hit_aabb(Ray ray, BvhNode aabb) {
     vec3 inv_dir = 1 / ray.direction;
 
     // Solve for the intersection points with all 6 planes:
@@ -347,9 +351,7 @@ float dist_aabb(Ray ray, BvhNode aabb) {
     float t_min = max(max(d_min.x, d_min.y), d_min.z);
     float t_max = min(min(d_max.x, d_max.y), d_max.z);
 
-    bool did_hit = t_min <= t_max && t_max > 0;
-
-    return did_hit ? t_min : 1.0 / 0.0; //infinity
+    return t_min <= t_max;
 }
 
 // todo: this is recursive, might be optimizable to a loop
@@ -359,46 +361,40 @@ HitRecord hit_meshes(Ray ray, inout uint mesh_tests) {
     hit.did_hit = false;
 
     // Setup stack for tree traversal
-    uint stack[MAX_BVH_DEPTH + 1], stack_ptr = 0;
-    stack[stack_ptr++] = 0;
+    uint stack[MAX_BVH_DEPTH + 1], stack_ptr = 1;
+    stack[0] = 0;
 
     while (stack_ptr > 0) {
         BvhNode node = bvh.nodes[stack[--stack_ptr]];
 
+        // If we hit the node, dig deeper, else pop the stack.
         mesh_tests++;
-        // if it's a leaf, attempt to intersect its meshes
-        if (node.amt != 0) {
-            for (int tri = 0; tri < node.amt; tri++) {
-                mesh_tests++;
+        if (hit_aabb(ray, node)) {
 
-                Triangle triangle = triangles.get[node.idx + tri];
-                HitRecord current_hit;
+            // todo: find better way to test for leaf
+            if (node.left == 0) {
+                for (int tri = 0; tri < node.amt; tri++) {
+                    mesh_tests++;
 
-                if (!triangle.is_sphere) {
-                    current_hit = hit_triangle(triangle, ray, false);
-                } else {
-                    current_hit = hit_sphere(triangle.vertices[0], triangle.vertices[1].x, ray);
+                    Triangle triangle = triangles.get[node.idx + tri];
+                    HitRecord current_hit;
+
+                    if (!triangle.is_sphere) {
+                        current_hit = hit_triangle(triangle, ray, false);
+                    } else {
+                        current_hit = hit_sphere(triangle.vertices[0], triangle.vertices[1].x, ray);
+                    }
+
+                    if (current_hit.did_hit && current_hit.t < hit.t) {
+                        hit = current_hit;
+                        hit.material = materials.get[triangle.materialIdx];
+                    }
                 }
 
-                if (current_hit.did_hit && current_hit.t < hit.t) {
-                    hit = current_hit;
-                    hit.material = materials.get[triangle.materialIdx];
-                }
-            }
-
-        // Else push both nodes on the stack, in order of closest to furthest
-        // Only actually push nodes that can be closer than the already-hit
-        } else {
-            uint idx = node.idx;
-            float dist_left =  dist_aabb(ray, bvh.nodes[idx + 0]);
-            float dist_right = dist_aabb(ray, bvh.nodes[idx + 1]);
-
-            if (dist_left < dist_right) {
-                if (dist_right < hit.t) stack[stack_ptr++] = idx + 1;
-                if (dist_left < hit.t)  stack[stack_ptr++] = idx;
+            // Else push both nodes on the stack
             } else {
-                if (dist_left < hit.t)  stack[stack_ptr++] = idx; 
-                if (dist_right < hit.t) stack[stack_ptr++] = idx + 1;
+                stack[stack_ptr++] = node.left + 1;
+                stack[stack_ptr++] = node.left;
             }
         }
     }
@@ -471,8 +467,8 @@ void main() {
         imageStore(framebuffer, coordinates, gamma_correction(new_pixel));
 
         // visualize triangle tests
-        //float tests = float(mesh_tests) / 10000.0f;
-        //imageStore(framebuffer, coordinates, gamma_correction(vec4(tests <= 1.0f ? vec3(tests) : vec3(1,0,0), 1.0)));
+        // float tests = float(mesh_tests) / 10000.0f;
+        // imageStore(framebuffer, coordinates, gamma_correction(vec4(tests <= 1.0f ? vec3(tests) : vec3(1,0,0), 1.0)));
 
         //imageStore(framebuffer, coordinates, gamma_correction(vec4(color, 1.0)));
         //imageStore(framebuffer, coordinates, gamma_correction(vec4(triangle_sbo.triangles[0].first, 1.0)));

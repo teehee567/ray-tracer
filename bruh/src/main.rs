@@ -16,6 +16,8 @@ use accelerators::bvhfromotherland::BvhNode;
 use accelerators::Primitive;
 use anyhow::{anyhow, Result};
 use glam::{Mat4, Vec2, Vec3, Vec4};
+use serde::ser::SerializeStruct;
+use serde::Serialize;
 use vulkan::accumulate_image::{create_image, transition_image_layout};
 use vulkan::buffers::{create_shader_buffers, create_uniform_buffer};
 use vulkan::command_buffers::{create_command_buffer, run_command_buffer};
@@ -321,9 +323,6 @@ impl App {
         // MVP
         let time = (self.start.elapsed()).as_secs_f32();
 
-        // let origin = Vec4::new(0., 0., 0., 0.);
-        let origin = Vec4::new(0., 1., 3., 0.);
-
         let ratio =
             self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32;
         let (u, v) = if ratio > 1. {
@@ -331,29 +330,10 @@ impl App {
         } else {
             (1., 1. / ratio)
         };
-        let size = 2.0f32;
 
-        let ubo = CameraBufferObject {
-            resolution: Vec2::new(
-                self.data.swapchain_extent.width as f32,
-                self.data.swapchain_extent.height as f32,
-            ),
-            view_port_uv: Vec2::new(u, v),
-            focal_length: Alignedf32(1.),
-            focus_distance: Alignedf32(4.8),
-            aperture_radius: Alignedf32(0.0),
-            time: Alignedu32(self.frame as u32),
-            location: AlignedVec4(origin),
-            rotation: 
-                AlignedMat4(Mat4::from_rotation_y(3.14)),
-                // AlignedMat4(Mat4::look_at_rh(
-                //     origin.truncate(),
-                //     Vec3::new(0.0, 0.0, -3.5),
-                //     Vec3::new(0., 1., 0.),
-                // )),
-            };
-
-        // Copy
+        let mut ubo = self.data.scene.get_camera_controls();
+        ubo.view_port_uv = Vec2::new(u, v);
+        ubo.time = Alignedu32(self.frame as u32);
 
         let memory = self.device.map_memory(
             self.data.uniform_buffer_memory,
@@ -516,6 +496,18 @@ impl AlignedVec3 {
     }
 }
 
+impl Serialize for AlignedVec3 {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        let mut state = serializer.serialize_struct("Vec3", 3)?;
+        state.serialize_field("x", &self.0.x)?;
+        state.serialize_field("y", &self.0.y)?;
+        state.serialize_field("z", &self.0.z)?;
+        state.end()
+    }
+}
+
 impl From<[f32; 3]> for AlignedVec3 {
     fn from(value: [f32; 3]) -> Self {
         AlignedVec3::new(value[0], value[1], value[2])
@@ -543,12 +535,12 @@ impl AlignedVec4 {
 
 #[repr(C)]
 #[repr(align(4))]
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, Serialize)]
 pub struct Alignedf32(pub f32);
 
 #[repr(C)]
 #[repr(align(4))]
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, Serialize)]
 pub struct Alignedu32(pub u32);
 
 #[repr(C)]
