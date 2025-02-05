@@ -7,8 +7,7 @@ use std::time::Instant;
 
 use crate::accelerators::bvh::BvhBuilder;
 use crate::{
-    AlignedMat4, AlignedVec3, AlignedVec4, Alignedf32, Alignedu32, CameraBufferObject, Material,
-    SceneComponents, Triangle,
+    AlignedMat4, AlignedUVec2, AlignedVec2, AlignedVec3, AlignedVec4, Alignedf32, Alignedu32, CameraBufferObject, Material, SceneComponents, Triangle
 };
 
 const CONFIG_VERSION: &str = "0.2";
@@ -200,7 +199,7 @@ impl Scene {
         let location: [f32; 3] = serde_yaml::from_value(camera.get("location").unwrap().clone())?;
 
         let mut ubo = CameraBufferObject {
-            resolution: UVec2::from(resolution),
+            resolution: AlignedUVec2(UVec2::from(resolution)),
             focal_length: Alignedf32(focal_length),
             focus_distance: Alignedf32(focus_distance),
             aperture_radius: Alignedf32(aperture_radius),
@@ -225,7 +224,7 @@ impl Scene {
         } else {
             (1.0, 1.0 / ratio)
         };
-        ubo.view_port_uv = Vec2::new(u, v);
+        ubo.view_port_uv = AlignedVec2(Vec2::new(u, v));
 
         self.components.camera = ubo;
         Ok(())
