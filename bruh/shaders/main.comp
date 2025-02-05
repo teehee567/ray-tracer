@@ -77,7 +77,7 @@ layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 // todo: look into inline uniform buffers for speed and small data
 layout(std430, set = 0, binding = 0) uniform Camera {
-    vec2 resolution; // todo: move this to (unsinged) integers
+    uvec2 resolution;
     vec2 uv;
     float focal_len;
     float focus_distance;
@@ -361,8 +361,8 @@ HitRecord hit_meshes(Ray ray, inout uint mesh_tests) {
     hit.did_hit = false;
 
     // Setup stack for tree traversal
-    uint stack[MAX_BVH_DEPTH + 1], stack_ptr = 1;
-    stack[0] = 0;
+    uint stack[MAX_BVH_DEPTH + 1], stack_ptr = 0;
+    stack[stack_ptr++] = 0;
 
     while (stack_ptr > 0) {
         BvhNode node = bvh.nodes[stack[--stack_ptr]];
@@ -467,8 +467,8 @@ void main() {
         imageStore(framebuffer, coordinates, gamma_correction(new_pixel));
 
         // visualize triangle tests
-        // float tests = float(mesh_tests) / 10000.0f;
-        // imageStore(framebuffer, coordinates, gamma_correction(vec4(tests <= 1.0f ? vec3(tests) : vec3(1,0,0), 1.0)));
+        //float tests = float(mesh_tests) / 10000.0f;
+        //imageStore(framebuffer, coordinates, gamma_correction(vec4(tests <= 1.0f ? vec3(tests) : vec3(1,0,0), 1.0)));
 
         //imageStore(framebuffer, coordinates, gamma_correction(vec4(color, 1.0)));
         //imageStore(framebuffer, coordinates, gamma_correction(vec4(triangle_sbo.triangles[0].first, 1.0)));

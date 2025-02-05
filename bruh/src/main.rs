@@ -15,7 +15,7 @@ use std::time::Instant;
 use accelerators::bvhfromotherland::BvhNode;
 use accelerators::Primitive;
 use anyhow::{anyhow, Result};
-use glam::{Mat4, Vec2, Vec3, Vec4};
+use glam::{Mat4, UVec2, Vec2, Vec3, Vec4};
 use serde::ser::SerializeStruct;
 use serde::Serialize;
 use vulkan::accumulate_image::{create_image, transition_image_layout};
@@ -69,15 +69,20 @@ fn main() -> Result<()> {
 
     // Window
 
+    let scene = Scene::new("./scene.yaml")?;
+
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
         .with_title("Vulkan Tutorial (Rust)")
-        .with_inner_size(LogicalSize::new(1024, 768))
+        .with_inner_size(LogicalSize::new(
+            scene.get_camera_controls().resolution.x,
+            scene.get_camera_controls().resolution.y,
+
+        ))
         .build(&event_loop)?;
 
     // App
 
-    let scene = Scene::new("./cornell.yaml")?;
 
     let mut app = unsafe { App::create(&window, scene)? };
     unsafe {
@@ -321,18 +326,9 @@ impl App {
     /// Updates the uniform buffer object for our Vulkan app.
     unsafe fn update_uniform_buffer(&self, image_index: usize) -> Result<()> {
         // MVP
-        let time = (self.start.elapsed()).as_secs_f32();
-
-        let ratio =
-            self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32;
-        let (u, v) = if ratio > 1. {
-            (ratio, 1.0f32)
-        } else {
-            (1., 1. / ratio)
-        };
 
         let mut ubo = self.data.scene.get_camera_controls();
-        ubo.view_port_uv = Vec2::new(u, v);
+        ubo.resolution = UVec2::new(self.data.swapchain_extent.width, self.data.swapchain_extent.height);
         ubo.time = Alignedu32(self.frame as u32);
 
         let memory = self.device.map_memory(
@@ -476,13 +472,13 @@ impl SwapchainSupport {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default)]
 struct CameraBufferObject {
-    resolution: Vec2,
+    resolution: UVec2,
     view_port_uv: Vec2,
     focal_length: Alignedf32,
     focus_distance: Alignedf32,
     aperture_radius: Alignedf32,
     time: Alignedu32,
-    location: AlignedVec4,
+    location: AlignedVec3,
     rotation: AlignedMat4,
 }
 
