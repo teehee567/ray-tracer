@@ -36,7 +36,7 @@ impl Scene {
 
         // Validate the file and load its components.
         scene.validate_file()?;
-        // scene.load_camera_controls()?;
+        scene.load_camera_controls()?;
         scene.load_meshes()?;
         scene.build_bvh();
         println!("Triangles: {}", scene.components.triangles.len());
@@ -88,16 +88,7 @@ impl Scene {
     }
 
     pub fn get_camera_controls(&self) -> CameraBufferObject {
-        // self.components.camera
-        CameraBufferObject {
-            resolution: Vec2::new(900., 900.),
-            focal_length: Alignedf32(1.0),
-            focus_distance: Alignedf32(4.8),
-            aperture_radius: Alignedf32(0.),
-            location: AlignedVec4::new(0., 1., 3., 0.),
-            rotation: AlignedMat4(Mat4::from_rotation_y(3.14)),
-            ..Default::default()
-        }
+        self.components.camera
     }
 
     /// Checks that the YAML file is valid.
@@ -198,7 +189,7 @@ impl Scene {
     fn load_camera_controls(&mut self) -> Result<()> {
         let camera = self.root.get("camera").unwrap();
 
-        let resolution: [f32; 2] =
+        let resolution: [u32; 2] =
             serde_yaml::from_value(camera.get("resolution").unwrap().clone())?;
         let focal_length: f32 =
             serde_yaml::from_value(camera.get("focal_length").unwrap().clone())?;
@@ -209,11 +200,11 @@ impl Scene {
         let location: [f32; 3] = serde_yaml::from_value(camera.get("location").unwrap().clone())?;
 
         let mut ubo = CameraBufferObject {
-            resolution: Vec2::from(resolution),
+            resolution: UVec2::from(resolution),
             focal_length: Alignedf32(focal_length),
             focus_distance: Alignedf32(focus_distance),
             aperture_radius: Alignedf32(aperture_radius),
-            location: AlignedVec4(Vec4::new(location[0], location[1], location[2], 0.)),
+            location: AlignedVec3(Vec3::from(location)),
             ..Default::default()
         };
 
