@@ -2,18 +2,10 @@ use glam::Vec3;
 
 use crate::{AlignedVec3, Alignedu32, Triangle};
 
-use super::{aabb::AABB, bvhfromotherland::BvhNode, Primitive};
+use super::bvhfromotherland::BvhNode;
 
-const MAX_VAL: AlignedVec3 = AlignedVec3(Vec3 {
-    x: 1e30,
-    y: 1e30,
-    z: 1e30,
-});
-const MIN_VAL: AlignedVec3 = AlignedVec3(Vec3 {
-    x: -1e30,
-    y: -1e30,
-    z: -1e30,
-});
+const MAX_VAL: AlignedVec3 = AlignedVec3(Vec3 { x: 1e30, y: 1e30, z: 1e30 });
+const MIN_VAL: AlignedVec3 = AlignedVec3(Vec3 { x: -1e30, y: -1e30, z: -1e30 });
 const BVH_MAX_DEPTH: u32 = 16;
 
 fn axis_min(tri: &Triangle, axis: usize) -> f32 {
@@ -37,6 +29,7 @@ fn axis_max(tri: &Triangle, axis: usize) -> f32 {
     }
     max_val
 }
+
 
 // impl Default for BvhNode {
 //     fn default() -> Self {
@@ -79,20 +72,14 @@ impl BvhNode {
 
 pub struct BvhBuilder<'a> {
     bvh_list: Vec<BvhNode>,
-    bboxes: Vec<AABB>,
-    centers: Vec<Vec3>,
     triangles: &'a mut Vec<Triangle>,
 }
 
 impl<'a> BvhBuilder<'a> {
     /// Create a new builder.
     pub fn new(triangles: &'a mut Vec<Triangle>) -> Self {
-        let bboxes: Vec<AABB> = triangles.iter().map(|prim| prim.aabb()).collect();
-        let centers: Vec<Vec3> = triangles.iter().map(|prim| prim.centroid()).collect();
         Self {
             bvh_list: Vec::new(),
-            bboxes,
-            centers,
             triangles,
         }
     }
@@ -123,125 +110,79 @@ impl<'a> BvhBuilder<'a> {
     ) {
         self.bvh_list[node_idx].initialize(self.triangles, indices, offset);
 
-        if depth >= BVH_MAX_DEPTH || indices.len() <= 2 {
-            // Early termination for small nodes
+        if depth >= BVH_MAX_DEPTH || indices.len() <= 1 {
             return;
         }
 
-        if let Some((best_axis, best_split_k, best_cost)) = self.find_best_split(indices) {
-            if best_cost >= parent_cost {
-                return;
-            }
+        let (split_axis, split_pos) = self.find_best_split(indices);
+        let best_cost = self.split_cost(indices, split_axis, split_pos);
 
-            // Sort indices along best axis
-            indices.sort_unstable_by(|&a, &b| {
-                self.triangles[a as usize].centroid()[best_axis]
-                    .partial_cmp(&self.triangles[b as usize].centroid()[best_axis])
-                    .unwrap()
-            });
-
-            // Split into left and right
-            let (left_indices, right_indices) = indices.split_at_mut(best_split_k);
-
-            // Create child nodes
-            let left_node_idx = self.bvh_list.len();
-            self.bvh_list[node_idx].left = Alignedu32(left_node_idx as u32);
-            self.bvh_list.push(BvhNode::default());
-            self.bvh_list.push(BvhNode::default());
-
-            // Recurse
-            self.build_recursively(left_node_idx, left_indices, depth + 1, offset, best_cost);
-            self.build_recursively(
-                left_node_idx + 1,
-                right_indices,
-                depth + 1,
-                offset + best_split_k as u32,
-                best_cost,
-            );
+        // If splitting does not improve the cost, do not subdivide.
+        if best_cost >= parent_cost {
+            return;
         }
+
+        // Partition the indices based on the split:
+        let mut left_idx = 0;
+        let mut right_idx = indices.len() - 1;
+        while left_idx <= right_idx {
+            let tri = &self.triangles[indices[left_idx] as usize];
+            let center = (axis_min(tri, split_axis) + axis_max(tri, split_axis)) / 2.0;
+            if center < split_pos {
+                left_idx += 1;
+            } else {
+                indices.swap(left_idx, right_idx);
+                // Prevent underflow.
+                if right_idx == 0 {
+                    break;
+                }
+                right_idx -= 1;
+            }
+        }
+
+        // Create two child nodes.
+        let left_node_idx = self.bvh_list.len();
+        self.bvh_list[node_idx].left = Alignedu32(left_node_idx as u32);
+        self.bvh_list.push(BvhNode::default());
+        self.bvh_list.push(BvhNode::default());
+
+        // Split the indices into left and right sub-slices.
+        let (left_indices, right_indices) = indices.split_at_mut(left_idx);
+        self.build_recursively(left_node_idx, left_indices, depth + 1, offset, best_cost);
+        self.build_recursively(
+            left_node_idx + 1,
+            right_indices,
+            depth + 1,
+            offset + left_idx as u32,
+            best_cost,
+        );
     }
 
     /// Find the best split (axis and position) using a Surface Area Heuristic (SAH).
-    fn find_best_split(&self, indices: &[u32]) -> Option<(usize, usize, f32)> {
-        let mut best_axis = 0;
-        let mut best_split_k = 0;
-        let mut best_cost = f32::INFINITY;
+    fn find_best_split(&self, indices: &[u32]) -> (usize, f32) {
+        let mut split_axis: Option<usize> = None;
+        let mut split_pos = 0.0;
+        let mut best_cost = 1e30;
 
+        // Try all three axes.
         for axis in 0..3 {
-            let mut sorted_indices = indices.to_vec();
-            sorted_indices.sort_unstable_by(|&a, &b| {
-                self.centers[a as usize][axis]
-                    .partial_cmp(&self.triangles[b as usize].centroid()[axis])
-                    .unwrap()
-            });
-
-            let n = sorted_indices.len();
-            if n < 4 {
-                // Don't split small nodes
-                continue;
-            }
-
-            // Compute prefix and suffix bounds
-            let (prefix_bounds, suffix_bounds) =
-                self.compute_prefix_suffix(&sorted_indices);
-
-            // Evaluate all possible splits
-            let (current_best_cost, current_best_split) = (1..n)
-                .map(|k| {
-                    let left_area = prefix_bounds[k - 1].area();
-                    let right_area = suffix_bounds[k].area();
-                    (k as f32 * left_area + (n - k) as f32 * right_area, k)
-                })
-                .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
-                .unwrap_or((f32::INFINITY, 0));
-
-            if current_best_cost < best_cost {
-                best_cost = current_best_cost;
-                best_axis = axis;
-                best_split_k = current_best_split;
+            // For each triangle, compute the center along this axis.
+            for &tri_idx in indices {
+                let tri = &self.triangles[tri_idx as usize];
+                let center = (axis_min(tri, axis) + axis_max(tri, axis)) / 2.0;
+                let cost = self.split_cost(indices, axis, center);
+                if cost < best_cost {
+                    best_cost = cost;
+                    split_axis = Some(axis);
+                    split_pos = center;
+                }
             }
         }
+        // dbg!(&split_axis, &split_pos, &best_cost);
 
-        if best_cost == f32::INFINITY {
-            None
-        } else {
-            Some((best_axis, best_split_k, best_cost))
-        }
-    }
-
-    fn compute_prefix_suffix(
-        &self,
-        sorted_indices: &[u32],
-    ) -> (Vec<BvhNode>, Vec<BvhNode>) {
-        let n = sorted_indices.len();
-        let mut prefix_bounds = vec![BvhNode::default(); n];
-        let mut suffix_bounds = vec![BvhNode::default(); n];
-
-        // Compute prefix bounds
-        for i in 0..n {
-            let tri = &self.triangles[sorted_indices[i] as usize];
-            if i == 0 {
-                prefix_bounds[i].min = AlignedVec3(self.bboxes[i].min);
-                prefix_bounds[i].max = AlignedVec3(self.bboxes[i].max);
-            } else {
-                prefix_bounds[i].min = AlignedVec3(prefix_bounds[i - 1].min.0.min(self.bboxes[i].min));
-                prefix_bounds[i].max = AlignedVec3(prefix_bounds[i - 1].max.0.max(self.bboxes[i].max));
-            }
-        }
-
-        // Compute suffix bounds
-        for i in (0..n).rev() {
-            let tri = &self.triangles[sorted_indices[i] as usize];
-            if i == n - 1 {
-                suffix_bounds[i].min = AlignedVec3(self.bboxes[i].min);
-                suffix_bounds[i].max = AlignedVec3(self.bboxes[i].max);
-            } else {
-                suffix_bounds[i].min = AlignedVec3(suffix_bounds[i + 1].min.0.min(self.bboxes[i].min));
-                suffix_bounds[i].max = AlignedVec3(suffix_bounds[i + 1].max.0.max(self.bboxes[i].max));
-            }
-        }
-
-        (prefix_bounds, suffix_bounds)
+        split_axis
+            .map(|axis| (axis, split_pos))
+            .expect("The axis has not been set")
     }
 
     /// Evaluate the cost of splitting at a given axis and position.
