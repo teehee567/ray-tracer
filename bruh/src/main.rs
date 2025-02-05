@@ -60,23 +60,33 @@ const VALIDATION_LAYER: vk::ExtensionName =
 const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[vk::KHR_SWAPCHAIN_EXTENSION.name];
 /// The Vulkan SDK version that started requiring the portability subset extension for macOS.
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
-
 const TILE_SIZE: u32 = 16;
+macro_rules! print_size {
+    ($t:ty) => {
+        println!("Size of {}: {} bytes", stringify!($t), std::mem::size_of::<$t>());
+    };
+}
 
 #[rustfmt::skip]
 fn main() -> Result<()> {
     pretty_env_logger::init();
 
-    // Window
+    print_size!(CameraBufferObject);
+    print_size!(Triangle);
+    print_size!(Material);
+    print_size!(SceneComponents);
+    print_size!(Sphere);
+    print_size!(Mesh);
+    print_size!(Vertex);
 
-    let scene = Scene::new("./scene.yaml")?;
+    let scene = Scene::new("./fancy.yaml")?;
 
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
         .with_title("Vulkan Tutorial (Rust)")
         .with_inner_size(LogicalSize::new(
-            scene.get_camera_controls().resolution.x,
-            scene.get_camera_controls().resolution.y,
+            scene.get_camera_controls().resolution.0.x,
+            scene.get_camera_controls().resolution.0.y,
 
         ))
         .build(&event_loop)?;
@@ -328,7 +338,7 @@ impl App {
         // MVP
 
         let mut ubo = self.data.scene.get_camera_controls();
-        ubo.resolution = UVec2::new(self.data.swapchain_extent.width, self.data.swapchain_extent.height);
+        ubo.resolution = AlignedUVec2(UVec2::new(self.data.swapchain_extent.width, self.data.swapchain_extent.height));
         ubo.time = Alignedu32(self.frame as u32);
 
         let memory = self.device.map_memory(
@@ -402,6 +412,7 @@ impl App {
     }
 }
 
+#[repr(C)]
 #[derive(Copy, Clone, Debug)]
 struct QueueFamilyIndices {
     graphics: u32,
@@ -472,8 +483,8 @@ impl SwapchainSupport {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default)]
 struct CameraBufferObject {
-    resolution: UVec2,
-    view_port_uv: Vec2,
+    resolution: AlignedUVec2,
+    view_port_uv: AlignedVec2,
     focal_length: Alignedf32,
     focus_distance: Alignedf32,
     aperture_radius: Alignedf32,
@@ -535,6 +546,16 @@ impl AlignedVec4 {
 pub struct Alignedf32(pub f32);
 
 #[repr(C)]
+#[repr(align(8))]
+#[derive(Copy, Clone, Debug, Default)]
+pub struct AlignedVec2(pub Vec2);
+
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Copy, Clone, Debug, Default)]
+pub struct AlignedUVec2(pub UVec2);
+
+#[repr(C)]
 #[repr(align(4))]
 #[derive(Copy, Clone, Debug, Default, Serialize)]
 pub struct Alignedu32(pub u32);
@@ -557,6 +578,7 @@ pub struct Material {
 }
 
 #[repr(C)]
+#[repr(align(16))]
 #[derive(Copy, Clone, Debug, Default)]
 struct Triangle {
     material_index: Alignedu32,
@@ -564,6 +586,7 @@ struct Triangle {
     vertices: [AlignedVec3; 3],
     normals: [AlignedVec3; 3],
 }
+
 
 impl Primitive for Triangle {
     fn centroid(&self) -> Vec3 {
@@ -593,6 +616,7 @@ impl Triangle {
     }
 }
 
+#[repr(C)]
 #[derive(Clone, Debug, Default)]
 struct SceneComponents {
     camera: CameraBufferObject,
