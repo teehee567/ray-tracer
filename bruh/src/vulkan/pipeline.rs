@@ -5,11 +5,11 @@ use vulkanalia::{bytecode::Bytecode, prelude::v1_0::*};
 use crate::AppData;
 use anyhow::Result;
 
-pub unsafe fn create_compute_pipeline(device: &Device, data: &mut AppData) -> Result<()> {
-    let binding = [data.descriptor_set_layout];
+pub unsafe fn create_compute_pipeline(device: &Device, descriptor_set_layout: &vk::DescriptorSetLayout) -> Result<(vk::PipelineLayout, vk::Pipeline)> {
+    let binding = [*descriptor_set_layout];
     let pipeline_layout_info = vk::PipelineLayoutCreateInfo::builder()
         .set_layouts(&binding);
-    data.compute_pipeline_layout = device.create_pipeline_layout(&pipeline_layout_info, None)?;
+    let compute_pipeline_layout = device.create_pipeline_layout(&pipeline_layout_info, None)?;
 
     let compute_shader_src = include_bytes!("../../shaders/main.comp.spv");
     let compute_shader = create_shader_module(device, compute_shader_src)?;
@@ -21,22 +21,21 @@ pub unsafe fn create_compute_pipeline(device: &Device, data: &mut AppData) -> Re
     info!("Loaded Compute shader: {:?}", compute_shader);
 
     let pipeline_info = vk::ComputePipelineCreateInfo::builder()
-        .layout(data.compute_pipeline_layout)
+        .layout(compute_pipeline_layout)
         .stage(compute_shader_stage_info);
 
-    data.compute_pipeline = device.create_compute_pipelines(vk::PipelineCache::null(), &[pipeline_info], None)?.0[0];
-    info!("Created a Compute Pipeline: {:?}", data.compute_pipeline);
+    let compute_pipeline = device.create_compute_pipelines(vk::PipelineCache::null(), &[pipeline_info], None)?.0[0];
+    info!("Created a Compute Pipeline: {:?}", compute_pipeline);
 
     device.destroy_shader_module(compute_shader, None);
 
-    Ok(())
+    Ok((compute_pipeline_layout, compute_pipeline))
 }
 
-pub unsafe fn create_render_pass(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn create_render_pass(instance: &Instance, device: &Device, swapchain_format: &vk::Format) -> Result<vk::RenderPass> {
     // Attachments
-
     let color_attachment = vk::AttachmentDescription::builder()
-        .format(data.swapchain_format)
+        .format(*swapchain_format)
         .samples(vk::SampleCountFlags::_1)
         .load_op(vk::AttachmentLoadOp::CLEAR)
         .store_op(vk::AttachmentStoreOp::STORE)
@@ -76,10 +75,10 @@ pub unsafe fn create_render_pass(instance: &Instance, device: &Device, data: &mu
         .subpasses(subpasses)
         .dependencies(dependencies);
 
-    data.render_pass = device.create_render_pass(&info, None)?;
-    info!("Created a render_pass: {:?}", data.render_pass);
+    let render_pass = device.create_render_pass(&info, None)?;
+    info!("Created a render_pass: {:?}", render_pass);
 
-    Ok(())
+    Ok(render_pass)
 }
 
 

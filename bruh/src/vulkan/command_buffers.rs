@@ -4,16 +4,16 @@ use vulkanalia::prelude::v1_0::*;
 use crate::{AppData, TILE_SIZE};
 use anyhow::Result;
 
-pub unsafe fn create_command_buffer(device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn create_command_buffer(device: &Device, command_pool: &vk::CommandPool) -> Result<vk::CommandBuffer> {
     let allocate_info = vk::CommandBufferAllocateInfo::builder()
-        .command_pool(data.command_pool)
+        .command_pool(*command_pool)
         .level(vk::CommandBufferLevel::PRIMARY)
         .command_buffer_count(1);
 
-    data.compute_command_buffer = device.allocate_command_buffers(&allocate_info)?[0];
-    info!("Created command buffer for: {:?}", data.command_pool);
+    let compute_command_buffer = device.allocate_command_buffers(&allocate_info)?[0];
+    info!("Created command buffer for: {:?}", command_pool);
 
-    Ok(())
+    Ok(compute_command_buffer)
 }
 
 pub unsafe fn run_command_buffer(device: &Device, data: &mut AppData, image_index: usize) -> Result<()> {

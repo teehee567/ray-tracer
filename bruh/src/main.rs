@@ -47,8 +47,8 @@ use vulkanalia::vk::ExtDebugUtilsExtension;
 use vulkanalia::vk::KhrSurfaceExtension;
 use vulkanalia::vk::KhrSwapchainExtension;
 
-mod vulkan;
 mod accelerators;
+mod vulkan;
 
 /// Whether the validation layers should be enabled.
 // const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
@@ -64,7 +64,11 @@ const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 const TILE_SIZE: u32 = 8;
 macro_rules! print_size {
     ($t:ty) => {
-        println!("Size of {}: {} bytes", stringify!($t), std::mem::size_of::<$t>());
+        println!(
+            "Size of {}: {} bytes",
+            stringify!($t),
+            std::mem::size_of::<$t>()
+        );
     };
 }
 
@@ -101,7 +105,7 @@ fn main() -> Result<()> {
         let sizes = app.data.scene.get_buffer_sizes();
         let total_size = sizes.0 + sizes.1 + sizes.2;
         let mapped_ptr = app.device.map_memory(
-            app.data.compute_ssbo_buffer_memory,
+            app.data.scene_buffer_memory,
             0,
             total_size as u64,
             vk::MemoryMapFlags::empty(),
@@ -173,7 +177,7 @@ struct AppData {
     compute_finished_semaphores: vk::Semaphore,
 
     uniform_buffer_memory: vk::DeviceMemory,
-    compute_ssbo_buffer_memory: vk::DeviceMemory,
+    scene_buffer_memory: vk::DeviceMemory,
 
     // Surface
     surface: vk::SurfaceKHR,
@@ -188,16 +192,15 @@ struct AppData {
     command_pool: vk::CommandPool,
     // Buffers
     uniform_buffer: vk::Buffer,
-    compute_ssbo_buffer: vk::Buffer,
+    scene_buffer: vk::Buffer,
     // Descriptors
     descriptor_pool: vk::DescriptorPool,
     // Accumulator image
-    accumulator_view: vk::ImageView,
+    accumulator_image_view: vk::ImageView,
     accumulator_memory: vk::DeviceMemory,
     accumulator_image: vk::Image,
     // sampler
     sampler: vk::Sampler,
-
 }
 
 /// Our Vulkan app.
@@ -218,32 +221,102 @@ impl App {
     unsafe fn create(window: &Window, scene: Scene) -> Result<Self> {
         let loader = LibloadingLoader::new(LIBRARY)?;
         let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
-        let mut data = AppData::default();
-        data.scene = scene;
-        let scene_sizes = data.scene.get_buffer_sizes();
-        let instance = create_instance(window, &entry, &mut data)?;
-        data.surface = vk_window::create_surface(&instance, &window, &window)?;
-        pick_physical_device(&instance, &mut data)?;
-        let device = create_logical_device(&entry, &instance, &mut data)?;
-        create_swapchain(window, &instance, &device, &mut data)?;
-        create_swapchain_image_views(&device, &mut data)?;
-        create_render_pass(&instance, &device, &mut data)?;
-        create_compute_descriptor_set_layout(&device, &mut data)?;
-        create_compute_pipeline(&device, &mut data)?;
-        // create_framebuffers(&device, &mut data)?;
-        create_command_pool(&instance, &device, &mut data)?;
-        // create_vertex_buffer(&instance, &device, &mut data)?;
-        create_uniform_buffer(&instance, &device, &mut data)?;
-        create_shader_buffers(&instance, &device, &mut data, (scene_sizes.0 + scene_sizes.1 + scene_sizes.2) as u64)?;
-        create_image(&instance, &device, &mut data)?;
-        transition_image_layout(&device, &mut data)?;
-        create_descriptor_pool(&device, &mut data)?;
-        create_sampler(&device, &mut data)?;
-        // create_descriptor_sets(&device, &mut data)?;
-        create_descriptor_sets(&device, &mut data, scene_sizes.0 as u64, scene_sizes.1 as u64, scene_sizes.2 as u64)?;
-        create_command_buffer(&device, &mut data)?;
-        create_sync_objects(&device, &mut data)?;
+
+        let scene_sizes = scene.get_buffer_sizes();
+        let (instance, messenger) = create_instance(window, &entry)?;
+        let surface = vk_window::create_surface(&instance, &window, &window)?;
+
+        let physical_device = pick_physical_device(&instance, &surface)?;
+        let queue_indices = QueueFamilyIndices::get(&instance, &surface, &physical_device)?;
+
+        let device = create_logical_device(&entry, &instance, &physical_device, &queue_indices)?;
+
+        let compute_queue = device.get_device_queue(queue_indices.compute, 0);
+        info!("Created Compute Queue: {:?}", compute_queue);
+        let present_queue = device.get_device_queue(queue_indices.present, 0);
+        info!("Created Present Queue: {:?}", present_queue);
+
+        let (swapchain_format, swapchain_extent, swapchain, swapchain_images) =
+            create_swapchain(window, &instance, &device, &surface, &physical_device)?;
+        let swapchain_image_views =
+            create_swapchain_image_views(&device, &swapchain_format, &swapchain_images)?;
+
+        let render_pass = create_render_pass(&instance, &device, &swapchain_format)?;
+
+        let descriptor_set_layout = create_compute_descriptor_set_layout(&device)?;
+        let (compute_pipeline_layout, compute_pipeline) =
+            create_compute_pipeline(&device, &descriptor_set_layout)?;
+        let command_pool = create_command_pool(&instance, &device, &queue_indices)?;
+
+        let (uniform_buffer, uniform_buffer_memory) =
+            create_uniform_buffer(&instance, &device, &physical_device)?;
+        let (scene_buffer, scene_buffer_memory) = create_shader_buffers(
+            &instance,
+            &device,
+            &physical_device,
+            (scene_sizes.0 + scene_sizes.1 + scene_sizes.2) as u64,
+        )?;
+
+        let (accumulator_image, accumulator_image_view, accumulator_memory) =
+            create_image(&instance, &device, &swapchain_extent, &physical_device)?;
+
+        transition_image_layout(&device, &command_pool, &accumulator_image, &compute_queue)?;
+
+        let descriptor_pool = create_descriptor_pool(&device, &swapchain_image_views)?;
+        let sampler = create_sampler(&device)?;
+        let compute_descriptor_sets = create_descriptor_sets(
+            &device,
+            &descriptor_set_layout,
+            &swapchain_image_views,
+            &descriptor_pool,
+            &uniform_buffer,
+            &scene_buffer,
+            &sampler,
+            &accumulator_image_view,
+            scene_sizes.0 as u64,
+            scene_sizes.1 as u64,
+            scene_sizes.2 as u64,
+        )?;
+
+
+        let compute_command_buffer = create_command_buffer(&device, &command_pool)?;
+        let (image_available_semaphores, compute_finished_semaphores, compute_in_flight_fences) = create_sync_objects(&device)?;
         info!("Finished initialisation of Vulkan Resources");
+
+        let data = AppData {
+            scene,
+            messenger: messenger.unwrap(),
+            swapchain,
+            swapchain_extent,
+            swapchain_images,
+            render_pass,
+            present_queue,
+            compute_queue,
+            compute_pipeline,
+            compute_pipeline_layout,
+            compute_descriptor_sets,
+            compute_command_buffer,
+            compute_in_flight_fences,
+            image_available_semaphores,
+            compute_finished_semaphores,
+            uniform_buffer_memory,
+            scene_buffer_memory,
+            surface,
+            physical_device,
+            swapchain_format,
+            swapchain_image_views,
+            descriptor_set_layout,
+            command_pool,
+            uniform_buffer,
+            scene_buffer,
+            descriptor_pool,
+            accumulator_image_view,
+            accumulator_memory,
+            accumulator_image,
+            sampler,
+        };
+
+
         Ok(Self {
             entry,
             instance,
@@ -252,7 +325,7 @@ impl App {
             frame: 0,
             resized: false,
             start: Instant::now(),
-            fps_counter: FPSCounter::new(15)
+            fps_counter: FPSCounter::new(15),
         })
     }
 
@@ -340,7 +413,10 @@ impl App {
         // MVP
 
         let mut ubo = self.data.scene.get_camera_controls();
-        ubo.resolution = AlignedUVec2(UVec2::new(self.data.swapchain_extent.width, self.data.swapchain_extent.height));
+        ubo.resolution = AlignedUVec2(UVec2::new(
+            self.data.swapchain_extent.width,
+            self.data.swapchain_extent.height,
+        ));
         ubo.time = Alignedu32(self.frame as u32);
 
         let memory = self.device.map_memory(
@@ -425,19 +501,15 @@ struct QueueFamilyIndices {
 impl QueueFamilyIndices {
     unsafe fn get(
         instance: &Instance,
-        data: &AppData,
-        physical_device: vk::PhysicalDevice,
+        surface: &vk::SurfaceKHR,
+        physical_device: &vk::PhysicalDevice,
     ) -> Result<Self> {
-        let properties = instance.get_physical_device_queue_family_properties(physical_device);
+        let properties = instance.get_physical_device_queue_family_properties(*physical_device);
         if let Some(index) = properties.iter().enumerate().find_map(|(i, p)| {
             if p.queue_flags.contains(vk::QueueFlags::GRAPHICS)
                 && p.queue_flags.contains(vk::QueueFlags::COMPUTE)
                 && instance
-                    .get_physical_device_surface_support_khr(
-                        physical_device,
-                        i as u32,
-                        data.surface,
-                    )
+                    .get_physical_device_surface_support_khr(*physical_device, i as u32, *surface)
                     .unwrap_or(false)
             {
                 Some(i as u32)
@@ -468,16 +540,16 @@ struct SwapchainSupport {
 impl SwapchainSupport {
     unsafe fn get(
         instance: &Instance,
-        data: &AppData,
-        physical_device: vk::PhysicalDevice,
+        surface: &vk::SurfaceKHR,
+        physical_device: &vk::PhysicalDevice,
     ) -> Result<Self> {
         Ok(Self {
             capabilities: instance
-                .get_physical_device_surface_capabilities_khr(physical_device, data.surface)?,
+                .get_physical_device_surface_capabilities_khr(*physical_device, *surface)?,
             formats: instance
-                .get_physical_device_surface_formats_khr(physical_device, data.surface)?,
+                .get_physical_device_surface_formats_khr(*physical_device, *surface)?,
             present_modes: instance
-                .get_physical_device_surface_present_modes_khr(physical_device, data.surface)?,
+                .get_physical_device_surface_present_modes_khr(*physical_device, *surface)?,
         })
     }
 }
@@ -591,14 +663,14 @@ pub struct Triangle {
     pub normals: [AlignedVec3; 3],
 }
 
-
 impl Primitive for Triangle {
     fn centroid(&self) -> Vec3 {
         (self.vertices[0].0 + self.vertices[1].0 + self.vertices[2].0) * 0.3333333f32
     }
 
     fn aabb(&self) -> accelerators::aabb::AABB {
-        accelerators::aabb::AABB::new(self.vertices[0].0, self.vertices[1].0).grow(self.vertices[2].0)
+        accelerators::aabb::AABB::new(self.vertices[0].0, self.vertices[1].0)
+            .grow(self.vertices[2].0)
     }
 }
 
@@ -609,9 +681,21 @@ impl Triangle {
             self.vertices[0].0 - Vec3::splat(radius)
         } else {
             Vec3 {
-                x: self.vertices.iter().map(|v| v.0.x).fold(f32::INFINITY, f32::min),
-                y: self.vertices.iter().map(|v| v.0.y).fold(f32::INFINITY, f32::min),
-                z: self.vertices.iter().map(|v| v.0.z).fold(f32::INFINITY, f32::min),
+                x: self
+                    .vertices
+                    .iter()
+                    .map(|v| v.0.x)
+                    .fold(f32::INFINITY, f32::min),
+                y: self
+                    .vertices
+                    .iter()
+                    .map(|v| v.0.y)
+                    .fold(f32::INFINITY, f32::min),
+                z: self
+                    .vertices
+                    .iter()
+                    .map(|v| v.0.z)
+                    .fold(f32::INFINITY, f32::min),
             }
         }
     }
@@ -622,9 +706,21 @@ impl Triangle {
             self.vertices[0].0 + Vec3::splat(radius)
         } else {
             Vec3 {
-                x: self.vertices.iter().map(|v| v.0.x).fold(f32::NEG_INFINITY, f32::max),
-                y: self.vertices.iter().map(|v| v.0.y).fold(f32::NEG_INFINITY, f32::max),
-                z: self.vertices.iter().map(|v| v.0.z).fold(f32::NEG_INFINITY, f32::max),
+                x: self
+                    .vertices
+                    .iter()
+                    .map(|v| v.0.x)
+                    .fold(f32::NEG_INFINITY, f32::max),
+                y: self
+                    .vertices
+                    .iter()
+                    .map(|v| v.0.y)
+                    .fold(f32::NEG_INFINITY, f32::max),
+                z: self
+                    .vertices
+                    .iter()
+                    .map(|v| v.0.z)
+                    .fold(f32::NEG_INFINITY, f32::max),
             }
         }
     }
@@ -636,7 +732,7 @@ struct SceneComponents {
     camera: CameraBufferObject,
     bvh: Vec<BvhNode>,
     materials: Vec<Material>,
-    triangles: Vec<Triangle>
+    triangles: Vec<Triangle>,
 }
 
 #[repr(C)]
@@ -651,7 +747,7 @@ struct Sphere {
 struct Mesh {
     triangle_count: u32,
     offset: u32,
-    material: Material
+    material: Material,
 }
 
 #[repr(C)]

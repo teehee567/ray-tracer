@@ -1,30 +1,45 @@
-
 use log::info;
 use vulkanalia::{prelude::v1_0::*, vk::KhrSwapchainExtension};
 use winit::window::Window;
 
-use crate::{vulkan::physical_device::SuitabilityError, AppData, QueueFamilyIndices, SwapchainSupport};
+use crate::{
+    vulkan::physical_device::SuitabilityError, AppData, QueueFamilyIndices, SwapchainSupport,
+};
 use anyhow::{anyhow, Result};
 
-pub unsafe fn create_swapchain(window: &Window, instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn create_swapchain(
+    window: &Window,
+    instance: &Instance,
+    device: &Device,
+    surface: &vk::SurfaceKHR,
+    physical_device: &vk::PhysicalDevice,
+) -> Result<(vk::Format, vk::Extent2D, vk::SwapchainKHR, Vec<vk::Image>)> {
     // Image
 
-    let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
-    let support = SwapchainSupport::get(instance, data, data.physical_device)?;
+    let indices = QueueFamilyIndices::get(instance, surface, physical_device)?;
+    let support = SwapchainSupport::get(instance, surface, physical_device)?;
 
-    if !support.capabilities.supported_usage_flags.contains(vk::ImageUsageFlags::SAMPLED.union(vk::ImageUsageFlags::STORAGE)) {
-        return Err(anyhow!(SuitabilityError("Current GPU's swapchain images do not support being rendered to from a compute shader")));
+    if !support
+        .capabilities
+        .supported_usage_flags
+        .contains(vk::ImageUsageFlags::SAMPLED.union(vk::ImageUsageFlags::STORAGE))
+    {
+        return Err(anyhow!(SuitabilityError(
+            "Current GPU's swapchain images do not support being rendered to from a compute shader"
+        )));
     }
 
     let surface_format = get_swapchain_surface_format(&support.formats);
     let present_mode = get_swapchain_present_mode(&support.present_modes);
     let extent = get_swapchain_extent(window, support.capabilities);
 
-    data.swapchain_format = surface_format.format;
-    data.swapchain_extent = extent;
+    let swapchain_format = surface_format.format;
+    let swapchain_extent = extent;
 
     let mut image_count = support.capabilities.min_image_count + 1;
-    if support.capabilities.max_image_count != 0 && image_count > support.capabilities.max_image_count {
+    if support.capabilities.max_image_count != 0
+        && image_count > support.capabilities.max_image_count
+    {
         image_count = support.capabilities.max_image_count;
     }
 
@@ -45,7 +60,7 @@ pub unsafe fn create_swapchain(window: &Window, instance: &Instance, device: &De
     // Create
 
     let info = vk::SwapchainCreateInfoKHR::builder()
-        .surface(data.surface)
+        .surface(*surface)
         .min_image_count(image_count)
         .image_format(surface_format.format)
         .image_color_space(surface_format.color_space)
@@ -60,23 +75,34 @@ pub unsafe fn create_swapchain(window: &Window, instance: &Instance, device: &De
         .clipped(true)
         .old_swapchain(vk::SwapchainKHR::null());
 
-    data.swapchain = device.create_swapchain_khr(&info, None)?;
-    info!("Created Swapchain: {:?}", data.swapchain);
+    let swapchain = device.create_swapchain_khr(&info, None)?;
+    info!("Created Swapchain: {:?}", swapchain);
 
     // Images
 
-    data.swapchain_images = device.get_swapchain_images_khr(data.swapchain)?;
-    info!("Created {} Swapchain Images: {:?}",data.swapchain_images.len(), data.swapchain_images);
+    let swapchain_images = device.get_swapchain_images_khr(swapchain)?;
+    info!(
+        "Created {} Swapchain Images: {:?}",
+        swapchain_images.len(),
+        swapchain_images
+    );
 
-
-    Ok(())
+    Ok((
+        swapchain_format,
+        swapchain_extent,
+        swapchain,
+        swapchain_images,
+    ))
 }
 
 pub fn get_swapchain_surface_format(formats: &[vk::SurfaceFormatKHR]) -> vk::SurfaceFormatKHR {
     formats
         .iter()
         .cloned()
-        .find(|f| f.format == vk::Format::B8G8R8A8_UNORM && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR)
+        .find(|f| {
+            f.format == vk::Format::B8G8R8A8_UNORM
+                && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+        })
         .unwrap_or_else(|| formats[0])
 }
 
@@ -106,9 +132,8 @@ pub fn get_swapchain_extent(window: &Window, capabilities: vk::SurfaceCapabiliti
     }
 }
 
-pub unsafe fn create_swapchain_image_views(device: &Device, data: &mut AppData) -> Result<()> {
-    data.swapchain_image_views = data
-        .swapchain_images
+pub unsafe fn create_swapchain_image_views(device: &Device, swapchain_format: &vk::Format, swapchain_images: &Vec<vk::Image>) -> Result<Vec<vk::ImageView>> {
+    Ok(swapchain_images
         .iter()
         .map(|i| {
             let components = vk::ComponentMapping::builder()
@@ -127,14 +152,12 @@ pub unsafe fn create_swapchain_image_views(device: &Device, data: &mut AppData) 
             let info = vk::ImageViewCreateInfo::builder()
                 .image(*i)
                 .view_type(vk::ImageViewType::_2D)
-                .format(data.swapchain_format)
+                .format(*swapchain_format)
                 .components(components)
                 .subresource_range(subresource_range);
 
             info!("Created a swapchain image_view for {:?}: {:?}", i, info);
             device.create_image_view(&info, None)
         })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(())
+        .collect::<Result<Vec<_>, _>>()?)
 }

@@ -7,7 +7,7 @@ use anyhow::{anyhow, Result};
 pub unsafe fn create_buffer(
     instance: &Instance,
     device: &Device,
-    data: &AppData,
+    physical_device: &vk::PhysicalDevice,
     size: vk::DeviceSize,
     usage: vk::BufferUsageFlags,
     properties: vk::MemoryPropertyFlags,
@@ -27,7 +27,7 @@ pub unsafe fn create_buffer(
 
     let memory_info = vk::MemoryAllocateInfo::builder()
         .allocation_size(requirements.size)
-        .memory_type_index(get_memory_type_index(instance, data, properties, requirements)?);
+        .memory_type_index(get_memory_type_index(instance, physical_device, properties, requirements)?);
 
     let buffer_memory = device.allocate_memory(&memory_info, None)?;
 
@@ -80,17 +80,13 @@ pub unsafe fn copy_buffer(
     Ok(())
 }
 
-//================================================
-// Shared (Other)
-//================================================
-
 pub unsafe fn get_memory_type_index(
     instance: &Instance,
-    data: &AppData,
+    physical_device: &vk::PhysicalDevice,
     properties: vk::MemoryPropertyFlags,
     requirements: vk::MemoryRequirements,
 ) -> Result<u32> {
-    let memory = instance.get_physical_device_memory_properties(data.physical_device);
+    let memory = instance.get_physical_device_memory_properties(*physical_device);
     (0..memory.memory_type_count)
         .find(|i| {
             let suitable = (requirements.memory_type_bits & (1 << i)) != 0;

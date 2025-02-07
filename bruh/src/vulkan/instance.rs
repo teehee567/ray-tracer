@@ -2,7 +2,7 @@
 use std::{collections::HashSet, ffi::{c_void, CStr}};
 
 use log::{debug, error, info, trace, warn};
-use vulkanalia::{prelude::v1_0::*, vk::ExtDebugUtilsExtension};
+use vulkanalia::{prelude::v1_0::*, vk::{DebugUtilsMessengerEXT, ExtDebugUtilsExtension}};
 use vulkanalia::window as vk_window;
 use winit::window::Window;
 
@@ -10,7 +10,7 @@ use winit::window::Window;
 use crate::{AppData, PORTABILITY_MACOS_VERSION, VALIDATION_ENABLED, VALIDATION_LAYER};
 use anyhow::{anyhow, Result};
 
-pub unsafe fn create_instance(window: &Window, entry: &Entry, data: &mut AppData) -> Result<Instance> {
+pub unsafe fn create_instance(window: &Window, entry: &Entry) -> Result<(Instance, Option<DebugUtilsMessengerEXT>)> {
     // Application Info
 
     let application_info = vk::ApplicationInfo::builder()
@@ -83,12 +83,13 @@ pub unsafe fn create_instance(window: &Window, entry: &Entry, data: &mut AppData
     let instance = entry.create_instance(&info, None)?;
 
     // Messenger
+    
+    let messenger = match VALIDATION_ENABLED {
+        true => Some(instance.create_debug_utils_messenger_ext(&debug_info, None)?),
+        false => None,
+    };
 
-    if VALIDATION_ENABLED {
-        data.messenger = instance.create_debug_utils_messenger_ext(&debug_info, None)?;
-    }
-
-    Ok(instance)
+    Ok((instance, messenger))
 }
 
 pub extern "system" fn debug_callback(

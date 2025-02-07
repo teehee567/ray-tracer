@@ -2,16 +2,12 @@
 use std::collections::HashSet;
 
 use log::info;
-use vulkanalia::prelude::v1_0::*;
+use vulkanalia::{prelude::v1_0::*, vk::PhysicalDevice};
 
 use crate::{AppData, QueueFamilyIndices, DEVICE_EXTENSIONS, PORTABILITY_MACOS_VERSION, VALIDATION_ENABLED, VALIDATION_LAYER};
 use anyhow::Result;
 
-pub unsafe fn create_logical_device(entry: &Entry, instance: &Instance, data: &mut AppData) -> Result<Device> {
-    // Queue Create Infos
-
-    let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
-
+pub unsafe fn create_logical_device(entry: &Entry, instance: &Instance, physical_device: &PhysicalDevice, indices: &QueueFamilyIndices) -> Result<Device> {
     let mut unique_indices = HashSet::new();
     unique_indices.insert(indices.graphics);
     unique_indices.insert(indices.present);
@@ -56,15 +52,11 @@ pub unsafe fn create_logical_device(entry: &Entry, instance: &Instance, data: &m
         .enabled_extension_names(&extensions)
         .enabled_features(&features);
 
-    let device = instance.create_device(data.physical_device, &info, None)?;
+    let device = instance.create_device(*physical_device, &info, None)?;
     info!("Created Logical Device, {:?}", device);
 
     // Queues
 
-    data.compute_queue = device.get_device_queue(indices.compute, 0);
-    info!("Created Compute Queue: {:?}", data.compute_queue);
-    data.present_queue = device.get_device_queue(indices.present, 0);
-    info!("Created Present Queue: {:?}", data.present_queue);
 
     Ok(device)
 }
