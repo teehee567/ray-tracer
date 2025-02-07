@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = [
+    "bruhv2",
+    "egui_ash",
+]
+exclude = [
+    "bruh"
+]

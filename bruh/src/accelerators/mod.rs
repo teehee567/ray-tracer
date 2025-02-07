@@ -4,7 +4,6 @@ use glam::Vec3;
 use crate::Vertex;
 
 pub mod bvh;
-pub mod bvhfromotherland;
 pub mod aabb;
 
 

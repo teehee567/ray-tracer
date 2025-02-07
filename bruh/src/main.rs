@@ -12,13 +12,12 @@ use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
 use std::time::Instant;
 
-use accelerators::bvhfromotherland::BvhNode;
+use accelerators::bvh::BvhNode;
 use accelerators::Primitive;
 use anyhow::{anyhow, Result};
 use glam::{Mat4, UVec2, Vec2, Vec3, Vec4};
 use log::info;
-use serde::ser::SerializeStruct;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use vulkan::accumulate_image::{create_image, transition_image_layout};
 use vulkan::buffers::{create_shader_buffers, create_uniform_buffer};
 use vulkan::command_buffers::{create_command_buffer, run_command_buffer};
@@ -62,7 +61,7 @@ const VALIDATION_LAYER: vk::ExtensionName =
 const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[vk::KHR_SWAPCHAIN_EXTENSION.name];
 /// The Vulkan SDK version that started requiring the portability subset extension for macOS.
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
-const TILE_SIZE: u32 = 16;
+const TILE_SIZE: u32 = 8;
 macro_rules! print_size {
     ($t:ty) => {
         println!("Size of {}: {} bytes", stringify!($t), std::mem::size_of::<$t>());
@@ -507,17 +506,17 @@ impl AlignedVec3 {
     }
 }
 
-impl Serialize for AlignedVec3 {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer {
-        let mut state = serializer.serialize_struct("Vec3", 3)?;
-        state.serialize_field("x", &self.0.x)?;
-        state.serialize_field("y", &self.0.y)?;
-        state.serialize_field("z", &self.0.z)?;
-        state.end()
-    }
-}
+// impl Serialize for AlignedVec3 {
+//     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+//     where
+//         S: serde::Serializer {
+//         let mut state = serializer.serialize_struct("Vec3", 3)?;
+//         state.serialize_field("x", &self.0.x)?;
+//         state.serialize_field("y", &self.0.y)?;
+//         state.serialize_field("z", &self.0.z)?;
+//         state.end()
+//     }
+// }
 
 impl From<[f32; 3]> for AlignedVec3 {
     fn from(value: [f32; 3]) -> Self {
@@ -604,24 +603,34 @@ impl Primitive for Triangle {
 
 impl Triangle {
     pub fn min_bound(&self) -> Vec3 {
-        Vec3 {
-            x: self.vertices.iter().map(|v| v.0.x).fold(f32::INFINITY, f32::min),
-            y: self.vertices.iter().map(|v| v.0.y).fold(f32::INFINITY, f32::min),
-            z: self.vertices.iter().map(|v| v.0.z).fold(f32::INFINITY, f32::min),
+        if self.is_sphere.0 == 1 {
+            let radius = self.vertices[1].0.x;
+            self.vertices[0].0 - Vec3::splat(radius)
+        } else {
+            Vec3 {
+                x: self.vertices.iter().map(|v| v.0.x).fold(f32::INFINITY, f32::min),
+                y: self.vertices.iter().map(|v| v.0.y).fold(f32::INFINITY, f32::min),
+                z: self.vertices.iter().map(|v| v.0.z).fold(f32::INFINITY, f32::min),
+            }
         }
     }
 
     pub fn max_bound(&self) -> Vec3 {
-        Vec3 {
-            x: self.vertices.iter().map(|v| v.0.x).fold(f32::NEG_INFINITY, f32::max),
-            y: self.vertices.iter().map(|v| v.0.y).fold(f32::NEG_INFINITY, f32::max),
-            z: self.vertices.iter().map(|v| v.0.z).fold(f32::NEG_INFINITY, f32::max),
+        if self.is_sphere.0 == 1 {
+            let radius = self.vertices[1].0.x;
+            self.vertices[0].0 + Vec3::splat(radius)
+        } else {
+            Vec3 {
+                x: self.vertices.iter().map(|v| v.0.x).fold(f32::NEG_INFINITY, f32::max),
+                y: self.vertices.iter().map(|v| v.0.y).fold(f32::NEG_INFINITY, f32::max),
+                z: self.vertices.iter().map(|v| v.0.z).fold(f32::NEG_INFINITY, f32::max),
+            }
         }
     }
 }
 
 #[repr(C)]
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 struct SceneComponents {
     camera: CameraBufferObject,
     bvh: Vec<BvhNode>,
