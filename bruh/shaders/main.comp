@@ -1,6 +1,6 @@
 #version 460
 
-#define SAMPLES 128
+#define SAMPLES 8
 #define BOUNCES 12
 #define EPSILON 0.0001
 #define MAX_BVH_DEPTH 64
@@ -38,6 +38,7 @@ struct Material {
     float ior;
     bool is_glass;
     bool shaded_smooth;
+    vec4 motion_blur;
 };
 
 // perf: these triangles are pretty huge.
@@ -45,7 +46,7 @@ struct Material {
 // store 2 triangle per triangle...
 // Or maybe just remove the normals altogether
 struct Triangle {
-    uint materialIdx;
+    uint material_idx;
     bool is_sphere;
     vec3[3] vertices;
     vec3[3] normals;
@@ -124,13 +125,14 @@ Ray generate_ray(vec2 frag_coord) {
     Ray ray; 
     ray.direction = ray_direction;
     ray.origin = ray_origin;
+    ray.time = pgc_random(seed);
     return ray;
 }
 
 vec3 background_color(Ray ray) {
     float blend = 0.5 * ray.direction.y + 0.5;
-    //return mix(vec3(0.6, 0.8, 1.0), vec3(0.2, 0.4, 1.0), blend);
-    return vec3(0);
+    return mix(vec3(0.6, 0.8, 1.0), vec3(0.2, 0.4, 1.0), blend);
+    //return vec3(0);
 }
 
 // Schlick approximation of Fresnel on glass
@@ -237,7 +239,10 @@ HitRecord hit_triangle(Triangle triangle, Ray ray, bool interpolate_normals) {
     // Check if the ray is parallel to the plane, in which case no hit can happen
     if (abs(dot(plane_normal, ray.direction)) < EPSILON) return hit;
 
-    vec3 o = ray.origin - triangle.vertices[0];
+    // motion blur
+    vec3 blur_offset = materials.get[triangle.material_idx].motion_blur.xyz * ray.time;
+
+    vec3 o = ray.origin - (triangle.vertices[0] + blur_offset);
     vec3 p = cross(ray.direction, ac);
     vec3 q = cross(o, ab);
     float inv_det = 1 / dot(p, ab);
@@ -273,7 +278,8 @@ HitRecord hit_triangle(Triangle triangle, Ray ray, bool interpolate_normals) {
     return hit;
 }
 
-HitRecord hit_sphere(vec3 center, float radius, Ray ray) {
+// todo: do something about this name clash
+HitRecord hit_sphere(Triangle sphere, Ray ray) {
     /*  line (parametric):
             x = orig_x + dir_x * t
             y = orig_y + dir_y * t   ->   p = orig + dir * t
@@ -294,6 +300,13 @@ HitRecord hit_sphere(vec3 center, float radius, Ray ray) {
         referring to the quadratic formula, we can tell whether the ray intersected the sphere by the discriminant:
             hit_sphere = (b^2 - 4ac >= 0)
     */
+
+    vec3 center = sphere.vertices[0];
+    float radius = sphere.vertices[1].x;
+
+    vec3 blur_offset = materials.get[sphere.material_idx].motion_blur.xyz * ray.time;
+    center += blur_offset;
+
     vec3 delta = (center - ray.origin);
 
     // todo: apply the simpler formula for b multiples of 2
@@ -312,10 +325,6 @@ HitRecord hit_sphere(vec3 center, float radius, Ray ray) {
 
     bool did_not_hit = discriminant < 0;
     bool is_behind = t < EPSILON; // avoid floating point imprecisions
-
-    // todo: could be solved by avoiding intersections with the same sphere and type twice in a row (eg. cannot enter sphere 2 twice in a row)
-    // Done by keeping track of last enter / exit (+2 if enter, -2 if exit), and checking if it's the same.
-    // Entering / exiting could be stored in the hit to avoid computing it in the glass shader (and other ones)
 
     hit.did_hit = !(did_not_hit || is_behind);
     hit.is_exiting = dot(hit.normal, ray.direction) > 0;
@@ -336,7 +345,7 @@ float dist_aabb(Ray ray, BvhNode aabb) {
     vec3 inv_dir = 1 / ray.direction;
 
     // Solve for the intersection points with all 6 planes:
-    //  origin_x + t * direction_x = x  (for all 3 dimensions)
+    // origin_x + t * direction_x = x  (for all 3 dimensions)
     vec3 t1 = (aabb.min - ray.origin) * inv_dir;
     vec3 t2 = (aabb.max - ray.origin) * inv_dir;
 
@@ -375,14 +384,14 @@ HitRecord hit_meshes(Ray ray, inout uint mesh_tests) {
                 HitRecord current_hit;
 
                 if (!triangle.is_sphere) {
-                    current_hit = hit_triangle(triangle, ray, false);
+                    current_hit = hit_triangle(triangle, ray, false); // todo: smooth normals
                 } else {
-                    current_hit = hit_sphere(triangle.vertices[0], triangle.vertices[1].x, ray);
+                    current_hit = hit_sphere(triangle, ray);
                 }
 
                 if (current_hit.did_hit && current_hit.t < hit.t) {
                     hit = current_hit;
-                    hit.material = materials.get[triangle.materialIdx];
+                    hit.material = materials.get[triangle.material_idx];
                 }
             }
 
@@ -454,7 +463,6 @@ void main() {
     ivec2 size = imageSize(framebuffer);
 
     if (coordinates.x < size.x && coordinates.y < size.y) {
-        //seed = uint(coordinates.x + camera.resolution.x * coordinates.y);
         seed = uint(coordinates.x + camera.resolution.x * coordinates.y + camera.frame * coordinates.y * coordinates.x);
         uint mesh_tests = 0;
         vec3 color = vec3(0);
@@ -464,14 +472,16 @@ void main() {
             color += ray_color(ray, mesh_tests) / float(SAMPLES);
         }
 
+        //color = clamp(color, vec3(0), vec3(1));
+
         vec4 old_pixel = imageLoad(accumulator, coordinates);
-        vec4 new_pixel = (old_pixel * (camera.frame) + vec4(color, 1.0)) / (camera.frame + 1);
+        vec4 new_pixel = old_pixel * camera.frame / (camera.frame + 1) + vec4(color, 1.0) / (camera.frame + 1);
 
         imageStore(accumulator, coordinates, new_pixel);
         imageStore(framebuffer, coordinates, gamma_correction(new_pixel));
 
         // visualize triangle tests
-        //float tests = float(mesh_tests) / 10000.0f;
+        //float tests = float(mesh_tests) / 3000.0f;
         //imageStore(framebuffer, coordinates, gamma_correction(vec4(tests <= 1.0f ? vec3(tests) : vec3(1,0,0), 1.0)));
 
         //imageStore(framebuffer, coordinates, gamma_correction(vec4(color, 1.0)));

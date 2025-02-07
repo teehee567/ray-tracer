@@ -1,7 +1,7 @@
 version: '0.2'
 
 camera:
-  resolution: [600, 600]
+  resolution: [900, 900]
   focal_length: 1.0
   focus_distance: 5
   aperture_radius: 0
@@ -24,6 +24,7 @@ scene:
     ior: 1.5
     is_glass: null
     smooth_shading: null
+    motion_blur: [0,0,0]
   data:
     vertices:
     - 1.0

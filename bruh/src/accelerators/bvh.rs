@@ -1,10 +1,11 @@
 use glam::Vec3;
 
-use crate::{AlignedVec3, Alignedu32, Triangle};
+use crate::{AlignedVec3, Alignedu32, Material, Triangle};
 
 const MAX_VAL: AlignedVec3 = AlignedVec3(Vec3 { x: 1e30, y: 1e30, z: 1e30 });
 const MIN_VAL: AlignedVec3 = AlignedVec3(Vec3 { x: -1e30, y: -1e30, z: -1e30 });
 const BVH_MAX_DEPTH: u32 = 64;
+const SPLIT_ATTEMPTS: i32 = 8;
 
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -137,25 +138,33 @@ impl BvhNode {
 pub struct BvhBuilder<'a> {
     bvh_list: Vec<BvhNode>,
     triangles: &'a mut Vec<Triangle>,
+    materials: &'a mut Vec<Material>
 }
 
 impl<'a> BvhBuilder<'a> {
     /// Create a new builder.
-    pub fn new(triangles: &'a mut Vec<Triangle>) -> Self {
+    pub fn new(triangles: &'a mut Vec<Triangle>, materials: &'a mut Vec<Material>) -> Self {
         Self {
             bvh_list: Vec::new(),
             triangles,
+            materials,
         }
     }
 
     /// Build the BVH and return the list of BVH nodes.
-    pub fn build_bvh(&mut self) -> Vec<BvhNode> {
+    pub fn build_bvh(mut self) -> Vec<BvhNode> {
         let mut indices: Vec<u32> = (0..self.triangles.len() as u32).collect();
         self.bvh_list.push(BvhNode::default());
         self.build_recursively(0, &mut indices, 0, 0, 1e30);
 
         Self::apply_ordering(self.triangles, &indices);
-        self.bvh_list.clone()
+
+        for node in &self.bvh_list {
+            println!("Node: {}", unsafe {node.min_idx.idx.idx.0 });
+        }
+        self.apply_motion_blur(0);
+
+        self.bvh_list
     }
 
     fn build_recursively(
@@ -173,7 +182,7 @@ impl<'a> BvhBuilder<'a> {
             return;
         }
 
-        let (split_axis, split_pos) = self.find_best_split(indices);
+        let (split_axis, split_pos) = self.find_best_split(node_idx, indices);
         let best_cost = self.split_cost(indices, split_axis, split_pos);
 
         if best_cost >= parent_cost {
@@ -227,20 +236,39 @@ impl<'a> BvhBuilder<'a> {
         );
     }
 
-    fn find_best_split(&self, indices: &[u32]) -> (usize, f32) {
+    fn find_best_split(&self, node_idx: usize, indices: &[u32]) -> (usize, f32) {
         let mut split_axis = 0;
         let mut split_pos = 0.0;
         let mut best_cost = 1e30;
 
-        for axis in 0..3 {
-            for &tri_idx in indices {
-                let tri = &self.triangles[tri_idx as usize];
-                let center = (axis_min(tri, axis) + axis_max(tri, axis)) / 2.0;
-                let cost = self.split_cost(indices, axis, center);
-                if cost < best_cost {
-                    best_cost = cost;
-                    split_axis = axis;
-                    split_pos = center;
+        let node = &self.bvh_list[node_idx];
+        let start_pos = unsafe {node.min_idx.min.0};
+        let dimensions = unsafe { node.max_amt.max.0 - node.min_idx.min.0 / (SPLIT_ATTEMPTS + 1) as f32};
+
+        if SPLIT_ATTEMPTS == -1 {
+            // Try splits at each triangle's midpoint
+            for axis in 0..3 {
+                for &tri_idx in indices {
+                    let tri = &self.triangles[tri_idx as usize];
+                    let center = (axis_min(tri, axis) + axis_max(tri, axis)) / 2.0;
+                    let cost = self.split_cost(indices, axis, center);
+                    if cost < best_cost {
+                        best_cost = cost;
+                        split_axis = axis;
+                        split_pos = center;
+                    }
+                }
+            }
+        } else {
+            for axis in 0..3 {
+                for attempt in 1..=SPLIT_ATTEMPTS {
+                    let pos = start_pos[axis] + dimensions[axis] * attempt as f32;
+                    let cost = self.split_cost(indices, axis, pos);
+                    if cost < best_cost {
+                        best_cost = cost;
+                        split_axis = axis;
+                        split_pos = pos;
+                    }
                 }
             }
         }
@@ -273,6 +301,40 @@ impl<'a> BvhBuilder<'a> {
             .map(|&i| items[i as usize].clone())
             .collect();
         *items = sorted;
+    }
+
+    fn apply_motion_blur(&mut self, node_idx: usize) {
+        let node = &mut self.bvh_list[node_idx];
+
+        unsafe {
+            if node.max_amt.amt.amt.0 != 0 {
+                let offset = node.min_idx.idx.idx.0;
+
+                let motion_blur = self.materials[self.triangles[offset as usize].material_index.0 as usize].motion_blur;
+
+                node.min_idx.min = AlignedVec3(node.min_idx.min.0.min(node.min_idx.min.0 + motion_blur.0));
+                node.max_amt.max = AlignedVec3(node.max_amt.max.0.max(node.max_amt.max.0 + motion_blur.0));
+
+            } else {
+                let child = node.min_idx.idx.idx.0;
+
+                drop(node);
+
+                self.apply_motion_blur(child as usize);
+                self.apply_motion_blur(child as usize + 1);
+
+                let min1 = self.bvh_list[child as usize + 0].min_idx.min.0;
+                let max1 = self.bvh_list[child as usize + 0].max_amt.max.0;
+                let min2 = self.bvh_list[child as usize + 1].min_idx.min.0;
+                let max2 = self.bvh_list[child as usize + 1].max_amt.max.0;
+
+                let node = &mut self.bvh_list[node_idx];
+                node.min_idx.min = AlignedVec3(node.min_idx.min.0.min(min1));
+                node.max_amt.max = AlignedVec3(node.max_amt.max.0.max(max1));
+                node.min_idx.min = AlignedVec3(node.min_idx.min.0.min(min2));
+                node.max_amt.max = AlignedVec3(node.max_amt.max.0.max(max2));
+            }
+        }
     }
 }
 
