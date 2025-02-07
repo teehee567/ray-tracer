@@ -80,7 +80,7 @@ fn main() -> Result<()> {
     print_size!(Mesh);
     print_size!(Vertex);
 
-    let scene = Scene::new("./scene.yaml")?;
+    let scene = Scene::new("./plane.yaml")?;
 
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
@@ -578,16 +578,17 @@ pub struct Material {
     ior: Alignedf32,
     is_glass: Alignedu32,
     shade_smooth: Alignedu32,
+    motion_blur: AlignedVec3,
 }
 
 #[repr(C)]
 #[repr(align(16))]
 #[derive(Copy, Clone, Debug, Default)]
-struct Triangle {
-    material_index: Alignedu32,
-    is_sphere: Alignedu32,
-    vertices: [AlignedVec3; 3],
-    normals: [AlignedVec3; 3],
+pub struct Triangle {
+    pub material_index: Alignedu32,
+    pub is_sphere: Alignedu32,
+    pub vertices: [AlignedVec3; 3],
+    pub normals: [AlignedVec3; 3],
 }
 
 

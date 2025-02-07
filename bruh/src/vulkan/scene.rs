@@ -377,7 +377,7 @@ impl Scene {
         // let file = File::create("bvh.bin").unwrap();
         // let writer = BufWriter::new(file);
 
-        let mut builder = BvhBuilder::new(&mut self.components.triangles);
+        let mut builder = BvhBuilder::new(&mut self.components.triangles, &mut self.components.materials);
         self.components.bvh = builder.build_bvh();
 
         // serialize_into(writer, &self.components.bvh).unwrap();
@@ -430,6 +430,10 @@ impl Scene {
             .get("smooth_shading")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
+        let motion_blur: [f32; 3] = node
+            .get("motion_blur")
+            .and_then(|v| serde_yaml::from_value(v.clone()).ok())
+            .unwrap_or(def);
 
         Ok(Material {
             base_colour: base_colour.into(),
@@ -439,6 +443,7 @@ impl Scene {
             ior: Alignedf32(ior),
             is_glass: Alignedu32(if is_glass { 1 } else { 0 }),
             shade_smooth: Alignedu32(if shade_smooth { 1 } else { 0 }),
+            motion_blur: motion_blur.into(),
         })
     }
 }
