@@ -17,6 +17,7 @@ use accelerators::Primitive;
 use anyhow::{anyhow, Result};
 use glam::{Mat4, UVec2, Vec2, Vec3, Vec4};
 use log::info;
+use scene::Scene;
 use serde::{Deserialize, Serialize};
 use vulkan::accumulate_image::{create_image, transition_image_layout};
 use vulkan::buffers::{create_shader_buffers, create_uniform_buffer};
@@ -31,7 +32,6 @@ use vulkan::logical_device::create_logical_device;
 use vulkan::physical_device::{pick_physical_device, SuitabilityError};
 use vulkan::pipeline::{create_compute_pipeline, create_render_pass};
 use vulkan::sampler::create_sampler;
-use vulkan::scene::Scene;
 use vulkan::swapchain::{create_swapchain, create_swapchain_image_views};
 use vulkan::sync_objects::create_sync_objects;
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
@@ -49,6 +49,7 @@ use vulkanalia::vk::KhrSwapchainExtension;
 
 mod accelerators;
 mod vulkan;
+mod scene;
 
 /// Whether the validation layers should be enabled.
 // const VALIDATION_ENABLED: bool = cfg!(debug_assertions);

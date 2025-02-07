@@ -15,7 +15,7 @@ const CONFIG_VERSION: &str = "0.2";
 
 use anyhow::{anyhow, bail, Result};
 
-use super::bufferbuilder::BufferBuilder;
+use crate::vulkan::bufferbuilder::BufferBuilder;
 
 /// A scene loaded from a YAML file.
 #[derive(Default, Clone)]
