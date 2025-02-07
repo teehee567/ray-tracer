@@ -18,7 +18,7 @@ use anyhow::{anyhow, Result};
 use glam::{Mat4, UVec2, Vec2, Vec3, Vec4};
 use log::info;
 use scene::Scene;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use vulkan::accumulate_image::{create_image, transition_image_layout};
 use vulkan::buffers::{create_shader_buffers, create_uniform_buffer};
 use vulkan::command_buffers::{create_command_buffer, run_command_buffer};

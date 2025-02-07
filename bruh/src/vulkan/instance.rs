@@ -7,7 +7,7 @@ use vulkanalia::window as vk_window;
 use winit::window::Window;
 
 
-use crate::{AppData, PORTABILITY_MACOS_VERSION, VALIDATION_ENABLED, VALIDATION_LAYER};
+use crate::{PORTABILITY_MACOS_VERSION, VALIDATION_ENABLED, VALIDATION_LAYER};
 use anyhow::{anyhow, Result};
 
 pub unsafe fn create_instance(window: &Window, entry: &Entry) -> Result<(Instance, Option<DebugUtilsMessengerEXT>)> {

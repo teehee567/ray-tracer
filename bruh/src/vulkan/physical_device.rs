@@ -5,7 +5,7 @@ use log::{info, warn};
 use thiserror::Error;
 use vulkanalia::{prelude::v1_0::*, vk::SurfaceKHR};
 
-use crate::{AppData, QueueFamilyIndices, SwapchainSupport, DEVICE_EXTENSIONS};
+use crate::{QueueFamilyIndices, SwapchainSupport, DEVICE_EXTENSIONS};
 use anyhow::{anyhow, Result};
 
 #[derive(Debug, Error)]

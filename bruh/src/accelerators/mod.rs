@@ -1,7 +1,6 @@
 use aabb::AABB;
 use glam::Vec3;
 
-use crate::Vertex;
 
 pub mod bvh;
 pub mod aabb;

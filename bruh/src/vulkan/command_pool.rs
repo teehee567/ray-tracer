@@ -2,7 +2,7 @@
 use log::info;
 use vulkanalia::prelude::v1_0::*;
 
-use crate::{AppData, QueueFamilyIndices};
+use crate::QueueFamilyIndices;
 use anyhow::Result;
 
 pub unsafe fn create_command_pool(instance: &Instance, device: &Device, queue_family_indices: &QueueFamilyIndices) -> Result<vk::CommandPool> {

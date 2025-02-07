@@ -1,7 +1,7 @@
 use log::{debug, info};
 use vulkanalia::{prelude::v1_0::*, vk::DescriptorSetLayout};
 
-use crate::{AppData, CameraBufferObject};
+use crate::CameraBufferObject;
 use anyhow::Result;
 
 pub unsafe fn create_descriptor_pool(

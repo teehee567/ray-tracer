@@ -1,7 +1,7 @@
 use log::info;
 use vulkanalia::prelude::v1_0::*;
 
-use crate::{vulkan::physical_device, AppData, CameraBufferObject};
+use crate::CameraBufferObject;
 use anyhow::Result;
 use super::utils::create_buffer;
 

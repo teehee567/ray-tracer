@@ -2,7 +2,6 @@
 use log::info;
 use vulkanalia::{bytecode::Bytecode, prelude::v1_0::*};
 
-use crate::AppData;
 use anyhow::Result;
 
 pub unsafe fn create_compute_pipeline(device: &Device, descriptor_set_layout: &vk::DescriptorSetLayout) -> Result<(vk::PipelineLayout, vk::Pipeline)> {

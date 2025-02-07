@@ -3,7 +3,7 @@ use vulkanalia::{prelude::v1_0::*, vk::KhrSwapchainExtension};
 use winit::window::Window;
 
 use crate::{
-    vulkan::physical_device::SuitabilityError, AppData, QueueFamilyIndices, SwapchainSupport,
+    vulkan::physical_device::SuitabilityError, QueueFamilyIndices, SwapchainSupport,
 };
 use anyhow::{anyhow, Result};
 

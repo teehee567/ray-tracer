@@ -5,9 +5,8 @@ use vulkanalia::{
     vk::{ImageSubresourceRange, ImageViewCreateInfo},
 };
 
-use crate::AppData;
 
-use super::{physical_device, utils::get_memory_type_index};
+use super::utils::get_memory_type_index;
 
 pub unsafe fn create_image(instance: &Instance, device: &Device, swapchain_extent: &vk::Extent2D, physical_device: &vk::PhysicalDevice) -> Result<(vk::Image, vk::ImageView, vk::DeviceMemory)> {
     let image_info = vk::ImageCreateInfo::builder()

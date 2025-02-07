@@ -1,14 +1,13 @@
-use bincode::{deserialize_from, serialize_into};
-use glam::{Mat4, UVec2, Vec2, Vec3, Vec4};
+use glam::{Mat4, UVec2, Vec2, Vec3};
 use serde_yaml::Value;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Write};
+use std::io::Write;
 use std::os::raw::c_void;
 use std::time::Instant;
 
-use crate::accelerators::bvh::{BvhBuilder, BvhNode};
+use crate::accelerators::bvh::BvhBuilder;
 use crate::{
-    AlignedMat4, AlignedUVec2, AlignedVec2, AlignedVec3, AlignedVec4, Alignedf32, Alignedu32, CameraBufferObject, Material, SceneComponents, Triangle
+    AlignedMat4, AlignedUVec2, AlignedVec2, AlignedVec3, Alignedf32, Alignedu32, CameraBufferObject, Material, SceneComponents, Triangle
 };
 
 const CONFIG_VERSION: &str = "0.2";
@@ -377,7 +376,7 @@ impl Scene {
         // let file = File::create("bvh.bin").unwrap();
         // let writer = BufWriter::new(file);
 
-        let mut builder = BvhBuilder::new(&mut self.components.triangles, &mut self.components.materials);
+        let builder = BvhBuilder::new(&mut self.components.triangles, &mut self.components.materials);
         self.components.bvh = builder.build_bvh();
 
         // serialize_into(writer, &self.components.bvh).unwrap();

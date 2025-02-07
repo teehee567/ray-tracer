@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use log::info;
 use vulkanalia::{prelude::v1_0::*, vk::PhysicalDevice};
 
-use crate::{AppData, QueueFamilyIndices, DEVICE_EXTENSIONS, PORTABILITY_MACOS_VERSION, VALIDATION_ENABLED, VALIDATION_LAYER};
+use crate::{QueueFamilyIndices, DEVICE_EXTENSIONS, PORTABILITY_MACOS_VERSION, VALIDATION_ENABLED, VALIDATION_LAYER};
 use anyhow::Result;
 
 pub unsafe fn create_logical_device(entry: &Entry, instance: &Instance, physical_device: &PhysicalDevice, indices: &QueueFamilyIndices) -> Result<Device> {
