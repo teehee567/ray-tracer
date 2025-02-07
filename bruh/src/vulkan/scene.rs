@@ -1,11 +1,12 @@
+use bincode::{deserialize_from, serialize_into};
 use glam::{Mat4, UVec2, Vec2, Vec3, Vec4};
 use serde_yaml::Value;
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufReader, BufWriter, Write};
 use std::os::raw::c_void;
 use std::time::Instant;
 
-use crate::accelerators::bvh::BvhBuilder;
+use crate::accelerators::bvh::{BvhBuilder, BvhNode};
 use crate::{
     AlignedMat4, AlignedUVec2, AlignedVec2, AlignedVec3, AlignedVec4, Alignedf32, Alignedu32, CameraBufferObject, Material, SceneComponents, Triangle
 };
@@ -17,10 +18,19 @@ use anyhow::{anyhow, bail, Result};
 use super::bufferbuilder::BufferBuilder;
 
 /// A scene loaded from a YAML file.
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone)]
 pub struct Scene {
     root: Value,
     components: SceneComponents,
+}
+
+impl std::fmt::Debug for Scene {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Scene")
+            .field("root", &self.root)
+            // Skip components since it does not implement Debug.
+            .finish()
+    }
 }
 
 impl Scene {
@@ -363,12 +373,22 @@ impl Scene {
         println!("building BVH...");
         let start = Instant::now();
 
+
+        // let file = File::create("bvh.bin").unwrap();
+        // let writer = BufWriter::new(file);
+
         let mut builder = BvhBuilder::new(&mut self.components.triangles);
         self.components.bvh = builder.build_bvh();
 
-        let json = serde_json::to_string_pretty(&self.components.bvh).unwrap();
-        let mut file = File::create("output.json").unwrap();
-        file.write_all(json.as_bytes()).unwrap();
+        // serialize_into(writer, &self.components.bvh).unwrap();
+        //
+        // let file = File::open("bvh.bin").unwrap();
+        // let reader = BufReader::new(file);
+        // let decoded: Vec<BvhNode> = deserialize_from(reader).unwrap();
+
+        // let json = serde_json::to_string_pretty(&self.components.bvh).unwrap();
+        // let mut file = File::create("output.json").unwrap();
+        // file.write_all(json.as_bytes()).unwrap();
 
         // let sah = SAH::new(2., 1.);
         // let max_leaf_size = 4;
@@ -376,7 +396,7 @@ impl Scene {
         // println!("{}", bvh.compute_debug_info());
         // self.components.bvh = bvh.nodes;
 
-        println!("BVH built in :{:.2}s", start.elapsed().as_secs_f32());
+        println!("BVH built in :{:.4}s", start.elapsed().as_secs_f32());
         println!("done!");
     }
 
