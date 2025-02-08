@@ -318,8 +318,6 @@ impl<'a> BvhBuilder<'a> {
             } else {
                 let child = node.min_idx.idx.idx.0;
 
-                drop(node);
-
                 self.apply_motion_blur(child as usize);
                 self.apply_motion_blur(child as usize + 1);
 

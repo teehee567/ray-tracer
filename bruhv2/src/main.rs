@@ -12,6 +12,7 @@ use std::{
 };
 
 mod renderer;
+mod vulkan;
 use renderer::Renderer;
 
 struct MyApp {

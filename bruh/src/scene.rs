@@ -1,7 +1,6 @@
 use glam::{Mat4, UVec2, Vec2, Vec3};
 use serde_yaml::Value;
 use std::fs::File;
-use std::io::Write;
 use std::os::raw::c_void;
 use std::time::Instant;
 

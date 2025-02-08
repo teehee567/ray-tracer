@@ -481,8 +481,8 @@ void main() {
         imageStore(framebuffer, coordinates, gamma_correction(new_pixel));
 
         // visualize triangle tests
-        //float tests = float(mesh_tests) / 3000.0f;
-        //imageStore(framebuffer, coordinates, gamma_correction(vec4(tests <= 1.0f ? vec3(tests) : vec3(1,0,0), 1.0)));
+        float tests = float(mesh_tests) / 3000.0f;
+        imageStore(framebuffer, coordinates, gamma_correction(vec4(tests <= 1.0f ? vec3(tests) : vec3(1,0,0), 1.0)));
 
         //imageStore(framebuffer, coordinates, gamma_correction(vec4(color, 1.0)));
         //imageStore(framebuffer, coordinates, gamma_correction(vec4(triangle_sbo.triangles[0].first, 1.0)));
