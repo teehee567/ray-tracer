@@ -98,8 +98,6 @@ fn main() -> Result<()> {
         .build(&event_loop)?;
 
     // App
-
-
     let mut app = unsafe { App::create(&window, scene)? };
     unsafe {
 
@@ -118,7 +116,6 @@ fn main() -> Result<()> {
         println!("Total memory: {}", total_size);
 
     }
-
 
     let mut minimized = false;
     event_loop.run(move |event, elwt| {
