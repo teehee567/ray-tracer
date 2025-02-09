@@ -1,6 +1,5 @@
-
 #!/bin/bash
-
+# Check if VULKAN_SDK environment variable is set
 if [ -z "$VULKAN_SDK" ]; then
     echo "Error: VULKAN_SDK environment variable is not set. Please set it to the Vulkan SDK installation path."
     exit 1
