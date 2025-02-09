@@ -20,7 +20,7 @@ use log::info;
 use scene::Scene;
 use serde::Serialize;
 use vulkan::accumulate_image::{create_image, transition_image_layout};
-use vulkan::buffers::{create_shader_buffers, create_uniform_buffer};
+use vulkan::buffers::{create_buffers, create_shader_buffers, create_uniform_buffer};
 use vulkan::command_buffers::{create_command_buffer, run_command_buffer};
 use vulkan::command_pool::create_command_pool;
 use vulkan::descriptors::{
@@ -48,8 +48,8 @@ use vulkanalia::vk::KhrSurfaceExtension;
 use vulkanalia::vk::KhrSwapchainExtension;
 
 mod accelerators;
-mod vulkan;
 mod scene;
+mod vulkan;
 
 /// Whether the validation layers should be enabled.
 // const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
@@ -162,8 +162,24 @@ struct AppData {
     render_pass: vk::RenderPass,
     present_queue: vk::Queue,
     compute_queue: vk::Queue,
+
     compute_pipeline: vk::Pipeline,
     compute_pipeline_layout: vk::PipelineLayout,
+
+    gen_pipeline: vk::Pipeline,
+    int_pipeline: vk::Pipeline,
+    shade_pipeline: vk::Pipeline,
+    post_pipeline: vk::Pipeline,
+
+    gen_layout: vk::PipelineLayout,
+    int_layout: vk::PipelineLayout,
+    shade_layout: vk::PipelineLayout,
+    post_layout: vk::PipelineLayout,
+
+    gen_descriptor_set: vk::DescriptorSet,
+    int_descriptor_set: vk::DescriptorSet,
+    shade_descriptor_set: vk::DescriptorSet,
+    post_descriptor_set: vk::DescriptorSet,
 
     // there is one of these per concurrenlty rendered image
     compute_descriptor_sets: Vec<vk::DescriptorSet>,
@@ -258,10 +274,39 @@ impl App {
         let (accumulator_image, accumulator_image_view, accumulator_memory) =
             create_image(&instance, &device, &swapchain_extent, &physical_device)?;
 
+        let swapchian_size = swapchain_extent.width * swapchain_extent.height;
+        let ray_buffer_size = swapchian_size * 24 * 24;
+        let hit_buffer_size = swapchian_size * 172 * 24;
+
+        let (ray_buffer, ray_memory) = create_buffers(
+            &instance,
+            &device,
+            &physical_device,
+            ray_buffer_size,
+            vk::BufferUsageFlags::STORAGE_BUFFER,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        );
+
+        let (hit_buffer, hit_memory) = create_buffers(
+            &instance,
+            &device,
+            &physical_device,
+            ray_buffer_size,
+            vk::BufferUsageFlags::STORAGE_BUFFER,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        );
+
+
         transition_image_layout(&device, &command_pool, &accumulator_image, &compute_queue)?;
 
-        let descriptor_pool = create_descriptor_pool(&device, &swapchain_image_views)?;
         let sampler = create_sampler(&device)?;
+
+        let descriptor_pool = create_descriptor_pool(&device, &swapchain_image_views)?;
+
+        let (gen_descriptor_layout, gen_descriptor_set) = create_generate_descriptor_set(&device, &descriptor_pool, &uniform_buffer, &ray_buffer);
+
+
+
         let compute_descriptor_sets = create_descriptor_sets(
             &device,
             &descriptor_set_layout,
@@ -276,9 +321,9 @@ impl App {
             scene_sizes.2 as u64,
         )?;
 
-
         let compute_command_buffer = create_command_buffer(&device, &command_pool)?;
-        let (image_available_semaphores, compute_finished_semaphores, compute_in_flight_fences) = create_sync_objects(&device)?;
+        let (image_available_semaphores, compute_finished_semaphores, compute_in_flight_fences) =
+            create_sync_objects(&device)?;
         info!("Finished initialisation of Vulkan Resources");
 
         let data = AppData {
@@ -313,7 +358,6 @@ impl App {
             accumulator_image,
             sampler,
         };
-
 
         Ok(Self {
             entry,
