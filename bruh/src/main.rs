@@ -53,7 +53,7 @@ mod accelerators;
 /// Whether the validation layers should be enabled.
 // const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 const VALIDATION_ENABLED: bool = true;
-/// The name of the validation layers.
+/// The name of the validation layers.z
 const VALIDATION_LAYER: vk::ExtensionName =
     vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
 
@@ -80,7 +80,7 @@ fn main() -> Result<()> {
     print_size!(Mesh);
     print_size!(Vertex);
 
-    let scene = Scene::new("./scene.yaml")?;
+    let scene = Scene::new("./fancy.yaml")?;
 
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
