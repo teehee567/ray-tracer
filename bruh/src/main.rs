@@ -80,7 +80,7 @@ fn main() -> Result<()> {
     print_size!(Mesh);
     print_size!(Vertex);
 
-    let scene = Scene::new("./plane.yaml")?;
+    let scene = Scene::new("./scene.yaml")?;
 
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()

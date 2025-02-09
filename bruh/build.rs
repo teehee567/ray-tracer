@@ -1,14 +1,31 @@
 use std::process::Command;
 
 fn main() {
-    println!("Running custom batch script...");
+    println!("Running custom shader compilation script...");
 
-    let status = Command::new("cmd")
-        .args(&["/C", "compile_shaders.bat"])
-        .status()
-        .expect("Could not build shaders atch script");
+    // For Windows, run the batch script
+    #[cfg(target_os = "windows")]
+    {
+        let status = Command::new("cmd")
+            .args(&["/C", "compile_shaders.bat"])
+            .status()
+            .expect("Could not run compile_shaders.bat on Windows");
 
-    if !status.success() {
-        panic!("Could not build shaderscript execution failed!");
+        if !status.success() {
+            panic!("Shader script execution failed on Windows!");
+        }
+    }
+
+    // For macOS, run the shell script
+    #[cfg(target_os = "macos")]
+    {
+        let status = Command::new("sh")
+            .arg("compile_shaders.sh")
+            .status()
+            .expect("Could not run compile_shaders.sh on macOS");
+
+        if !status.success() {
+            panic!("Shader script execution failed on macOS!");
+        }
     }
 }

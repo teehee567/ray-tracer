@@ -162,7 +162,7 @@ impl<'a> BvhBuilder<'a> {
         for node in &self.bvh_list {
             println!("Node: {}", unsafe {node.min_idx.idx.idx.0 });
         }
-        self.apply_motion_blur(0);
+        // self.apply_motion_blur(0);
 
         self.bvh_list
     }
