@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use ash::{ext::debug_utils, vk, Device, Entry, Instance};
 use egui_ash::{
     raw_window_handle::{HasDisplayHandle as _, HasWindowHandle as _},
@@ -13,6 +14,13 @@ use std::{
 
 mod renderer;
 mod vulkan;
+mod accelerators;
+mod materials;
+mod primitives;
+mod camera;
+mod colour;
+mod mesh;
+mod scenes;
 use renderer::Renderer;
 
 struct MyApp {
