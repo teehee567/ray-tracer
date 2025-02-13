@@ -33,12 +33,12 @@ struct BvhNode {
 struct Material {
     vec4 base_color;
     vec4 emission;
-    float reflectivity;
+    float metallic;
     float roughness;
     float ior;
-    bool is_glass;
-    bool shaded_smooth;
+    float transmission;
     vec4 motion_blur;
+    bool shaded_smooth;
 };
 
 // perf: these triangles are pretty huge.
@@ -182,23 +182,6 @@ void glass_shader(inout Ray ray, HitRecord hit) {
 
     ray.direction = out_dir;
     ray.origin = hit.pos;
-}
-
-// cosine-weighted lambertian lighting
-void weighted_lambertian_shader(inout Ray ray, HitRecord hit) {
-    ray.origin = hit.pos;
-
-    // flip the normal if we are hitting from the "inside"
-    if (hit.is_exiting)
-        hit.normal *= -1;
-
-    // reflectivity: randomly pick between reflecting and opaque based how reflective the material is
-    if (pgc_random(seed) < hit.material.reflectivity) {
-        ray.direction = ray.direction - 2 * dot(hit.normal, ray.direction) * hit.normal;
-        ray.direction = normalize(ray.direction + random_unit_vector(seed) * hit.material.roughness); // fuzzy reflection
-    } else {
-        ray.direction = normalize(hit.normal + random_unit_vector(seed)); // https://www.iue.tuwien.ac.at/phd/ertl/node100.html
-    }
 }
 
 // Möller-Trumbore intersection algorithm (https://www.graphics.cornell.edu/pubs/1997/MT97.pdf)
@@ -415,18 +398,84 @@ HitRecord hit_meshes(Ray ray, inout uint mesh_tests) {
     return hit;
 }
 
-vec3 ray_color(Ray ray, inout uint mesh_tests) {
-    /*  The ray only gets light when it hits something emissive.
-        The light that will be "received" from the emissive object
-         will be tinted multiplicatively by all the surfaces the ray
-         hits before reaching the camera.
-        If the ray encounters multiple source of light, all of them
-         will contribute to the light value of the pixel.
+// Fresnel-Schlick approximation
+vec3 F_Schlick(vec3 f0, float cos_theta) {
+    return f0 + (1.0 - f0) * pow(1.0 - cos_theta, 5.0);
+}
 
-        The result is that we only add light to incoming_light when
-         we hit an emissive, and we tint that light to the color that 
-         the ray has assumed so far.
-    */
+// GGX/Trowbridge-Reitz normal distribution function
+float D_GGX(float NoH, float roughness) {
+    float alpha = roughness * roughness;
+    float alpha2 = alpha * alpha;
+    float NoH2 = NoH * NoH;
+    float den = NoH2 * (alpha2 - 1.0) + 1.0;
+    return alpha2 / (PI * den * den);
+}
+
+// Smith's Schlick-GGX geometry function
+float G_Smith(float NoV, float NoL, float roughness) {
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+    float ggx1 = NoV / (NoV * (1.0 - k) + k);
+    float ggx2 = NoL / (NoL * (1.0 - k) + k);
+    return ggx1 * ggx2;
+}
+
+void pbr_shader(inout Ray ray, HitRecord hit, inout vec3 ray_color) {
+    ray.origin = hit.pos;
+
+    // Flip normal if hitting from inside
+    if (hit.is_exiting)
+        hit.normal *= -1;
+
+    vec3 V = -ray.direction;
+    vec3 N = hit.normal;
+    
+    // Handle transmission
+    if (hit.material.transmission > 0.0) {
+        float ior_ratio = hit.is_exiting ? hit.material.ior : (1.0 / hit.material.ior);
+        
+        float cos_theta = dot(N, V);
+        float reflectance = schlick_reflectance(cos_theta, ior_ratio);
+        
+        if (pgc_random(seed) < reflectance) {
+            // Reflection
+            vec3 reflected = reflect(-V, N);
+            ray.direction = normalize(reflected + hit.material.roughness * random_unit_vector(seed));
+        } else {
+            // Refraction
+            vec3 refracted = refract(-V, N, ior_ratio);
+            if (length(refracted) > 0.0) {
+                ray.direction = normalize(refracted + hit.material.roughness * random_unit_vector(seed));
+            } else {
+                // Total internal reflection
+                vec3 reflected = reflect(-V, N);
+                ray.direction = normalize(reflected + hit.material.roughness * random_unit_vector(seed));
+            }
+        }
+        
+        // Apply tint on every interaction with glass
+        float tint_strength = hit.is_exiting ? 1.0 : 0.5;
+        ray_color *= mix(vec3(1.0), hit.material.base_color.rgb, tint_strength);
+    } else {
+        // Regular PBR for non-transmissive parts
+        vec3 F0 = mix(vec3(0.04), hit.material.base_color.rgb, hit.material.metallic);
+        float cos_theta = dot(N, V);
+        vec3 F = F_Schlick(F0, cos_theta);
+        
+        float specular_prob = max(F.r, max(F.g, F.b));
+        
+        if (pgc_random(seed) < specular_prob) {
+            vec3 reflected = reflect(-V, N);
+            vec3 scattered = normalize(reflected + hit.material.roughness * random_unit_vector(seed));
+            ray.direction = scattered;
+        } else {
+            ray.direction = normalize(N + random_unit_vector(seed));
+        }
+    }
+}
+
+vec3 ray_color(Ray ray, inout uint mesh_tests) {
     vec3 ray_color = vec3(1);
     vec3 incoming_light = vec3(0);
 
@@ -435,16 +484,18 @@ vec3 ray_color(Ray ray, inout uint mesh_tests) {
 
         if (hit.did_hit) {
             Material material = hit.material;
-            incoming_light += ray_color * hit.material.emission.xyz;
+            incoming_light += ray_color * material.emission.xyz;
 
-            if (material.is_glass) {
-                glass_shader(ray, hit);
-            } else {
-                weighted_lambertian_shader(ray, hit);
+            pbr_shader(ray, hit, ray_color);
+            
+            // Only apply base color for non-transmissive materials
+            if (material.transmission <= 0.0) {
+                if (material.metallic > 0.0) {
+                    ray_color *= mix(material.base_color.rgb, vec3(1.0), material.metallic);
+                } else {
+                    ray_color *= material.base_color.rgb;
+                }
             }
-
-            ray_color *= material.base_color.xyz;
-
         } else {
             incoming_light += background_color(ray) * ray_color;
             break;

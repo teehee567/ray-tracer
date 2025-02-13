@@ -8,6 +8,7 @@ build = "build.rs"
 anyhow = "1"
 bincode = "1.3.3"
 glam = "0.29.2"
+gltf = { version = "1.4.1", features = ["KHR_materials_emissive_strength", "KHR_materials_ior", "KHR_materials_transmission"] }
 log = "0.4"
 png = "0.17"
 pretty_env_logger = "0.5"
