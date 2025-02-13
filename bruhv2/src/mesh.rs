@@ -9,8 +9,8 @@ pub type Color = [f32; 3];
 #[derive(Debug, Clone)]
 pub struct Material {
     pub base_color: Color,
-    pub base_color_texture: Option<Arc<Texture>>,
-    pub metallic_roughness_texture: Option<Arc<Texture>>,
+    pub base_color_texture: Option<Texture>,
+    pub metallic_roughness_texture: Option<Texture>,
     pub metalness: f32,
     pub roughness: f32,
 }

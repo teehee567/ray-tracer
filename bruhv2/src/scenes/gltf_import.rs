@@ -12,7 +12,7 @@ pub struct GltfLoader {
     meshes: Vec<Mesh>,
     materials: Vec<Material>,
     textures: Vec<Texture>,
-    mesh_primitives: Vec<Vec<usize>>, // Maps GLTF mesh indices to their primitives in meshes
+    mesh_primitives: Vec<Vec<usize>>,
 }
 
 impl GltfLoader {
