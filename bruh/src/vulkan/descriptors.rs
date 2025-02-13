@@ -40,7 +40,6 @@ fn align_up(value: u64) -> u64 {
 
 #[no_mangle]
 pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData, bvh_size: u64, mat_size: u64, triangle_size: u64) -> Result<()> {
-    println!("{}, {}", bvh_size, mat_size);
     // Allocate
 
     let layouts = vec![data.descriptor_set_layout; data.swapchain_image_views.len()];
