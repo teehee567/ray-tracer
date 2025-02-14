@@ -10,7 +10,7 @@ use serde_yaml::Value;
 
 impl Scene {
     /// Creates a new scene from a file at `path`.
-    pub fn new_yaml(path: &'static str) -> Result<Self> {
+    pub fn from_yaml(path: &'static str) -> Result<Self> {
         let file = File::open(path)?;
         let root: Value = serde_yaml::from_reader(file)?;
         let mut scene = Scene {
