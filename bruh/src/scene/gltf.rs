@@ -1,22 +1,35 @@
-use glam::{Mat3, Mat4, UVec2, Vec2, Vec3, Vec4};
+use bincode::{deserialize_from, serialize_into};
+use glam::{Mat4, UVec2, Vec2, Vec3, Vec4};
 use serde_yaml::Value;
-use anyhow::{anyhow, Result};
-use gltf;
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Write};
+use std::os::raw::c_void;
+use std::time::Instant;
 
+use crate::accelerators::bvh::{BvhBuilder, BvhNode};
 use crate::{
-    AlignedMat4, AlignedUVec2, AlignedVec2, AlignedVec3, Alignedf32, Alignedu32, CameraBufferObject, Material, Scene, SceneComponents, Triangle
+    AlignedMat4, AlignedUVec2, AlignedVec2, AlignedVec3, AlignedVec4, Alignedf32, Alignedu32, CameraBufferObject, Material, SceneComponents, Triangle
 };
+
+const CONFIG_VERSION: &str = "0.2";
+
+use anyhow::{anyhow, bail, Result};
+
+use crate::vulkan::bufferbuilder::BufferBuilder;
+
+use super::Scene;
+
 
 impl Scene {
     pub fn from_gltf(path: &str) -> Result<Self> {
-        let (gltf, buffers, _images) = gltf::import(path)?;
+        let (gltf, buffers, images) = gltf::import(path)?;
         
         let mut scene = Scene {
             components: SceneComponents::default(),
             root: Value::default(),
         };
 
-
+        // Set default camera if none provided
         let mut ubo = CameraBufferObject {
             focal_length: Alignedf32(1.),
             focus_distance: Alignedf32(55.),
@@ -42,31 +55,35 @@ impl Scene {
         ubo.resolution = AlignedUVec2(resolution);
         scene.components.camera = ubo;
 
+        // Process the default scene or first available scene
         let gltf_scene = gltf.default_scene()
             .or_else(|| gltf.scenes().next())
-            .ok_or_else(|| anyhow!("No scenes found"))?;
+            .ok_or_else(|| anyhow!("No scenes found in GLTF file"))?;
 
-        scene.process_gltf_scene(&gltf_scene, &buffers)?;
+        // Process all scenes
+        scene.process_gltf_scene(&gltf_scene, &buffers, &images)?;
+        println!("Triangles: {}", scene.components.triangles.len());
+
         scene.build_bvh();
 
         Ok(scene)
     }
-
     fn process_gltf_scene(
         &mut self,
         scene: &gltf::Scene,
         buffers: &[gltf::buffer::Data],
+        images: &[gltf::image::Data],
     ) -> Result<()> {
-        // Coordinate system conversion matrix (Y-up to Z-up)
-        let y_up_to_z_up = Mat4::from_cols(
-            Vec4::new(1.0, 0.0, 0.0, 0.0),
-            Vec4::new(0.0, 0.0, 1.0, 0.0),
-            Vec4::new(0.0, -1.0, 0.0, 0.0),
-            Vec4::new(0.0, 0.0, 0.0, 1.0),
-        );
-
+        // Process cameras first if any
         for node in scene.nodes() {
-            self.process_node(&node, &y_up_to_z_up, buffers)?;
+            if let Some(camera) = node.camera() {
+                self.process_camera(&camera, &node)?;
+            }
+        }
+
+        // Process meshes and materials
+        for node in scene.nodes() {
+            self.process_node(&node, &Mat4::IDENTITY, buffers, images)?;
         }
 
         Ok(())
@@ -77,56 +94,18 @@ impl Scene {
         node: &gltf::Node,
         parent_transform: &Mat4,
         buffers: &[gltf::buffer::Data],
+        images: &[gltf::image::Data],
     ) -> Result<()> {
         let local_transform = Mat4::from_cols_array_2d(&node.transform().matrix());
         let transform = *parent_transform * local_transform;
 
-        // Process camera first
-        if let Some(camera) = node.camera() {
-            self.process_camera(&camera, transform)?;
-        }
-
-        // Process mesh
         if let Some(mesh) = node.mesh() {
-            self.process_mesh(&mesh, &transform, buffers)?;
+            self.process_mesh(&mesh, &transform, buffers, images)?;
         }
 
-        // Process children
         for child in node.children() {
-            self.process_node(&child, &transform, buffers)?;
+            self.process_node(&child, &transform, buffers, images)?;
         }
-
-        Ok(())
-    }
-
-    fn process_camera(&mut self, camera: &gltf::Camera, transform: Mat4) -> Result<()> {
-        if let gltf::camera::Projection::Perspective(persp) = camera.projection() {
-            let transform = Mat4::from_cols_array_2d(&transform.to_cols_array_2d());
-            let position = transform.transform_point3(Vec3::ZERO);
-
-            // Convert Y-up to Z-up by swapping coordinates
-            let position = Vec3::new(position.x, position.z, position.y);
-
-            self.components.camera = CameraBufferObject {
-                focal_length: Alignedf32(35.0),
-                focus_distance: Alignedf32(55.0),
-                aperture_radius: Alignedf32(0.0),
-                location: AlignedVec3(position),
-                rotation: AlignedMat4(Mat4::from_rotation_x(-10.0_f32.to_radians())
-                    * Mat4::from_rotation_y(-135.0_f32.to_radians())),
-                resolution: AlignedUVec2(UVec2::new(1920, 1080)),
-                view_port_uv: AlignedVec2(Vec2::ONE),
-                ..Default::default()
-            };
-
-            let ratio = self.components.camera.resolution.0[0] as f32 / self.components.camera.resolution.0[1] as f32;
-            let (u, v) = if ratio > 1.0 {
-                (ratio, 1.0)
-            } else {
-                (1.0, 1.0 / ratio)
-            };
-            self.components.camera.view_port_uv = AlignedVec2(Vec2::new(u, v));
-            }
 
         Ok(())
     }
@@ -136,104 +115,123 @@ impl Scene {
         mesh: &gltf::Mesh,
         transform: &Mat4,
         buffers: &[gltf::buffer::Data],
+        images: &[gltf::image::Data],
     ) -> Result<()> {
-        let normal_matrix = Mat3::from_mat4(transform.inverse().transpose());
-
         for primitive in mesh.primitives() {
-            if primitive.mode() != gltf::mesh::Mode::Triangles {
-                continue;
-            }
-
-            let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
-            let material = self.process_material(&primitive.material())?;
+            let material = self.process_material(&primitive.material(), images)?;
             let material_index = self.components.materials.len() as u32;
             self.components.materials.push(material);
 
-            let positions = reader.read_positions()
-                .ok_or_else(|| anyhow!("Missing positions"))?
-                .collect::<Vec<[f32; 3]>>();
+            let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
             
-            // Read or compute normals
-            let normals = match reader.read_normals() {
-                Some(normal_iter) => normal_iter.collect::<Vec<[f32; 3]>>(),
-                None => {
-                    let mut computed_normals = vec![[0.0; 3]; positions.len()];
-                    let indices = reader.read_indices()
-                        .map(|i| i.into_u32().collect::<Vec<u32>>())
-                        .unwrap_or_else(|| (0..positions.len() as u32).collect());
+            if let Some(positions) = reader.read_positions() {
+                let positions: Vec<[f32; 3]> = positions.collect();
+                let normals: Vec<[f32; 3]> = reader.read_normals()
+                    .map(|n| n.collect())
+                    .unwrap_or_else(|| vec![[0.0, 0.0, 1.0]; positions.len()]);
 
-                    for chunk in indices.chunks(3) {
-                        if chunk.len() != 3 { continue; }
-                        let i0 = chunk[0] as usize;
-                        let i1 = chunk[1] as usize;
-                        let i2 = chunk[2] as usize;
-
-                        let p0 = Vec3::from(positions[i0]);
-                        let p1 = Vec3::from(positions[i1]);
-                        let p2 = Vec3::from(positions[i2]);
-
-                        let edge1 = p1 - p0;
-                        let edge2 = p2 - p0;
-                        let normal = edge1.cross(edge2).normalize();
-
-                        computed_normals[i0] = (Vec3::from(computed_normals[i0]) + normal).to_array();
-                        computed_normals[i1] = (Vec3::from(computed_normals[i1]) + normal).to_array();
-                        computed_normals[i2] = (Vec3::from(computed_normals[i2]) + normal).to_array();
-                    }
-
-                    computed_normals.iter()
-                        .map(|&n| {
-                            let normalized = Vec3::from(n).normalize();
-                            [normalized.x, normalized.y, normalized.z]
-                        })
-                        .collect()
-                }
-            };
-
-            let indices = reader.read_indices()
-                .map(|i| i.into_u32().collect::<Vec<u32>>())
-                .unwrap_or_else(|| (0..positions.len() as u32).collect());
-
-            for chunk in indices.chunks(3) {
-                if chunk.len() != 3 { continue; }
-
-                let mut triangle = Triangle {
-                    material_index: Alignedu32(material_index),
-                    is_sphere: Alignedu32(0),
-                    vertices: [AlignedVec3(Vec3::ZERO); 3],
-                    normals: [AlignedVec3(Vec3::ZERO); 3],
-                };
-
-                for (i, &index) in chunk.iter().enumerate() {
-                    let pos = positions[index as usize];
-                    let normal = normals[index as usize];
+                if let Some(indices) = reader.read_indices() {
+                    let indices: Vec<u32> = indices.into_u32().collect();
                     
-                    // Transform vertex and normal using the accumulated transform
-                    let world_pos = transform.transform_point3(Vec3::from(pos));
-                    let world_normal = (normal_matrix * Vec3::from(normal)).normalize();
+                    for chunk in indices.chunks(3) {
+                        if chunk.len() == 3 {
+                            let mut triangle = Triangle {
+                                material_index: Alignedu32(material_index),
+                                is_sphere: Alignedu32(0),
+                                vertices: [AlignedVec3(Vec3::ZERO); 3],
+                                normals: [AlignedVec3(Vec3::ZERO); 3],
+                            };
 
-                    triangle.vertices[i] = AlignedVec3(world_pos);
-                    triangle.normals[i] = AlignedVec3(world_normal);
+                            for (i, &index) in chunk.iter().enumerate() {
+                                let pos = positions[index as usize];
+                                let normal = normals[index as usize];
+                                
+                                let transformed_pos = transform.transform_point3(Vec3::from(pos));
+                                let transformed_normal = transform.transform_vector3(Vec3::from(normal)).normalize();
+
+                                triangle.vertices[i] = AlignedVec3(transformed_pos);
+                                triangle.normals[i] = AlignedVec3(transformed_normal);
+                            }
+
+                            self.components.triangles.push(triangle);
+                        }
+                    }
                 }
-
-                self.components.triangles.push(triangle);
             }
         }
 
         Ok(())
     }
-    fn process_material(&mut self, material: &gltf::Material) -> Result<Material> {
+
+    fn process_material(
+        &self,
+        material: &gltf::Material,
+        images: &[gltf::image::Data],
+    ) -> Result<Material> {
         let pbr = material.pbr_metallic_roughness();
         
-        Ok(Material {
-            base_colour: AlignedVec3(Vec4::from(pbr.base_color_factor()).truncate()),
-            emission: AlignedVec3(Vec3::from(material.emissive_factor())),
-            metallic: Alignedf32(pbr.metallic_factor()),
-            roughness: Alignedf32(pbr.roughness_factor()),
-            transmission: Alignedf32(0.0),
-            ior: Alignedf32(1.5),
-            motion_blur: Default::default(),
-            shade_smooth: Alignedu32(1),
-        })
+        let base_color = pbr.base_color_factor();
+        let metallic = Alignedf32(pbr.metallic_factor());
+        let roughness = Alignedf32(pbr.roughness_factor());
+        let emissive = material.emissive_factor();
+        let ior = Alignedf32(material.ior()
+            .unwrap_or(1.5));
+        let transmission = Alignedf32(material.transmission()
+            .and_then(|ext| Some(ext.transmission_factor() * 0.1))
+            .unwrap_or(1.0));
+        
+        // Get emissive strength from extension
+        let emissive_strength = material
+            .emissive_strength()
+            .unwrap_or(1.0);
+
+        // Combine emissive color with strength
+        let emission = AlignedVec3(Vec3::new(
+            emissive[0] * emissive_strength,
+            emissive[1] * emissive_strength,
+            emissive[2] * emissive_strength,
+        ));
+
+        let materiala = Material {
+            base_colour: AlignedVec3::new(base_color[0], base_color[1], base_color[2]),
+            emission,
+            metallic,
+            roughness,
+            ior,
+            transmission,
+            motion_blur: AlignedVec3(Vec3::ZERO),
+            shade_smooth: Alignedu32(0),
+        };
+        if material.name().unwrap() == "Dock" {
+            dbg!(&material);
+            dbg!(&materiala);
+            panic!();
+        }
+
+        Ok(materiala)
     }
+
+    fn process_camera(&mut self, camera: &gltf::Camera, node: &gltf::Node) -> Result<()> {
+        match camera.projection() {
+            gltf::camera::Projection::Perspective(persp) => {
+                let transform = Mat4::from_cols_array_2d(&node.transform().matrix());
+                let position = transform.col(3).truncate();
+                
+                self.components.camera.focal_length = Alignedf32(persp.yfov().to_degrees());
+                self.components.camera.focus_distance = Alignedf32(persp.znear());
+                self.components.camera.location = AlignedVec3::new(position.x, position.y, position.z);
+                
+                // Extract rotation from transform
+                self.components.camera.rotation = AlignedMat4(Mat4::from_cols_array_2d(&node.transform().matrix()));
+            }
+            gltf::camera::Projection::Orthographic(_) => {
+                unimplemented!("ORTHOGAPHIC CAMERA NOT IMPLEMENTED")
+            }
+        }
+        Ok(())
+    }
+
+
 }
+
+

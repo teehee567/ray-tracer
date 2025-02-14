@@ -38,7 +38,7 @@ impl std::fmt::Debug for Scene {
 }
 
 impl Scene {
-    fn build_bvh(&mut self) {
+    pub fn build_bvh(&mut self) {
         println!("building BVH...");
         let start = Instant::now();
 
