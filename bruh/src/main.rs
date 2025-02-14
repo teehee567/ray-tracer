@@ -84,10 +84,11 @@ fn main() -> Result<()> {
     print_size!(Mesh);
     print_size!(Vertex);
 
-    // let scene = Scene::new("./fancy.yaml")?;
-    let scene = Scene::from_gltf("./low_poly_lake_scene/scene.gltf")?;
+    let scene = Scene::from_yaml("./fancy.yaml")?;
+    // let scene = Scene::from_gltf("./low_poly_lake_scene/scene.gltf")?;
     // let scene = Scene::from_gltf("./bmw_m4_csl_2023/scene.gltf")?;
     // let scene = Scene::from_mitsuba("./cornell-box/scene_v3.xml")?;
+    // let scene = Scene::from_gltf("./camera.gltf")?;
 
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
