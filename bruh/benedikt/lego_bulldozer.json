@@ -80,6 +80,7 @@
     "Yellow": {
       "reflectance": "#E7BC30",
       "specular_roughness": 0.05,
+      "specular": 0.3,
       "ior": 1.5
     }
   },

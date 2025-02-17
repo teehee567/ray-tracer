@@ -69,7 +69,7 @@ const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[
 /// The Vulkan SDK version that started requiring the portability subset extension for macOS.
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 const TILE_SIZE: u32 = 8;
-const TO_SAVE: usize = 120;
+const TO_SAVE: usize = 2000;
 macro_rules! print_size {
     ($t:ty) => {
         println!(
@@ -97,8 +97,8 @@ fn main() -> Result<()> {
     // let scene = Scene::from_gltf("./low_poly_lake_scene/scene.gltf")?;
     // let scene = Scene::from_gltf("./bmw_m4_csl_2023/scene.gltf")?;
     // let scene = Scene::from_gltf("./2017-mclaren-720s-lb/source/untitled.gltf")?;
-    let scene = Scene::from_gltf("./gltf/DragonAttenuation.gltf")?;
-    // let scene = Scene::from_weird("./benedikt/lego_bulldozer.json")?;
+    // let scene = Scene::from_gltf("./gltf/DragonAttenuation.gltf")?;
+    let scene = Scene::from_weird("./benedikt/lego_bulldozer.json")?;
     // let scene = Scene::from_weird("./benedikt/spaceship.json")?;
     // let scene = Scene::from_gltf("./Interior/room.gltf")?;
     // let scene = Scene::from_gltf("./glTF/DamagedHelmet.gltf")?;
@@ -308,7 +308,7 @@ impl App {
     /// Renders a frame for our Vulkan app.
     unsafe fn render(&mut self, window: &Window) -> Result<()> {
         self.fps_counter.update();
-        // self.fps_counter.print();
+        self.fps_counter.print();
 
         self.device
             .wait_for_fences(&[self.data.compute_in_flight_fences], true, u64::MAX)?;

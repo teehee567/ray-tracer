@@ -80,11 +80,11 @@ impl Default for Material {
             emission:  AlignedVec3(Vec3::ZERO),
             metallic: Alignedf32(0.),
             roughness: Alignedf32(0.),
-            ior: Alignedf32(1.),
+            ior: Alignedf32(1.5),
             transmission: Alignedf32(0.),
 
             specular: Alignedf32(0.),
-            specular_color: AlignedVec3(Vec3::ZERO),
+            specular_color: AlignedVec3(Vec3::ONE),
 
             clearcoat: Alignedf32(0.),
             clearcoat_roughness: Alignedf32(0.),
