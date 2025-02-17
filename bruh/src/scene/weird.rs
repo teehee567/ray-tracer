@@ -59,13 +59,18 @@ impl Scene {
                 dbg!(&mat_data["reflectance"]);
                 if let Some(refl) = mat_data["reflectance"].as_str() {
                     material.base_colour = AlignedVec3(parse_rgb(refl));
-                } else if let Some(refl) = mat_data["reflectance"].as_f64() {
+                } 
+                if let Some(refl) = mat_data["reflectance"].as_f64() {
                     material.metallic = Alignedf32(refl as f32);
                 }
 
+                if let Some(refl) = mat_data["specular"].as_f64() {
+                    material.specular = Alignedf32(refl as f32);
+                }
+
                 // Handle emittance
-                if let Some(emit) = mat_data["emittance"].as_f64() {
-                    material.emission = AlignedVec3(Vec3::splat(emit as f32));
+                if let Some(emit) = mat_data["emittance"].as_str() {
+                    material.emission = AlignedVec3(parse_rgb(emit));
                     if let Some(emit) = mat_data["emissive_strength"].as_f64() {
                         material.emission = AlignedVec3(material.emission.0 * emit as f32);
                     }

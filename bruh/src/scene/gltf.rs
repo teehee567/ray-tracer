@@ -86,11 +86,11 @@ fn camera_sponza() -> CameraBufferObject {
         focal_length: Alignedf32(1.),
         focus_distance: Alignedf32(55.),
         aperture_radius: Alignedf32(0.),
-        location: AlignedVec3::new(3.0, 4.0, 0.0),
+        location: AlignedVec3::new(3.0, 2.0, 0.0),
         ..Default::default()
     };
     let resolution = UVec2::new(1920, 1080);
-    let look_at = Vec3::new(-4.0, 0.0, 0.0);
+    let look_at = Vec3::new(-4.0, 2.0, 0.0);
     ubo.rotation = AlignedMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
 
     let ratio = resolution[0] as f32 / resolution[1] as f32;
@@ -161,7 +161,7 @@ impl Scene {
             root: Value::default(),
         };
 
-        scene.components.camera = camera_interior();
+        scene.components.camera = camera_sponza();
 
         scene.load_textures(&images)?;
 
