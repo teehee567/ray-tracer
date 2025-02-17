@@ -1,62 +1,173 @@
-use bincode::{deserialize_from, serialize_into};
 use glam::{Mat4, UVec2, Vec2, Vec3, Vec4};
 use serde_yaml::Value;
-use std::fs::File;
-use std::io::{BufReader, BufWriter, Write};
-use std::os::raw::c_void;
-use std::time::Instant;
+use vulkanalia::vk;
 
-use crate::accelerators::bvh::{BvhBuilder, BvhNode};
 use crate::{
-    AlignedMat4, AlignedUVec2, AlignedVec2, AlignedVec3, AlignedVec4, Alignedf32, Alignedu32, CameraBufferObject, Material, SceneComponents, Triangle
+    AlignedMat4, AlignedUVec2, AlignedVec2, AlignedVec3, Alignedf32, Alignedu32,
+    CameraBufferObject, Material, SceneComponents, Triangle,
 };
 
 const CONFIG_VERSION: &str = "0.2";
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 
-use crate::vulkan::bufferbuilder::BufferBuilder;
+use super::{Scene, TextureData, TextureFormat};
 
-use super::Scene;
+impl TextureFormat {
+    fn from_gltf(format: gltf::image::Format) -> Self {
+        match format {
+            gltf::image::Format::R8 => TextureFormat::R8,
+            gltf::image::Format::R8G8 => TextureFormat::R8G8,
+            gltf::image::Format::R8G8B8 => TextureFormat::R8G8B8,
+            gltf::image::Format::R8G8B8A8 => TextureFormat::R8G8B8A8,
+            _ => unimplemented!(),
+        }
+    }
 
+    fn to_vulkan(&self) -> vk::Format {
+        match self {
+            TextureFormat::R8 => vk::Format::R8_UNORM,
+            TextureFormat::R8G8 => vk::Format::R8G8_UNORM,
+            TextureFormat::R8G8B8 => vk::Format::R8G8B8_SRGB,
+            TextureFormat::R8G8B8A8 => vk::Format::R8G8B8A8_SRGB,
+            _ => unimplemented!(),
+        }
+    }
+}
+
+fn camera_lake() -> CameraBufferObject {
+    let mut ubo = CameraBufferObject {
+        focal_length: Alignedf32(1.),
+        focus_distance: Alignedf32(55.),
+        aperture_radius: Alignedf32(0.),
+        location: AlignedVec3::new(35.0, 12.0, 35.0),
+        ..Default::default()
+    };
+    let resolution = UVec2::new(1920, 1080);
+    let look_at = Vec3::new(0.0, 0.0, 0.0);
+    ubo.rotation = AlignedMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
+
+    let ratio = resolution[0] as f32 / resolution[1] as f32;
+    let (u, v) = if ratio > 1.0 {
+        (ratio, 1.0)
+    } else {
+        (1.0, 1.0 / ratio)
+    };
+    ubo.view_port_uv = AlignedVec2(Vec2::new(u, v));
+    ubo.resolution = AlignedUVec2(resolution);
+    ubo
+}
+
+fn camera_car() -> CameraBufferObject {
+    let mut ubo = CameraBufferObject {
+        focal_length: Alignedf32(2.),
+        focus_distance: Alignedf32(55.),
+        aperture_radius: Alignedf32(0.),
+        location: AlignedVec3::new(3.0, 1.0, 5.),
+        ..Default::default()
+    };
+    let resolution = UVec2::new(1920, 1080);
+    let look_at = Vec3::new(0.0, 0.0, 0.0);
+    ubo.rotation = AlignedMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
+
+    let ratio = resolution[0] as f32 / resolution[1] as f32;
+    let (u, v) = if ratio > 1.0 {
+        (ratio, 1.0)
+    } else {
+        (1.0, 1.0 / ratio)
+    };
+    ubo.view_port_uv = AlignedVec2(Vec2::new(u, v));
+    ubo.resolution = AlignedUVec2(resolution);
+    ubo
+}
+
+fn camera_sponza() -> CameraBufferObject {
+    let mut ubo = CameraBufferObject {
+        focal_length: Alignedf32(1.),
+        focus_distance: Alignedf32(55.),
+        aperture_radius: Alignedf32(0.),
+        location: AlignedVec3::new(3.0, 4.0, 0.0),
+        ..Default::default()
+    };
+    let resolution = UVec2::new(1920, 1080);
+    let look_at = Vec3::new(-4.0, 0.0, 0.0);
+    ubo.rotation = AlignedMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
+
+    let ratio = resolution[0] as f32 / resolution[1] as f32;
+    let (u, v) = if ratio > 1.0 {
+        (ratio, 1.0)
+    } else {
+        (1.0, 1.0 / ratio)
+    };
+    ubo.view_port_uv = AlignedVec2(Vec2::new(u, v));
+    ubo.resolution = AlignedUVec2(resolution);
+    ubo
+}
+
+fn camera_mclaren() -> CameraBufferObject {
+    let mut ubo = CameraBufferObject {
+        focal_length: Alignedf32(70.),
+        focus_distance: Alignedf32(55.),
+        aperture_radius: Alignedf32(0.),
+        location: AlignedVec3::new(1.15, 0.1, 2.),
+        ..Default::default()
+    };
+    let resolution = UVec2::new(1920, 1080);
+    let rotation = Vec3::new(-2.5, 210., -0.);
+    
+    let look_at = Vec3::new(0.0, 0.0, 0.0);
+    ubo.rotation = AlignedMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
+
+    let ratio = resolution[0] as f32 / resolution[1] as f32;
+    let (u, v) = if ratio > 1.0 {
+        (ratio, 1.0)
+    } else {
+        (1.0, 1.0 / ratio)
+    };
+    ubo.view_port_uv = AlignedVec2(Vec2::new(u, v));
+    ubo.resolution = AlignedUVec2(resolution);
+    ubo
+}
+
+fn camera_interior() -> CameraBufferObject {
+    let mut ubo = CameraBufferObject {
+        focal_length: Alignedf32(1.),
+        focus_distance: Alignedf32(55.),
+        aperture_radius: Alignedf32(0.),
+        location: AlignedVec3::new(0.0, 0.0, 5.0),
+        ..Default::default()
+    };
+    let resolution = UVec2::new(1920, 1080);
+    let look_at = Vec3::new(0.0, 0.0, 0.0);
+    ubo.rotation = AlignedMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
+
+    let ratio = resolution[0] as f32 / resolution[1] as f32;
+    let (u, v) = if ratio > 1.0 {
+        (ratio, 1.0)
+    } else {
+        (1.0, 1.0 / ratio)
+    };
+    ubo.view_port_uv = AlignedVec2(Vec2::new(u, v));
+    ubo.resolution = AlignedUVec2(resolution);
+    ubo
+}
 
 impl Scene {
     pub fn from_gltf(path: &str) -> Result<Self> {
         let (gltf, buffers, images) = gltf::import(path)?;
-        
+
         let mut scene = Scene {
             components: SceneComponents::default(),
             root: Value::default(),
         };
 
-        // Set default camera if none provided
-        let mut ubo = CameraBufferObject {
-            focal_length: Alignedf32(1.),
-            focus_distance: Alignedf32(55.),
-            aperture_radius: Alignedf32(0.),
-            location: AlignedVec3::new(35.0, 12.0, 35.0),
-            ..Default::default()
-        };
-        let resolution = UVec2::new(1920, 1080);
-        let rotation = Vec3::new(-10., -135., -7.);
+        scene.components.camera = camera_interior();
 
-        ubo.rotation = AlignedMat4(Mat4::from_rotation_x(rotation[0].to_radians())
-            * Mat4::from_rotation_y(rotation[1].to_radians())
-            * Mat4::from_rotation_z(rotation[2].to_radians()));
-
-
-        let ratio = resolution[0] as f32 / resolution[1] as f32;
-        let (u, v) = if ratio > 1.0 {
-            (ratio, 1.0)
-        } else {
-            (1.0, 1.0 / ratio)
-        };
-        ubo.view_port_uv = AlignedVec2(Vec2::new(u, v));
-        ubo.resolution = AlignedUVec2(resolution);
-        scene.components.camera = ubo;
+        scene.load_textures(&images)?;
 
         // Process the default scene or first available scene
-        let gltf_scene = gltf.default_scene()
+        let gltf_scene = gltf
+            .default_scene()
             .or_else(|| gltf.scenes().next())
             .ok_or_else(|| anyhow!("No scenes found in GLTF file"))?;
 
@@ -68,6 +179,35 @@ impl Scene {
 
         Ok(scene)
     }
+
+    fn load_textures(&mut self, images: &[gltf::image::Data]) -> Result<()> {
+        for image in images {
+            // Convert RGBA if necessary
+            let pixels = match image.format {
+                gltf::image::Format::R8G8B8 => {
+                    // Convert RGB to RGBA
+                    let mut rgba =
+                        Vec::with_capacity(image.width as usize * image.height as usize * 4);
+                    for chunk in image.pixels.chunks(3) {
+                        rgba.extend_from_slice(chunk);
+                        rgba.push(255); // Alpha channel
+                    }
+                    rgba
+                }
+                _ => image.pixels.clone(),
+            };
+
+            let texture = TextureData {
+                width: image.width,
+                height: image.height,
+                format: TextureFormat::R8G8B8A8, // Always use RGBA8 for consistency
+                pixels,
+            };
+            self.components.textures.push(texture);
+        }
+        Ok(())
+    }
+
     fn process_gltf_scene(
         &mut self,
         scene: &gltf::Scene,
@@ -123,16 +263,23 @@ impl Scene {
             self.components.materials.push(material);
 
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
-            
+
             if let Some(positions) = reader.read_positions() {
                 let positions: Vec<[f32; 3]> = positions.collect();
-                let normals: Vec<[f32; 3]> = reader.read_normals()
+                let normals: Vec<[f32; 3]> = reader
+                    .read_normals()
                     .map(|n| n.collect())
                     .unwrap_or_else(|| vec![[0.0, 0.0, 1.0]; positions.len()]);
 
+                // Read UV coordinates, default to [0,0] if not present
+                let uvs: Vec<[f32; 2]> = reader
+                    .read_tex_coords(0)
+                    .map(|tc| tc.into_f32().collect())
+                    .unwrap_or_else(|| vec![[0.0, 0.0]; positions.len()]);
+
                 if let Some(indices) = reader.read_indices() {
                     let indices: Vec<u32> = indices.into_u32().collect();
-                    
+
                     for chunk in indices.chunks(3) {
                         if chunk.len() == 3 {
                             let mut triangle = Triangle {
@@ -140,17 +287,21 @@ impl Scene {
                                 is_sphere: Alignedu32(0),
                                 vertices: [AlignedVec3(Vec3::ZERO); 3],
                                 normals: [AlignedVec3(Vec3::ZERO); 3],
+                                uvs: [AlignedVec2(Vec2::ZERO); 3], // Initialize UVs
                             };
 
                             for (i, &index) in chunk.iter().enumerate() {
                                 let pos = positions[index as usize];
                                 let normal = normals[index as usize];
-                                
+                                let uv = uvs[index as usize];
+
                                 let transformed_pos = transform.transform_point3(Vec3::from(pos));
-                                let transformed_normal = transform.transform_vector3(Vec3::from(normal)).normalize();
+                                let transformed_normal =
+                                    transform.transform_vector3(Vec3::from(normal)).normalize();
 
                                 triangle.vertices[i] = AlignedVec3(transformed_pos);
                                 triangle.normals[i] = AlignedVec3(transformed_normal);
+                                triangle.uvs[i] = AlignedVec2(Vec2::new(uv[0], uv[1]));
                             }
 
                             self.components.triangles.push(triangle);
@@ -169,28 +320,100 @@ impl Scene {
         images: &[gltf::image::Data],
     ) -> Result<Material> {
         let pbr = material.pbr_metallic_roughness();
-        
+
+        let base_color_tex = pbr
+            .base_color_texture()
+            .map(|tex| tex.texture().source().index() as u32)
+            .unwrap_or(u32::MAX);
+
+        let metallic_roughness_tex = pbr
+            .metallic_roughness_texture()
+            .map(|tex| tex.texture().source().index() as u32)
+            .unwrap_or(u32::MAX);
+
+        let normal_tex = material
+            .normal_texture()
+            .map(|tex| tex.texture().source().index() as u32)
+            .unwrap_or(u32::MAX);
+
+        let emission_tex = material
+            .emissive_texture()
+            .map(|tex| tex.texture().source().index() as u32)
+            .unwrap_or(u32::MAX);
+
         let base_color = pbr.base_color_factor();
         let metallic = Alignedf32(pbr.metallic_factor());
         let roughness = Alignedf32(pbr.roughness_factor());
         let emissive = material.emissive_factor();
-        let ior = Alignedf32(material.ior()
-            .unwrap_or(1.5));
-        let transmission = Alignedf32(material.transmission()
-            .and_then(|ext| Some(ext.transmission_factor() * 0.1))
-            .unwrap_or(1.0));
-        
-        // Get emissive strength from extension
-        let emissive_strength = material
-            .emissive_strength()
-            .unwrap_or(1.0);
+        let ior = Alignedf32(material.ior().unwrap_or(1.5));
+        let transmission = Alignedf32(
+            material
+                .transmission()
+                .and_then(|ext| Some(ext.transmission_factor()))
+                .unwrap_or(1.0 - base_color[3]),
+        );
 
-        // Combine emissive color with strength
-        let emission = AlignedVec3(Vec3::new(
-            emissive[0] * emissive_strength,
-            emissive[1] * emissive_strength,
-            emissive[2] * emissive_strength,
-        ));
+        // Get emissive strength from extension
+        let emissive_strength = material.emissive_strength().unwrap_or(0.0);
+
+        let specular = material
+            .specular()
+            .and_then(|ext| Some(ext.specular_factor()))
+            .unwrap_or(0.);
+        let specular_colour = Vec3::from(
+            material
+                .specular()
+                .and_then(|ext| Some(ext.specular_color_factor()))
+                .unwrap_or([0.; 3]),
+        );
+        let specular_tex = material
+            .specular()
+            .and_then(|spec| spec.specular_texture())
+            .map(|tex| tex.texture().source().index() as u32)
+            .unwrap_or(u32::MAX);
+
+        let clearcoat = pbr
+            .extensions()
+            .and_then(|ext| {
+                ext.get("KHR_materials_clearcoat")
+                    .and_then(|json| json.as_object())
+            });
+
+        let clearcoat_factor = clearcoat
+            .and_then(|c| c.get("clearcoatFactor"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0) as f32;
+
+        let clearcoat_roughness = clearcoat
+            .and_then(|c| c.get("clearcoatRoughnessFactor"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0) as f32;
+
+        let clearcoat_texture = clearcoat
+            .and_then(|c| c.get("clearcoatTexture"))
+            .and_then(|t| t.as_object())
+            .and_then(|t| t.get("index"))
+            .and_then(|i| i.as_u64())
+            .map(|i| i as u32)
+            .unwrap_or(u32::MAX);
+
+        let clearcoat_roughness_texture = clearcoat
+            .and_then(|c| c.get("clearcoatRoughnessTexture"))
+            .and_then(|t| t.as_object())
+            .and_then(|t| t.get("index"))
+            .and_then(|i| i.as_u64())
+            .map(|i| i as u32)
+            .unwrap_or(u32::MAX);
+
+        let emission = AlignedVec3(if emissive_strength != 0.0 {
+            Vec3::new(
+                emissive[0] * emissive_strength,
+                emissive[1] * emissive_strength,
+                emissive[2] * emissive_strength,
+            )
+        } else {
+            emissive.into()
+        });
 
         let materiala = Material {
             base_colour: AlignedVec3::new(base_color[0], base_color[1], base_color[2]),
@@ -199,14 +422,24 @@ impl Scene {
             roughness,
             ior,
             transmission,
+
+            specular: Alignedf32(specular),
+            specular_color: AlignedVec3(specular_colour),
+
+            clearcoat: Alignedf32(clearcoat_factor),
+            clearcoat_roughness: Alignedf32(clearcoat_roughness),
+
             motion_blur: AlignedVec3(Vec3::ZERO),
-            shade_smooth: Alignedu32(0),
+            shade_smooth: Alignedu32(1),
+
+            base_color_tex: Alignedu32(base_color_tex),
+            metallic_roughness_tex: Alignedu32(metallic_roughness_tex),
+            normal_tex: Alignedu32(normal_tex),
+            emission_tex: Alignedu32(emission_tex),
+            specular_tex: Alignedu32(specular_tex),
+            clearcoat_tex: Alignedu32(clearcoat_texture),
         };
-        if material.name().unwrap() == "Dock" {
-            dbg!(&material);
-            dbg!(&materiala);
-            panic!();
-        }
+        // dbg!(&materiala);
 
         Ok(materiala)
     }
@@ -216,13 +449,15 @@ impl Scene {
             gltf::camera::Projection::Perspective(persp) => {
                 let transform = Mat4::from_cols_array_2d(&node.transform().matrix());
                 let position = transform.col(3).truncate();
-                
+
                 self.components.camera.focal_length = Alignedf32(persp.yfov().to_degrees());
                 self.components.camera.focus_distance = Alignedf32(persp.znear());
-                self.components.camera.location = AlignedVec3::new(position.x, position.y, position.z);
-                
+                self.components.camera.location =
+                    AlignedVec3::new(position.x, position.y, position.z);
+
                 // Extract rotation from transform
-                self.components.camera.rotation = AlignedMat4(Mat4::from_cols_array_2d(&node.transform().matrix()));
+                self.components.camera.rotation =
+                    AlignedMat4(Mat4::from_cols_array_2d(&node.transform().matrix()));
             }
             gltf::camera::Projection::Orthographic(_) => {
                 unimplemented!("ORTHOGAPHIC CAMERA NOT IMPLEMENTED")
@@ -230,8 +465,4 @@ impl Scene {
         }
         Ok(())
     }
-
-
 }
-
-

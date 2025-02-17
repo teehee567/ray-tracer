@@ -17826,6 +17826,7 @@ scene:
     roughness: null
     ior: 1.45
     is_glass: true
+    transmission: 0.2
     smooth_shading: false
   data:
     vertices:

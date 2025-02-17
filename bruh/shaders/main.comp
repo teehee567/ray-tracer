@@ -4,10 +4,16 @@
 #define BOUNCES 12
 #define EPSILON 0.0001
 #define MAX_BVH_DEPTH 64
+#define AMBIENT_COLOR vec3(0.1, 0.1, 0.1)
+#define AMBIENT_INTENSITY 0.1
 
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_debug_printf : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+#extension GL_NV_compute_shader_derivatives: enable
+
 
 #include "imports/ray.comp"
 #include "imports/random.comp"
@@ -37,8 +43,18 @@ struct Material {
     float roughness;
     float ior;
     float transmission;
+    float specular;
+    vec3 specular_color;
+    float clearcoat;
+    float clearcoat_roughness;
     vec4 motion_blur;
     bool shaded_smooth;
+    uint base_color_tex;
+    uint metallic_roughness_tex;
+    uint normal_tex;
+    uint emission_tex;
+    uint specular_tex;
+    uint clearcoat_tex;
 };
 
 // perf: these triangles are pretty huge.
@@ -50,6 +66,7 @@ struct Triangle {
     bool is_sphere;
     vec3[3] vertices;
     vec3[3] normals;
+    vec2 uvs[3];
 };
 
 /* Record of a ray intersection.
@@ -68,6 +85,8 @@ struct HitRecord {
     vec3 normal;
     float t;
     Material material;
+    vec2 uv;
+    Triangle triangle;
 };
 
 layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
@@ -98,7 +117,7 @@ layout(std430, set = 0, binding = 3) readonly buffer TriangleBuffer {
 
 layout(set = 0, binding = 4, rgba8) uniform image2D accumulator;
 layout(set = 0, binding = 5) writeonly uniform image2D framebuffer;
-
+layout(set = 0, binding = 6) uniform sampler2D textures[];
 
 Ray generate_ray(vec2 frag_coord) {
     // Scale the virtual camera to make the UV plane coincide with the focus plane
@@ -108,7 +127,7 @@ Ray generate_ray(vec2 frag_coord) {
     vec2 pixel_delta = focus_plane_uv / camera.resolution;
     pixel_delta *= vec2(1, -1); // Y grows downwards in vulkan, so we have to invert it
 
-    vec3 viewport_origin = vec3(-focus_plane_uv.x/2, focus_plane_uv.y/2, camera.focus_distance) + // Top left of focus plane
+    vec3 viewport_origin = vec3(-focus_plane_uv.x/2, focus_plane_uv.y/2, -camera.focus_distance) + // Top left of focus plane
                            vec3(pixel_delta/2, 0);  // Center the pixel
 
     vec3 pixel_coords = viewport_origin + 
@@ -132,7 +151,7 @@ Ray generate_ray(vec2 frag_coord) {
 vec3 background_color(Ray ray) {
     float blend = 0.5 * ray.direction.y + 0.5;
     return mix(vec3(0.6, 0.8, 1.0), vec3(0.2, 0.4, 1.0), blend);
-    //return vec3(0);
+    //return vec3(0.9);
 }
 
 // Schlick approximation of Fresnel on glass
@@ -140,48 +159,6 @@ float schlick_reflectance(float cos_angle, float ior) {
     float r0 = (1 - ior) / (1 + ior);
     r0 = r0 * r0;
     return r0 + (1 - r0) * pow((1 - cos_angle), 5);
-}
-
-// this does not handle intersecting spheres gracefully, the ratios must be pre-divided for that
-void glass_shader(inout Ray ray, HitRecord hit) {
-    vec3 normal = hit.normal;
-    vec3 dir = ray.direction;
-    
-    // Check if we're entering or exiting the glass
-    float ior_ratio;
-    if (hit.is_exiting) {
-        ior_ratio = hit.material.ior;
-        normal = -normal;
-    } else {
-        ior_ratio = 1.0 / hit.material.ior;
-    }
-
-    float cos_angle = min(dot(-dir, normal), 1.0);
-    //float sin_angle = sqrt(1 - cos_angle * cos_angle); // todo: faster sin algos? len(cross
-    float sin_angle = length(cross(-dir, normal));
-
-    bool total_reflection = ior_ratio * sin_angle > 1;
-    bool schlick_reflection = pgc_random(seed) < schlick_reflectance(cos_angle, ior_ratio);
-
-    // Check if we should reflect or refract
-    vec3 out_dir;
-    if (total_reflection || schlick_reflection) {
-        out_dir = dir - 2 * dot(dir, normal) * normal;
-
-    } else {
-        vec3 refracted_ort = ior_ratio * (dir + cos_angle * normal);
-
-        float ort_len = length(refracted_ort);
-        vec3 refracted_par = -sqrt(1 - ort_len * ort_len) * normal;
-
-        out_dir = refracted_ort + refracted_par;
-    }
-
-    // apply fuzziness
-    out_dir = normalize(out_dir + random_unit_vector(seed) * hit.material.roughness / 2);
-
-    ray.direction = out_dir;
-    ray.origin = hit.pos;
 }
 
 // Möller-Trumbore intersection algorithm (https://www.graphics.cornell.edu/pubs/1997/MT97.pdf)
@@ -248,69 +225,18 @@ HitRecord hit_triangle(Triangle triangle, Ray ray, bool interpolate_normals) {
     hit.t = t;
     hit.pos = ray_at(ray, t);
     hit.is_exiting = dot(plane_normal, ray.direction) > 0;
+    hit.uv = triangle.uvs[0] * w + 
+             triangle.uvs[1] * u + 
+             triangle.uvs[2] * v;
 
     if (interpolate_normals) {
-        // interpolate across the normals using the barycentric coordinates
-        hit.normal = triangle.normals[0] * w +
-                     triangle.normals[1] * u +
-                     triangle.normals[2] * v;
+        // Normalize after interpolation to ensure unit length
+        hit.normal = normalize(triangle.normals[0] * w +
+                              triangle.normals[1] * u +
+                              triangle.normals[2] * v);
     } else {
         hit.normal = plane_normal;
     }
-
-    return hit;
-}
-
-// todo: do something about this name clash
-HitRecord hit_sphere(Triangle sphere, Ray ray) {
-    /*  line (parametric):
-            x = orig_x + dir_x * t
-            y = orig_y + dir_y * t   ->   p = orig + dir * t
-            z = orig_z + dir_z * t
-
-        sphere formula:
-            (x - c_x)^2 + (y - c_y)^2 + (z - c_z)^2 <= radius^2    ->    (p - center).(p - center) <= radius^2
-
-        now we plug the line in the sphere formula and solve for t:
-            (orig + dir * t - center).(orig + dir * t - center) <= r^2
-
-            [...]
-
-            a = dir.dir
-            b = 2dir.(orig - center)
-            c = (center - orig).(center - orig) - radius^2
-
-        referring to the quadratic formula, we can tell whether the ray intersected the sphere by the discriminant:
-            hit_sphere = (b^2 - 4ac >= 0)
-    */
-
-    vec3 center = sphere.vertices[0];
-    float radius = sphere.vertices[1].x;
-
-    vec3 blur_offset = materials.get[sphere.material_idx].motion_blur.xyz * ray.time;
-    center += blur_offset;
-
-    vec3 delta = (center - ray.origin);
-
-    // todo: apply the simpler formula for b multiples of 2
-    float a = dot(ray.direction, ray.direction);
-    float b = -2 * dot(ray.direction, delta);
-    float c = dot(delta, delta) - radius * radius;
-
-    float discriminant = b*b - 4*a*c;
-    float t = (-b - sqrt(discriminant)) / 2*a;
-
-    HitRecord hit;
-
-    hit.t = t;
-    hit.pos = ray_at(ray, t);
-    hit.normal = normalize(hit.pos - center);
-
-    bool did_not_hit = discriminant < 0;
-    bool is_behind = t < EPSILON; // avoid floating point imprecisions
-
-    hit.did_hit = !(did_not_hit || is_behind);
-    hit.is_exiting = dot(hit.normal, ray.direction) > 0;
 
     return hit;
 }
@@ -366,15 +292,12 @@ HitRecord hit_meshes(Ray ray, inout uint mesh_tests) {
                 Triangle triangle = triangles.get[node.idx + tri];
                 HitRecord current_hit;
 
-                if (!triangle.is_sphere) {
-                    current_hit = hit_triangle(triangle, ray, false); // todo: smooth normals
-                } else {
-                    current_hit = hit_sphere(triangle, ray);
-                }
+                current_hit = hit_triangle(triangle, ray, materials.get[triangle.material_idx].shaded_smooth);
 
                 if (current_hit.did_hit && current_hit.t < hit.t) {
                     hit = current_hit;
                     hit.material = materials.get[triangle.material_idx];
+                    hit.triangle = triangle;
                 }
             }
 
@@ -403,110 +326,187 @@ vec3 F_Schlick(vec3 f0, float cos_theta) {
     return f0 + (1.0 - f0) * pow(1.0 - cos_theta, 5.0);
 }
 
-// GGX/Trowbridge-Reitz normal distribution function
-float D_GGX(float NoH, float roughness) {
-    float alpha = roughness * roughness;
-    float alpha2 = alpha * alpha;
-    float NoH2 = NoH * NoH;
-    float den = NoH2 * (alpha2 - 1.0) + 1.0;
-    return alpha2 / (PI * den * den);
-}
-
-// Smith's Schlick-GGX geometry function
-float G_Smith(float NoV, float NoL, float roughness) {
-    float r = roughness + 1.0;
-    float k = (r * r) / 8.0;
-    float ggx1 = NoV / (NoV * (1.0 - k) + k);
-    float ggx2 = NoL / (NoL * (1.0 - k) + k);
-    return ggx1 * ggx2;
-}
-
-void pbr_shader(inout Ray ray, HitRecord hit, inout vec3 ray_color) {
-    ray.origin = hit.pos;
-
-    // Flip normal if hitting from inside
-    if (hit.is_exiting)
-        hit.normal *= -1;
-
-    vec3 V = -ray.direction;
-    vec3 N = hit.normal;
-    
-    // Handle transmission
-    if (hit.material.transmission > 0.0) {
-        float ior_ratio = hit.is_exiting ? hit.material.ior : (1.0 / hit.material.ior);
-        
-        float cos_theta = dot(N, V);
-        float reflectance = schlick_reflectance(cos_theta, ior_ratio);
-        
-        if (pgc_random(seed) < reflectance) {
-            // Reflection
-            vec3 reflected = reflect(-V, N);
-            ray.direction = normalize(reflected + hit.material.roughness * random_unit_vector(seed));
-        } else {
-            // Refraction
-            vec3 refracted = refract(-V, N, ior_ratio);
-            if (length(refracted) > 0.0) {
-                ray.direction = normalize(refracted + hit.material.roughness * random_unit_vector(seed));
-            } else {
-                // Total internal reflection
-                vec3 reflected = reflect(-V, N);
-                ray.direction = normalize(reflected + hit.material.roughness * random_unit_vector(seed));
-            }
-        }
-        
-        // Apply tint on every interaction with glass
-        float tint_strength = hit.is_exiting ? 1.0 : 0.5;
-        ray_color *= mix(vec3(1.0), hit.material.base_color.rgb, tint_strength);
-    } else {
-        // Regular PBR for non-transmissive parts
-        vec3 F0 = mix(vec3(0.04), hit.material.base_color.rgb, hit.material.metallic);
-        float cos_theta = dot(N, V);
-        vec3 F = F_Schlick(F0, cos_theta);
-        
-        float specular_prob = max(F.r, max(F.g, F.b));
-        
-        if (pgc_random(seed) < specular_prob) {
-            vec3 reflected = reflect(-V, N);
-            vec3 scattered = normalize(reflected + hit.material.roughness * random_unit_vector(seed));
-            ray.direction = scattered;
-        } else {
-            ray.direction = normalize(N + random_unit_vector(seed));
-        }
+vec3 calculate_surface_normal(HitRecord hit, Triangle triangle) {
+    if (hit.material.normal_tex == 0xFFFFFFFF) {
+        return hit.normal;
     }
+
+    // Calculate tangent space
+    vec3 dp1 = triangle.vertices[1] - triangle.vertices[0];
+    vec3 dp2 = triangle.vertices[2] - triangle.vertices[0];
+    vec2 duv1 = triangle.uvs[1] - triangle.uvs[0];
+    vec2 duv2 = triangle.uvs[2] - triangle.uvs[0];
+    
+    float inv_det = 1.0 / (duv1.x * duv2.y - duv1.y * duv2.x);
+    vec3 tangent = normalize((dp1 * duv2.y - dp2 * duv1.y) * inv_det);
+    vec3 bitangent = normalize((dp2 * duv1.x - dp1 * duv2.x) * inv_det);
+    
+    // Build TBN matrix
+    mat3 TBN = mat3(tangent, bitangent, hit.normal);
+    
+    // Sample and decode normal map
+    vec3 normal_map = texture(textures[nonuniformEXT(hit.material.normal_tex)], hit.uv).rgb;
+    normal_map = normal_map * 2.0 - 1.0; // Convert from [0,1] to [-1,1]
+    
+    return normalize(TBN * normal_map);
 }
 
 vec3 ray_color(Ray ray, inout uint mesh_tests) {
-    vec3 ray_color = vec3(1);
-    vec3 incoming_light = vec3(0);
-
-    for (int bounce = 0; bounce < BOUNCES + 1; bounce++) {
+    vec3 throughput = vec3(1.0);
+    vec3 accumulated_light = vec3(0.0);
+    
+    for(int bounce = 0; bounce < BOUNCES; bounce++) {
         HitRecord hit = hit_meshes(ray, mesh_tests);
-
-        if (hit.did_hit) {
-            Material material = hit.material;
-            incoming_light += ray_color * material.emission.xyz;
-
-            pbr_shader(ray, hit, ray_color);
-            
-            // Only apply base color for non-transmissive materials
-            if (material.transmission <= 0.0) {
-                if (material.metallic > 0.0) {
-                    ray_color *= mix(material.base_color.rgb, vec3(1.0), material.metallic);
-                } else {
-                    ray_color *= material.base_color.rgb;
-                }
-            }
-        } else {
-            incoming_light += background_color(ray) * ray_color;
+        
+        if(!hit.did_hit) {
+            accumulated_light += throughput * background_color(ray);
             break;
         }
+
+        accumulated_light += throughput * AMBIENT_COLOR * AMBIENT_INTENSITY * hit.material.base_color.rgb;
+
+        vec3 surface_normal = calculate_surface_normal(hit, hit.triangle);
+
+        // Add emission immediately
+        if(any(greaterThan(hit.material.emission.rgb, vec3(0.0)))) {
+            vec3 emission = hit.material.emission.rgb;
+            if(hit.material.emission_tex != 0xFFFFFFFF) {
+                vec3 emission_tex = texture(textures[nonuniformEXT(hit.material.emission_tex)], hit.uv).rgb;
+                // Only apply emission and break if the texture color is not black
+                if(any(greaterThan(emission_tex, vec3(0.001)))) {
+                    emission *= emission_tex;
+                    accumulated_light += throughput * emission;
+                    break;
+                }
+                // If texture is black, continue path tracing without breaking
+            } else {
+                accumulated_light += throughput * emission;
+                break;
+            }
+        }
+
+        // Get material properties
+        vec3 base_color = hit.material.base_color.rgb;
+        if(hit.material.base_color_tex != 0xFFFFFFFF) {
+            base_color *= texture(textures[nonuniformEXT(hit.material.base_color_tex)], hit.uv).rgb;
+        }
+
+        float metallic = hit.material.metallic;
+        float roughness = hit.material.roughness;
+        if(hit.material.metallic_roughness_tex != 0xFFFFFFFF) {
+            vec4 mr = texture(textures[nonuniformEXT(hit.material.metallic_roughness_tex)], hit.uv);
+            metallic *= mr.b;
+            roughness *= mr.g;
+        }
+
+        // Handle glass/transmission
+        if(hit.material.transmission > 0.0) {
+            vec3 normal = surface_normal;
+            if(hit.is_exiting) {
+                normal = -normal;
+            }
+            
+            float ior_ratio = hit.is_exiting ? hit.material.ior : 1.0/hit.material.ior;
+            float cos_theta = min(dot(-ray.direction, normal), 1.0);
+            float reflectance = schlick_reflectance(cos_theta, ior_ratio);
+
+            if(pgc_random(seed) < reflectance) {
+                // Reflection
+                ray.direction = reflect(ray.direction, normal);
+            } else {
+                // Refraction
+                ray.direction = refract(ray.direction, normal, ior_ratio);
+                if(length(ray.direction) == 0.0) {
+                    // Total internal reflection
+                    ray.direction = reflect(ray.direction, normal);
+                }
+            }
+            
+            ray.origin = hit.pos + ray.direction * 0.001; // Offset in the direction we're going
+            
+            // Only apply glass tint when exiting
+            if(hit.is_exiting) {
+                throughput *= base_color;
+            }
+            continue; // Skip the Russian Roulette for glass
+        } 
+        // Handle regular materials
+        else {
+            vec3 V = -ray.direction;
+            vec3 N = surface_normal;
+            
+            // Base metallicity path
+            vec3 F0 = mix(vec3(0.04), base_color, metallic);
+            
+            // Apply specular
+            if (hit.material.specular > 0.0) {
+                vec3 specular_factor = hit.material.specular_color * hit.material.specular;
+                if(hit.material.specular_tex != 0xFFFFFFFF) {
+                    specular_factor *= texture(textures[nonuniformEXT(hit.material.specular_tex)], hit.uv).rgb;
+                }
+                F0 = mix(F0, specular_factor, hit.material.specular);
+            }
+
+            float cos_theta = max(dot(N, V), 0.0);
+            vec3 F = F_Schlick(F0, cos_theta);
+            
+            // Handle clearcoat
+            float clearcoat = hit.material.clearcoat;
+            if(hit.material.clearcoat_tex != 0xFFFFFFFF) {
+                clearcoat *= texture(textures[nonuniformEXT(hit.material.clearcoat_tex)], hit.uv).r;
+            }
+            
+            if(clearcoat > 0.0) {
+                float clearcoat_rough = hit.material.clearcoat_roughness;
+                vec3 clearcoat_F = F_Schlick(vec3(0.04), cos_theta);
+                float clearcoat_prob = max(max(clearcoat_F.r, clearcoat_F.g), clearcoat_F.b) * clearcoat;
+                
+                if(pgc_random(seed) < clearcoat_prob) {
+                    // Clearcoat reflection
+                    vec3 reflected = reflect(-V, N);
+                    ray.direction = normalize(reflected + clearcoat_rough * random_unit_vector(seed));
+                    throughput *= clearcoat_F * clearcoat / clearcoat_prob;
+                    ray.origin = hit.pos + N * 0.001;
+                    continue;
+                }
+            }
+
+            float specular_prob = max(max(F.r, F.g), F.b);
+            
+            if(pgc_random(seed) < specular_prob) {
+                // Specular reflection
+                vec3 reflected = reflect(-V, N);
+                ray.direction = normalize(reflected + roughness * random_unit_vector(seed));
+                throughput *= F / specular_prob;
+            } else {
+                // Diffuse reflection
+                ray.direction = normalize(N + random_unit_vector(seed));
+                throughput *= base_color * (1.0 - F) / (1.0 - specular_prob);
+            }
+            
+            ray.origin = hit.pos + N * 0.001;
+        }
+        
+        // Russian Roulette
+        if(bounce > 2) {
+            float p = max(0.05, max(throughput.r, max(throughput.g, throughput.b))); // Minimum probability
+            if(pgc_random(seed) > p) {
+                break;
+            }
+            throughput /= p;
+        }
     }
- 
-    return incoming_light;
+    
+    return accumulated_light;
 }
 
+
+//vec4 gamma_correction(vec4 color) {
+//    return sqrt(color);
+//}
 vec4 gamma_correction(vec4 color) {
-    return sqrt(color);
+    // Use a more standard gamma value
+    return vec4(pow(color.rgb, vec3(1.0/2.2)), color.a);
 }
 
 void main() {
