@@ -1,31 +1,45 @@
-use bincode::{deserialize_from, serialize_into};
-use glam::{Mat4, UVec2, Vec2, Vec3, Vec4};
 use serde_yaml::Value;
-use std::fs::File;
-use std::io::{BufReader, BufWriter, Write};
+use std::io::Write;
 use std::os::raw::c_void;
 use std::time::Instant;
 
-use crate::accelerators::bvh::{BvhBuilder, BvhNode};
+use crate::accelerators::bvh::BvhBuilder;
 use crate::{
-    AlignedMat4, AlignedUVec2, AlignedVec2, AlignedVec3, AlignedVec4, Alignedf32, Alignedu32, CameraBufferObject, Material, SceneComponents, Triangle
+    CameraBufferObject, SceneComponents
 };
 
 const CONFIG_VERSION: &str = "0.2";
 
-use anyhow::{anyhow, bail, Result};
 
 use crate::vulkan::bufferbuilder::BufferBuilder;
 pub mod yaml;
 pub mod gltf;
-pub mod mitsuba;
-pub mod tungsten;
+pub mod weird;
+
+#[derive(Clone, Copy, Debug)]
+pub enum TextureFormat {
+    R8,
+    R8G8,
+    R8G8B8,
+    R8G8B8A8,
+    B8G8R8,
+    B8G8R8A8,
+}
+
+
+#[derive(Clone, Debug)]
+pub struct TextureData {
+    pub width: u32,
+    pub height: u32,
+    pub format: TextureFormat,
+    pub pixels: Vec<u8>,
+}
 
 /// A scene loaded from a YAML file.
 #[derive(Default, Clone)]
 pub struct Scene {
     root: Value,
-    components: SceneComponents,
+    pub components: SceneComponents,
 }
 
 impl std::fmt::Debug for Scene {
@@ -46,7 +60,7 @@ impl Scene {
         // let file = File::create("bvh.bin").unwrap();
         // let writer = BufWriter::new(file);
 
-        let mut builder = BvhBuilder::new(&mut self.components.triangles, &mut self.components.materials);
+        let builder = BvhBuilder::new(&mut self.components.triangles, &mut self.components.materials);
         self.components.bvh = builder.build_bvh();
 
         // serialize_into(writer, &self.components.bvh).unwrap();

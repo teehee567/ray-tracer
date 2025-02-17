@@ -1,4 +1,3 @@
-
 use log::{debug, info};
 use vulkanalia::prelude::v1_0::*;
 
@@ -19,10 +18,12 @@ pub unsafe fn create_descriptor_pool(device: &Device, data: &mut AppData) -> Res
         .type_(vk::DescriptorType::STORAGE_IMAGE)
         .descriptor_count(2 * max_sets)
         .build();
+    let sampler_size = vk::DescriptorPoolSize::builder()
+        .type_(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+        .descriptor_count(max_sets * data.textures.len() as u32)
+        .build();
 
-
-
-    let pool_sizes = &[ubo_size, sbo_size, sbo_size1];
+    let pool_sizes = &[ubo_size, sbo_size, sbo_size1, sampler_size];
     let info = vk::DescriptorPoolCreateInfo::builder()
         .pool_sizes(pool_sizes)
         .max_sets(max_sets)
@@ -39,7 +40,13 @@ fn align_up(value: u64) -> u64 {
 }
 
 #[no_mangle]
-pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData, bvh_size: u64, mat_size: u64, triangle_size: u64) -> Result<()> {
+pub unsafe fn create_descriptor_sets(
+    device: &Device,
+    data: &mut AppData,
+    bvh_size: u64,
+    mat_size: u64,
+    triangle_size: u64,
+) -> Result<()> {
     // Allocate
 
     let layouts = vec![data.descriptor_set_layout; data.swapchain_image_views.len()];
@@ -89,6 +96,18 @@ pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData, bvh_si
             .image_view(data.swapchain_image_views[i])
             .image_layout(vk::ImageLayout::GENERAL)
             .build();
+
+        let texture_info: Vec<_> = data
+            .textures
+            .iter()
+            .map(|tex| {
+                vk::DescriptorImageInfo::builder()
+                    .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .image_view(tex.view)
+                    .sampler(data.texture_sampler)
+                    .build()
+            })
+            .collect();
 
         let uniform_buffer_array = [uniform_buffer_info];
         let write_uniform = vk::WriteDescriptorSet::builder()
@@ -144,6 +163,14 @@ pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData, bvh_si
             .image_info(&swapchain_image_array)
             .build();
 
+        let texture_write = vk::WriteDescriptorSet::builder()
+            .dst_set(data.compute_descriptor_sets[i])
+            .dst_binding(6)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(&texture_info)
+            .build();
+
         let descriptor_writes = &[
             write_uniform,
             bvh_shader,
@@ -151,6 +178,7 @@ pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData, bvh_si
             triangle_shader,
             write_accumulator,
             write_swapchain,
+            texture_write,
         ];
 
         device.update_descriptor_sets(descriptor_writes, &[] as &[vk::CopyDescriptorSet]);
@@ -160,7 +188,10 @@ pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData, bvh_si
     Ok(())
 }
 
-pub unsafe fn create_compute_descriptor_set_layout(device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn create_compute_descriptor_set_layout(
+    device: &Device,
+    data: &mut AppData,
+) -> Result<()> {
     let ubo_binding = vk::DescriptorSetLayoutBinding::builder()
         .binding(0)
         .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
@@ -197,11 +228,28 @@ pub unsafe fn create_compute_descriptor_set_layout(device: &Device, data: &mut A
         .descriptor_count(1)
         .stage_flags(vk::ShaderStageFlags::COMPUTE);
 
-    let bindings = &[ubo_binding, bvh_binding, material_binding, triangle_binding, accumulator_binding, swapchain_binding];
+    let texture_binding = vk::DescriptorSetLayoutBinding::builder()
+        .binding(6) // Make sure this matches your shader binding
+        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+        .descriptor_count(data.scene.components.textures.len() as u32) // Array of textures
+        .stage_flags(vk::ShaderStageFlags::COMPUTE);
+
+    let bindings = &[
+        ubo_binding,
+        bvh_binding,
+        material_binding,
+        triangle_binding,
+        accumulator_binding,
+        swapchain_binding,
+        texture_binding,
+    ];
     let info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(bindings);
 
     data.descriptor_set_layout = device.create_descriptor_set_layout(&info, None)?;
-    info!("Created Desciptor set layout: {:?} with bindings: {:?}", data.descriptor_set_layout, bindings);
+    info!(
+        "Created Desciptor set layout: {:?} with bindings: {:?}",
+        data.descriptor_set_layout, bindings
+    );
 
     Ok(())
 }

@@ -29,14 +29,38 @@ struct Mesh<'a> {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-struct SceneMaterial {
-    base_color: Option<[f32; 3]>,
-    emission: Option<[f32; 3]>,
-    reflectiveness: Option<f32>,
-    roughness: Option<f32>,
-    ior: Option<f32>,
-    is_glass: Option<bool>,
-    smooth_shading: Option<bool>,
+pub struct CameraBufferObject {
+    pub resolution: [u32; 2],
+    pub focal_length: f32,
+    pub focus_distance: f32,
+    pub aperture_radius: f32,
+    pub location: [f32; 3],
+    pub look_at: [f32; 3],
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct Material {
+    pub base_colour: [f32; 3],
+    pub emission: [f32; 3],
+    pub metallic: f32,
+    pub roughness: f32,
+    pub ior: f32,
+    pub transmission: f32,
+    // Specular extension
+    pub specular: f32,
+    pub specular_color: f32,
+    // Clearcoat extension
+    pub clearcoat: f32,
+    pub clearcoat_roughness: f32,
+    pub motion_blur: [f32; 3],
+    pub shade_smooth: u32,
+    // textures
+    pub base_color_tex: u32,
+    pub metallic_roughness_tex: u32,
+    pub normal_tex: u32,
+    pub emission_tex: u32,
+    pub specular_tex: u32,
+    pub clearcoat_tex: u32,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]

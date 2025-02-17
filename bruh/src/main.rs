@@ -12,13 +12,11 @@ use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
 use std::time::Instant;
 
-use accelerators::bvh::BvhNode;
-use accelerators::Primitive;
 use anyhow::{anyhow, Result};
-use glam::{Mat4, UVec2, Vec2, Vec3, Vec4};
+use glam::UVec2;
+use image::{ImageBuffer, Rgba};
 use log::info;
 use scene::Scene;
-use serde::{Deserialize, Serialize};
 use vulkan::accumulate_image::{create_image, transition_image_layout};
 use vulkan::buffers::{create_shader_buffers, create_uniform_buffer};
 use vulkan::command_buffers::{create_command_buffer, run_command_buffer};
@@ -34,6 +32,8 @@ use vulkan::pipeline::{create_compute_pipeline, create_render_pass};
 use vulkan::sampler::create_sampler;
 use vulkan::swapchain::{create_swapchain, create_swapchain_image_views};
 use vulkan::sync_objects::create_sync_objects;
+use vulkan::texture::{create_texture_image, create_texture_sampler, Texture};
+use vulkan::utils::get_memory_type_index;
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::window as vk_window;
@@ -48,11 +48,10 @@ use vulkanalia::vk::KhrSurfaceExtension;
 use vulkanalia::vk::KhrSwapchainExtension;
 
 mod scene;
-mod vulkan;
 mod types;
+mod vulkan;
 pub use types::*;
 mod accelerators;
-
 
 /// Whether the validation layers should be enabled.
 // const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
@@ -62,13 +61,22 @@ const VALIDATION_LAYER: vk::ExtensionName =
     vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
 
 /// The required device extensions.
-const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[vk::KHR_SWAPCHAIN_EXTENSION.name];
+const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[
+    vk::KHR_SWAPCHAIN_EXTENSION.name,
+    vk::KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION.name,
+    vk::KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION.name,
+];
 /// The Vulkan SDK version that started requiring the portability subset extension for macOS.
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 const TILE_SIZE: u32 = 8;
+const TO_SAVE: usize = 120;
 macro_rules! print_size {
     ($t:ty) => {
-        println!("Size of {}: {} bytes", stringify!($t), std::mem::size_of::<$t>());
+        println!(
+            "Size of {}: {} bytes",
+            stringify!($t),
+            std::mem::size_of::<$t>()
+        );
     };
 }
 
@@ -81,14 +89,19 @@ fn main() -> Result<()> {
     print_size!(Material);
     print_size!(SceneComponents);
     print_size!(Sphere);
-    print_size!(Mesh);
     print_size!(Vertex);
 
-    let scene = Scene::from_yaml("./fancy.yaml")?;
+    // let scene = Scene::from_yaml("./fancy.yaml")?;
+    // let scene = Scene::from_gltf("./weekly_voxel_-_furniture/scene.gltf")?;
+    // let scene = Scene::from_gltf("./sponza/Sponza.gltf")?;
     // let scene = Scene::from_gltf("./low_poly_lake_scene/scene.gltf")?;
     // let scene = Scene::from_gltf("./bmw_m4_csl_2023/scene.gltf")?;
-    // let scene = Scene::from_mitsuba("./cornell-box/scene_v3.xml")?;
-    // let scene = Scene::from_gltf("./camera.gltf")?;
+    // let scene = Scene::from_gltf("./2017-mclaren-720s-lb/source/untitled.gltf")?;
+    let scene = Scene::from_gltf("./gltf/DragonAttenuation.gltf")?;
+    // let scene = Scene::from_weird("./benedikt/lego_bulldozer.json")?;
+    // let scene = Scene::from_weird("./benedikt/spaceship.json")?;
+    // let scene = Scene::from_gltf("./Interior/room.gltf")?;
+    // let scene = Scene::from_gltf("./glTF/DamagedHelmet.gltf")?;
 
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
@@ -159,7 +172,7 @@ fn main() -> Result<()> {
 /// The Vulkan handles and associated properties used by our Vulkan app.
 #[derive(Clone, Debug, Default)]
 struct AppData {
-    scene: Scene,
+    pub scene: Scene,
 
     messenger: vk::DebugUtilsMessengerEXT,
     swapchain: vk::SwapchainKHR,
@@ -206,6 +219,9 @@ struct AppData {
     // sampler
     sampler: vk::Sampler,
 
+    //textures
+    textures: Vec<Texture>,
+    texture_sampler: vk::Sampler,
 }
 
 /// Our Vulkan app.
@@ -242,13 +258,38 @@ impl App {
         create_command_pool(&instance, &device, &mut data)?;
         // create_vertex_buffer(&instance, &device, &mut data)?;
         create_uniform_buffer(&instance, &device, &mut data)?;
-        create_shader_buffers(&instance, &device, &mut data, (scene_sizes.0 + scene_sizes.1 + scene_sizes.2) as u64)?;
+        create_shader_buffers(
+            &instance,
+            &device,
+            &mut data,
+            (scene_sizes.0 + scene_sizes.1 + scene_sizes.2) as u64,
+        )?;
         create_image(&instance, &device, &mut data)?;
         transition_image_layout(&device, &mut data)?;
+
+        data.texture_sampler = create_texture_sampler(&device)?;
+
+        for texture_data in &data.scene.components.textures {
+            let texture = create_texture_image(
+                &instance,
+                &device,
+                &data,
+                &texture_data.pixels,
+                texture_data.width,
+                texture_data.height,
+            )?;
+            data.textures.push(texture);
+        }
         create_descriptor_pool(&device, &mut data)?;
         create_sampler(&device, &mut data)?;
         // create_descriptor_sets(&device, &mut data)?;
-        create_descriptor_sets(&device, &mut data, scene_sizes.0 as u64, scene_sizes.1 as u64, scene_sizes.2 as u64)?;
+        create_descriptor_sets(
+            &device,
+            &mut data,
+            scene_sizes.0 as u64,
+            scene_sizes.1 as u64,
+            scene_sizes.2 as u64,
+        )?;
         create_command_buffer(&device, &mut data)?;
         create_sync_objects(&device, &mut data)?;
         info!("Finished initialisation of Vulkan Resources");
@@ -260,7 +301,7 @@ impl App {
             frame: 0,
             resized: false,
             start: Instant::now(),
-            fps_counter: FPSCounter::new(15)
+            fps_counter: FPSCounter::new(15),
         })
     }
 
@@ -338,7 +379,13 @@ impl App {
             return Err(anyhow!(e));
         }
 
+
         self.frame += 1;
+
+        if self.frame == TO_SAVE {
+            save_frame(&self.instance, &self.device, &mut self.data, self.frame as u32)?;
+        }
+
 
         Ok(())
     }
@@ -348,7 +395,10 @@ impl App {
         // MVP
 
         let mut ubo = self.data.scene.get_camera_controls();
-        ubo.resolution = AlignedUVec2(UVec2::new(self.data.swapchain_extent.width, self.data.swapchain_extent.height));
+        ubo.resolution = AlignedUVec2(UVec2::new(
+            self.data.swapchain_extent.width,
+            self.data.swapchain_extent.height,
+        ));
         ubo.time = Alignedu32(self.frame as u32);
 
         let memory = self.device.map_memory(
@@ -488,4 +538,171 @@ impl SwapchainSupport {
                 .get_physical_device_surface_present_modes_khr(physical_device, data.surface)?,
         })
     }
+}
+
+unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, frame: u32) -> Result<()> {
+    let size = (data.swapchain_extent.width * data.swapchain_extent.height * 4) as u64;
+
+    // Create staging buffer
+    let buffer_info = vk::BufferCreateInfo::builder()
+        .size(size)
+        .usage(vk::BufferUsageFlags::TRANSFER_DST)
+        .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+    let staging_buffer = device.create_buffer(&buffer_info, None)?;
+
+    // Allocate memory for staging buffer
+    let mem_requirements = device.get_buffer_memory_requirements(staging_buffer);
+    let memory_type = get_memory_type_index(
+        instance,
+        data,
+        vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        mem_requirements,
+    )?;
+
+    let alloc_info = vk::MemoryAllocateInfo::builder()
+        .allocation_size(mem_requirements.size)
+        .memory_type_index(memory_type);
+
+    let staging_memory = device.allocate_memory(&alloc_info, None)?;
+    device.bind_buffer_memory(staging_buffer, staging_memory, 0)?;
+
+    // Create command buffer for copy operation
+    let alloc_info = vk::CommandBufferAllocateInfo::builder()
+        .level(vk::CommandBufferLevel::PRIMARY)
+        .command_pool(data.command_pool)
+        .command_buffer_count(1);
+
+    let command_buffer = device.allocate_command_buffers(&alloc_info)?[0];
+
+    // Record copy command
+    let begin_info = vk::CommandBufferBeginInfo::builder()
+        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+
+    device.begin_command_buffer(command_buffer, &begin_info)?;
+
+    let barrier = vk::ImageMemoryBarrier::builder()
+        .old_layout(vk::ImageLayout::GENERAL)
+        .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+        .image(data.accumulator_image)
+        .subresource_range(vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+        })
+        .src_access_mask(vk::AccessFlags::MEMORY_WRITE)
+        .dst_access_mask(vk::AccessFlags::TRANSFER_READ);
+
+    device.cmd_pipeline_barrier(
+        command_buffer,
+        vk::PipelineStageFlags::COMPUTE_SHADER,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::DependencyFlags::empty(),
+        &[] as &[vk::MemoryBarrier],
+        &[] as &[vk::BufferMemoryBarrier],
+        &[barrier],
+    );
+
+    let copy = vk::BufferImageCopy::builder()
+        .image_subresource(vk::ImageSubresourceLayers {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            mip_level: 0,
+            base_array_layer: 0,
+            layer_count: 1,
+        })
+        .image_extent(vk::Extent3D {
+            width: data.swapchain_extent.width,
+            height: data.swapchain_extent.height,
+            depth: 1,
+        });
+
+    device.cmd_copy_image_to_buffer(
+        command_buffer,
+        data.accumulator_image,
+        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        staging_buffer,
+        &[copy],
+    );
+
+    let barrier = vk::ImageMemoryBarrier::builder()
+        .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+        .new_layout(vk::ImageLayout::GENERAL)
+        .image(data.accumulator_image)
+        .subresource_range(vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+        })
+        .src_access_mask(vk::AccessFlags::TRANSFER_READ)
+        .dst_access_mask(vk::AccessFlags::MEMORY_WRITE);
+
+    device.cmd_pipeline_barrier(
+        command_buffer,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::PipelineStageFlags::COMPUTE_SHADER,
+        vk::DependencyFlags::empty(),
+        &[] as &[vk::MemoryBarrier],
+        &[] as &[vk::BufferMemoryBarrier],
+        &[barrier],
+    );
+
+    device.end_command_buffer(command_buffer)?;
+
+    // Submit and wait
+    let submit_info = vk::SubmitInfo::builder()
+        .command_buffers(std::slice::from_ref(&command_buffer));
+
+    device.queue_submit(data.compute_queue, &[submit_info], vk::Fence::null())?;
+    device.queue_wait_idle(data.compute_queue)?;
+
+    // Map memory and save to file
+    let data_ptr = device.map_memory(
+        staging_memory,
+        0,
+        size,
+        vk::MemoryMapFlags::empty(),
+    )? as *const u8;
+
+    let buffer = std::slice::from_raw_parts(data_ptr, size as usize);
+
+    // Convert RGBA to proper format and create image
+let width = data.swapchain_extent.width as u32;
+    let height = data.swapchain_extent.height as u32;
+    let mut img = ImageBuffer::new(width, height);
+
+    for y in 0..height {
+        for x in 0..width {
+            let i = ((y * width + x) * 4) as usize;
+            
+            // Read raw color values as floats (0-1)
+            let r = buffer[i + 0] as f32 / 255.0;
+            let g = buffer[i + 1] as f32 / 255.0;
+            let b = buffer[i + 2] as f32 / 255.0;
+            let a = buffer[i + 3] as f32 / 255.0;
+
+            // Apply gamma correction (same as in shader)
+            let r = (r.sqrt() * 255.0) as u8;
+            let g = (g.sqrt() * 255.0) as u8;
+            let b = (b.sqrt() * 255.0) as u8;
+            let a = (a * 255.0) as u8;
+
+            let pixel = image::Rgba([r, g, b, a]);
+            img.put_pixel(x, y, pixel);
+        }
+    }
+
+    device.unmap_memory(staging_memory);
+
+    // Cleanup
+    device.free_command_buffers(data.command_pool, &[command_buffer]);
+    device.destroy_buffer(staging_buffer, None);
+    device.free_memory(staging_memory, None);
+
+    img.save(format!("frame_{}.png", frame))?;
+
+    Ok(())
 }
