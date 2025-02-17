@@ -1,13 +1,19 @@
-
 use std::collections::HashSet;
 
 use log::info;
 use vulkanalia::prelude::v1_0::*;
 
-use crate::{AppData, QueueFamilyIndices, DEVICE_EXTENSIONS, PORTABILITY_MACOS_VERSION, VALIDATION_ENABLED, VALIDATION_LAYER};
+use crate::{
+    AppData, QueueFamilyIndices, DEVICE_EXTENSIONS, PORTABILITY_MACOS_VERSION, VALIDATION_ENABLED,
+    VALIDATION_LAYER,
+};
 use anyhow::Result;
 
-pub unsafe fn create_logical_device(entry: &Entry, instance: &Instance, data: &mut AppData) -> Result<Device> {
+pub unsafe fn create_logical_device(
+    entry: &Entry,
+    instance: &Instance,
+    data: &mut AppData,
+) -> Result<Device> {
     // Queue Create Infos
 
     let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
@@ -36,7 +42,10 @@ pub unsafe fn create_logical_device(entry: &Entry, instance: &Instance, data: &m
 
     // Extensions
 
-    let mut extensions = DEVICE_EXTENSIONS.iter().map(|n| n.as_ptr()).collect::<Vec<_>>();
+    let mut extensions = DEVICE_EXTENSIONS
+        .iter()
+        .map(|n| n.as_ptr())
+        .collect::<Vec<_>>();
 
     // Required by Vulkan SDK on macOS since 1.3.216.
     if cfg!(target_os = "macos") && entry.version()? >= PORTABILITY_MACOS_VERSION {
@@ -46,11 +55,20 @@ pub unsafe fn create_logical_device(entry: &Entry, instance: &Instance, data: &m
     // Features
 
     let features = vk::PhysicalDeviceFeatures::builder()
-        .shader_storage_image_write_without_format(true);
+        .sampler_anisotropy(true)
+        .shader_storage_image_write_without_format(true)
+        .shader_sampled_image_array_dynamic_indexing(true)
+        .shader_storage_image_array_dynamic_indexing(true);
+
+    let mut features12 = vk::PhysicalDeviceVulkan12Features::builder()
+        .runtime_descriptor_array(true)
+        .shader_sampled_image_array_non_uniform_indexing(true)
+        .descriptor_indexing(true);
 
     // Create
 
     let info = vk::DeviceCreateInfo::builder()
+        .push_next(&mut features12)
         .queue_create_infos(&queue_infos)
         .enabled_layer_names(&layers)
         .enabled_extension_names(&extensions)

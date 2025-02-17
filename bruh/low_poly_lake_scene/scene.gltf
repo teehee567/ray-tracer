@@ -3105,7 +3105,7 @@
       "doubleSided": true,
       "extensions": {
         "KHR_materials_transmission": {
-          "transmissionFactor": 0.878234398782344
+            "transmissionFactor": 0.878234398782344
         }
       },
       "name": "Water.001",

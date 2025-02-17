@@ -1,6 +1,6 @@
 use std::fs::File;
 
-use crate::{vulkan::bufferbuilder::BufferBuilder, AlignedMat4, AlignedUVec2, AlignedVec2, AlignedVec3, Alignedf32, Alignedu32, CameraBufferObject, Material, SceneComponents, Triangle};
+use crate::{AlignedMat4, AlignedUVec2, AlignedVec2, AlignedVec3, Alignedf32, Alignedu32, CameraBufferObject, Material, SceneComponents, Triangle};
 
 use super::{Scene, CONFIG_VERSION};
 
@@ -19,107 +19,11 @@ impl Scene {
         };
 
         // Validate the file and load its components.
-        scene.validate_file_yaml()?;
         scene.load_camera_controls_yaml()?;
         scene.load_meshes()?;
         scene.build_bvh();
         println!("Triangles: {}", scene.components.triangles.len());
         Ok(scene)
-    }
-
-    /// Computes buffer sizes for the BVH, material, and triangle buffers.
-    /// Checks that the YAML file is valid.
-    fn validate_file_yaml(&self) -> Result<()> {
-        // Check the version.
-        let config_version = self
-            .root
-            .get("version")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Missing version field"))?;
-        if config_version != CONFIG_VERSION {
-            bail!(
-                "Config version mismatch: expected {}, got {}",
-                CONFIG_VERSION,
-                config_version
-            );
-        }
-        if let Some(camera_nodes) = self.root.get("camera") {
-            let resolution = camera_nodes
-                .get("resolution")
-                .and_then(|v| v.as_sequence())
-                .ok_or_else(|| anyhow!("Resolution not correct"))?;
-            camera_nodes
-                .get("focal_length")
-                .and_then(|v| v.as_f64())
-                .ok_or_else(|| anyhow!("focal_length not correct"))?;
-            camera_nodes
-                .get("focus_distance")
-                .and_then(|v| v.as_f64())
-                .ok_or_else(|| anyhow!("Aperture_radius not correct"))?;
-            let location = camera_nodes
-                .get("location")
-                .and_then(|v| v.as_sequence())
-                .ok_or_else(|| anyhow!("location not correct"))?;
-            let rotation = camera_nodes
-                .get("rotation")
-                .and_then(|v| v.as_sequence())
-                .ok_or_else(|| anyhow!("rotation not correct"))?;
-
-            if resolution.len() != 2 {
-                bail!("Resolution incorrect size")
-            }
-            if location.len() != 3 {
-                bail!("location incorrect size")
-            }
-            if rotation.len() != 3 {
-                bail!("rotation incorrect size")
-            }
-        } else {
-            bail!("No camera")
-        }
-
-        // Check that the data fields in each mesh are well-formed.
-        if let Some(scene_nodes) = self.root.get("scene").and_then(|v| v.as_sequence()) {
-            for mesh in scene_nodes {
-                let mesh_type = mesh
-                    .get("type")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| anyhow!("Mesh missing type field"))?;
-                if mesh_type == "TriMesh" {
-                    let data = mesh
-                        .get("data")
-                        .ok_or_else(|| anyhow!("Mesh missing data field"))?;
-                    let vertices = data
-                        .get("vertices")
-                        .and_then(|v| v.as_sequence())
-                        .ok_or_else(|| anyhow!("TriMesh vertices not a sequence"))?;
-                    let normals = data
-                        .get("normals")
-                        .and_then(|v| v.as_sequence())
-                        .ok_or_else(|| anyhow!("TriMesh normals not a sequence"))?;
-                    if vertices.len() != normals.len() {
-                        bail!("Vertices and normals have different sizes");
-                    }
-                    if vertices.len() % 9 != 0 {
-                        bail!("Vertices size is not a multiple of 9");
-                    }
-                    if vertices.is_empty() {
-                        bail!("Vertices are empty");
-                    }
-                } else if mesh_type == "Sphere" {
-                    let data = mesh
-                        .get("data")
-                        .ok_or_else(|| anyhow!("Mesh missing data field"))?;
-                    if data.get("center").and_then(|v| v.as_sequence()).is_none() {
-                        bail!("Sphere center is not a sequence");
-                    }
-                    if data.get("radius").and_then(|v| v.as_f64()).is_none() {
-                        bail!("Sphere radius is not a scalar");
-                    }
-                }
-            }
-        }
-        Ok(())
     }
 
     /// Loads the camera controls.
@@ -135,6 +39,7 @@ impl Scene {
         let aperture_radius: f32 =
             serde_yaml::from_value(camera.get("aperture_radius").unwrap().clone())?;
         let location: [f32; 3] = serde_yaml::from_value(camera.get("location").unwrap().clone())?;
+        let look_at: [f32; 3] = serde_yaml::from_value(camera.get("look_at").unwrap().clone())?;
 
         let mut ubo = CameraBufferObject {
             resolution: AlignedUVec2(UVec2::from(resolution)),
@@ -145,16 +50,7 @@ impl Scene {
             ..Default::default()
         };
 
-        let rotation: [f32; 3] = serde_yaml::from_value(
-            camera
-                .get("rotation")
-                .ok_or_else(|| anyhow!("Missing 'rotation' field"))?
-                .clone(),
-        )?;
-        ubo.rotation = AlignedMat4(Mat4::from_rotation_x(rotation[0].to_radians())
-            * Mat4::from_rotation_y(rotation[1].to_radians())
-            * Mat4::from_rotation_z(rotation[2].to_radians()));
-
+        ubo.rotation = AlignedMat4(Mat4::look_at_rh(ubo.location.0, Vec3::from(look_at), Vec3::Y).transpose());
 
         let ratio = resolution[0] as f32 / resolution[1] as f32;
         let (u, v) = if ratio > 1.0 {
@@ -233,6 +129,7 @@ impl Scene {
                     AlignedVec3::default(),
                     AlignedVec3::default(),
                 ],
+                ..Default::default()
             };
             for j in 0..3 {
                 let off = i * 9 + j * 3;
@@ -282,6 +179,7 @@ impl Scene {
                 AlignedVec3::default(),
                 AlignedVec3::default(),
             ],
+            ..Default::default()
         };
         tri.vertices[0] = AlignedVec3::new(center[0], center[1], center[2]);
         // The sphere is represented as a triangle that “stores” the radius.
@@ -335,6 +233,7 @@ impl Scene {
             transmission: Alignedf32(transmission),
             motion_blur: motion_blur.into(),
             shade_smooth: Alignedu32(if shade_smooth { 1 } else { 0 }),
+            ..Default::default()
         })
     }
 }
