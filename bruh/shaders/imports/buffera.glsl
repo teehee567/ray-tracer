@@ -663,7 +663,6 @@ vec3 PathTrace(Ray r)
     vec3 throughput = vec3(1.0);
     LightSampleRec lightSampleRec;
     BsdfSampleRec bsdfSampleRec;
-    vec3 absorption = vec3(0.0);
     
     initLights();
     numOfLights = NUM_LIGHTS;
@@ -681,10 +680,6 @@ vec3 PathTrace(Ray r)
             rec.mat.roughness = max(rec.mat.roughness, 0.001);
             rec.eta = dot(rec.normal, rec.ffnormal) > 0.0 ? (1.0 / rec.mat.ior) : rec.mat.ior;
         }
-        
-        // Reset absorption when ray is going out of surface
-        if (dot(rec.normal, rec.ffnormal) > 0.0)
-            absorption = vec3(0.0);
 
         radiance += rec.mat.emission * throughput;
 
@@ -694,20 +689,13 @@ vec3 PathTrace(Ray r)
             break;
         }
 
-        // Simplified absorption based on material color
-        if (absorption != vec3(0.0)) {
-            throughput *= exp(-absorption * rec.hitDist);
+        // Calculate absorption directly if inside medium
+        if (dot(rec.normal, rec.ffnormal) < 0.0 && rec.mat.specTrans > 0.0) {
+            throughput *= exp(-log(rec.mat.baseColor) * rec.hitDist);
         }
-
         radiance += DirectLight(r, rec) * throughput;
 
         bsdfSampleRec.f = DisneySample(rec, -r.direction, rec.ffnormal, bsdfSampleRec.L, bsdfSampleRec.pdf);
-
-        // Set absorption when entering medium
-        if (dot(rec.ffnormal, bsdfSampleRec.L) < 0.0) {
-            // Simple absorption based on inverse of baseColor
-            absorption = vec3(1.0) - rec.mat.baseColor;
-        }
 
         if (bsdfSampleRec.pdf > 0.0)
             throughput *= bsdfSampleRec.f / bsdfSampleRec.pdf;

@@ -232,16 +232,12 @@ HitRecord getSceneHit(Ray ray, bool shadowRay) {
         
             // Glass
             if (matId > 0.5 && matId < 1.5) {
-                rec.mat.baseColor = vec3(1.0);  // Pure white
-rec.mat.metallic = 1.0;         // Fully metallic
-rec.mat.roughness = 0.0;        // Perfectly smooth
-rec.mat.specTrans = 0.0;        // No transmission
-rec.mat.clearcoat = 0.0;        // No clearcoat
-rec.mat.subsurface = 0.0;       // No subsurface scattering
-
-// Optional: slight tint for realism
-rec.mat.baseColor = vec3(0.95, 0.95, 0.98);  // Slightly bluish
-
+    rec.mat.baseColor = vec3(0.2, 0.3, 0.); // Example: Reddish glass
+    // Or vec3(0.95, 0.95, 1.0) for slightly blue-tinted clear glass
+    rec.mat.metallic = 0.0;
+    rec.mat.roughness = 0.0;
+    rec.mat.specTrans = 1.0;  // Fully transmissive
+    rec.mat.ior = 1.5;
 
             } else
             // Red
@@ -253,7 +249,7 @@ rec.mat.baseColor = vec3(0.95, 0.95, 0.98);  // Slightly bluish
             // Orange
             if (matId > 2.5 && matId < 3.5) {
                 rec.mat.baseColor = vec3(1, 0.186, 0.);
-                rec.mat.roughness = 0.001;
+                rec.mat.roughness = 1.0;
                 rec.mat.clearcoat = 1.0;
                 rec.mat.clearcoatRoughness = 1.0;
             } else
