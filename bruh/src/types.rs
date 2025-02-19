@@ -55,49 +55,48 @@ pub struct Material {
     pub emission: AlignedVec3,
     pub metallic: Alignedf32,
     pub roughness: Alignedf32,
-    pub ior: Alignedf32,
-    pub transmission: Alignedf32,
-    // Specular extension
-    pub specular: Alignedf32,
-    pub specular_color: AlignedVec3,
-    // Clearcoat extension
+    pub subsurface: Alignedf32,
+    pub anisotropic: Alignedf32,
+    pub specular_tint: Alignedf32,
+    pub sheen: Alignedf32,
+    pub sheen_tint: Alignedf32,
     pub clearcoat: Alignedf32,
     pub clearcoat_roughness: Alignedf32,
+    pub spec_trans: Alignedf32,
+    pub ior: Alignedf32,
+
     pub shade_smooth: Alignedu32,
     // textures
     pub base_color_tex: Alignedu32,
     pub metallic_roughness_tex: Alignedu32,
     pub normal_tex: Alignedu32,
     pub emission_tex: Alignedu32,
-    pub specular_tex: Alignedu32,
-    pub clearcoat_tex: Alignedu32,
 }
+
 impl Default for Material {
     fn default() -> Self {
         Self {
-            base_colour: AlignedVec3(Vec3::ONE),
-            emission:  AlignedVec3(Vec3::ZERO),
-            metallic: Alignedf32(0.),
-            roughness: Alignedf32(0.),
-            ior: Alignedf32(1.5),
-            transmission: Alignedf32(0.),
+            base_colour: AlignedVec3::new(0.8, 0.8, 0.8),  // Light gray - typical diffuse surface
+            emission: AlignedVec3::new(0.0, 0.0, 0.0),     // Most materials don't emit light
+            metallic: Alignedf32(0.0),                     // Non-metallic by default (dielectric)
+            roughness: Alignedf32(0.5),                    // Medium roughness
+            subsurface: Alignedf32(0.0),                   // No subsurface scattering
+            anisotropic: Alignedf32(0.0),                  // Isotropic by default
+            specular_tint: Alignedf32(0.0),                // No tint to specular
+            sheen: Alignedf32(0.0),                        // No sheen
+            sheen_tint: Alignedf32(0.5),                   // Neutral sheen tint
+            clearcoat: Alignedf32(0.0),                    // No clearcoat
+            clearcoat_roughness: Alignedf32(0.03),         // Smooth clearcoat when enabled
+            spec_trans: Alignedf32(0.0),                   // Opaque
+            ior: Alignedf32(1.45),                         // Common IOR for plastics
 
-            specular: Alignedf32(0.),
-            specular_color: AlignedVec3(Vec3::ONE),
-
-            clearcoat: Alignedf32(0.),
-            clearcoat_roughness: Alignedf32(0.),
-
-            shade_smooth: Alignedu32(0),
-
+            shade_smooth: Alignedu32(1),                   // Smooth shading by default
+            
             base_color_tex: Alignedu32(u32::MAX),
             metallic_roughness_tex: Alignedu32(u32::MAX),
             normal_tex: Alignedu32(u32::MAX),
             emission_tex: Alignedu32(u32::MAX),
-            specular_tex: Alignedu32(u32::MAX),
-            clearcoat_tex: Alignedu32(u32::MAX),
         }
-
     }
 }
 

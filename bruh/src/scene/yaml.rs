@@ -230,7 +230,7 @@ impl Scene {
             metallic: Alignedf32(metallic),
             roughness: Alignedf32(roughness),
             ior: Alignedf32(ior),
-            transmission: Alignedf32(transmission),
+            spec_trans: Alignedf32(transmission),
             shade_smooth: Alignedu32(if shade_smooth { 1 } else { 0 }),
             ..Default::default()
         })

@@ -65,7 +65,7 @@ impl Scene {
                 }
 
                 if let Some(refl) = mat_data["specular"].as_f64() {
-                    material.specular = Alignedf32(refl as f32);
+                    material.specular_tint = Alignedf32(refl as f32);
                 }
 
                 // Handle emittance
@@ -83,7 +83,7 @@ impl Scene {
 
                 // Handle transparency
                 if let Some(trans) = mat_data["transparency"].as_f64() {
-                    material.transmission = Alignedf32(trans as f32);
+                    material.spec_trans = Alignedf32(trans as f32);
                 }
                 if let Some(trans) = mat_data["transmittance"].as_str() {
                     material.base_colour = AlignedVec3(parse_rgb(trans));
