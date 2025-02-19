@@ -37,8 +37,6 @@ struct Material
     float clearcoatRoughness;
     float specTrans;
     float ior;
-    float atDistance;
-    vec3 extinction;
 };
 
 struct Light
@@ -174,8 +172,6 @@ HitRecord getSceneHit(Ray ray, bool shadowRay) {
             
     rec.mat.roughness    = 0.;
     rec.mat.ior          = 1.45;
-    rec.mat.extinction   = vec3(1);
-    rec.mat.atDistance   = 1.;
 
 
     float t = 0.001;
@@ -253,7 +249,6 @@ rec.mat.baseColor = vec3(0.95, 0.95, 0.98);  // Slightly bluish
                 rec.mat.baseColor = vec3(1, 1, 1);
                 rec.mat.roughness = 0.;
                 rec.mat.metallic = 1.;
-                rec.mat.extinction = vec3(10000);
             } else
             // Orange
             if (matId > 2.5 && matId < 3.5) {
