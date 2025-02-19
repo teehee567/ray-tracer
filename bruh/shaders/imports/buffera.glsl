@@ -665,9 +665,6 @@ vec3 PathTrace(Ray r)
     BsdfSampleRec bsdfSampleRec;
     vec3 absorption = vec3(0.0);
     
-    // Initial material values
-
-
     initLights();
     numOfLights = NUM_LIGHTS;
 
@@ -691,24 +688,26 @@ vec3 PathTrace(Ray r)
 
         radiance += rec.mat.emission * throughput;
 
-
         if (any(greaterThan(rec.mat.emission, vec3(EPS))))
         {
             radiance += EmitterSample(r, depth, lightSampleRec, bsdfSampleRec) * throughput;
             break;
         }
 
-
-        // Add absoption
-        throughput *= exp(-absorption * rec.hitDist);
+        // Simplified absorption based on material color
+        if (absorption != vec3(0.0)) {
+            throughput *= exp(-absorption * rec.hitDist);
+        }
 
         radiance += DirectLight(r, rec) * throughput;
 
         bsdfSampleRec.f = DisneySample(rec, -r.direction, rec.ffnormal, bsdfSampleRec.L, bsdfSampleRec.pdf);
 
-        // Set absorption only if the ray is currently inside the object.
-        if (dot(rec.ffnormal, bsdfSampleRec.L) < 0.0)
-            absorption = -log(rec.mat.extinction) / rec.mat.atDistance;
+        // Set absorption when entering medium
+        if (dot(rec.ffnormal, bsdfSampleRec.L) < 0.0) {
+            // Simple absorption based on inverse of baseColor
+            absorption = vec3(1.0) - rec.mat.baseColor;
+        }
 
         if (bsdfSampleRec.pdf > 0.0)
             throughput *= bsdfSampleRec.f / bsdfSampleRec.pdf;
@@ -716,7 +715,6 @@ vec3 PathTrace(Ray r)
             break;
 
 #ifdef RR
-        // Russian roulette
         if (depth >= RR_DEPTH)
         {
             float q = min(max(throughput.x, max(throughput.y, throughput.z)) + 0.001, 0.95);
