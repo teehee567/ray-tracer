@@ -1,6 +1,5 @@
 int quadrant = 0;
 int subdivisions_per_axis = 2;
-const float PI = 3.1415926;
 uint seed;
 
 // 0..1
