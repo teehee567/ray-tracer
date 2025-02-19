@@ -52,7 +52,7 @@ struct Light
     int type;
 };
 
-struct State
+struct HitRecord
 {    
     int depth;
     float eta;
@@ -64,11 +64,11 @@ struct State
     vec3 tangent;
     vec3 bitangent;
 
-    bool isEmitter;
-
     vec2 texCoord;
     int matID;
     Material mat;
+
+    bool hit;
 };
 
 #define NUM_LIGHTS 17
@@ -106,7 +106,9 @@ void getCameraPos(inout vec3 origin, inout vec3 lookAt) {
 
 // Get the scene background color
 vec3 getBackground(Ray ray) {
-    return vec3(0);
+    float blend = 0.5 * ray.direction.y + 0.5;
+    return mix(vec3(0.6, 0.8, 1.0), vec3(0.2, 0.4, 1.0), blend);
+
 }
 
 // Map
@@ -155,15 +157,34 @@ vec3 calculateNormal(vec3 p) {
 }
 
 // Get the scene hit record
-bool getSceneHit(Ray ray, bool shadowRay, inout State state) {
-                    
+HitRecord getSceneHit(Ray ray, bool shadowRay) {
+
+    HitRecord rec;
+    rec.mat.anisotropic  = 0.0;
+
+    rec.mat.metallic     = 0.0;
+    rec.mat.roughness    = 0.5;
+    rec.mat.subsurface   = 0.0;
+    rec.mat.specularTint = 0.0;
+            
+    rec.mat.sheen        = 0.0;
+    rec.mat.sheenTint    = 0.0;
+    rec.mat.clearcoat    = 0.0;
+    rec.mat.clearcoatRoughness = 0.0;
+            
+    rec.mat.roughness    = 0.;
+    rec.mat.ior          = 1.45;
+    rec.mat.extinction   = vec3(1);
+    rec.mat.atDistance   = 1.;
+
+
     float t = 0.001;
     
     // Analytical floor
     float groundDist = (0. - ray.origin.y) / ray.direction.y;
     float matId = -1.;
 
-    bool hit = groundDist > 0. ? true : false;
+    rec.hit = groundDist > 0. ? true : false;
 
     // Raymarch the rest 
     for(int i = 0; i < 120; ++i) {
@@ -173,7 +194,7 @@ bool getSceneHit(Ray ray, bool shadowRay, inout State state) {
         float ad = abs(d.x);
 
         if (ad < (0.0001)) {
-            hit = true;
+            rec.hit = true;
             matId = d.y;
             break;
          }
@@ -183,86 +204,96 @@ bool getSceneHit(Ray ray, bool shadowRay, inout State state) {
          if (t>27.0) { break; }
     }
     
-    if (hit) {
+    if (rec.hit) {
 
         if ( (groundDist > 0. && groundDist < t) || matId < 0.5 ) {
 
             // Ground
-            state.mat.baseColor = vec3(1, 0, 0);
-            state.mat.roughness = 0.5;
-            state.mat.metallic = 0.2;
+            rec.mat.baseColor = vec3(1, 0, 0);
+            rec.mat.roughness = 0.5;
+            rec.mat.metallic = 0.8;
                 
-            state.fhp = ray.origin + ray.direction * groundDist;
-            state.normal = vec3(0, 1, 0);
+            rec.fhp = ray.origin + ray.direction * groundDist;
+            rec.normal = vec3(0, 1, 0);
 
             // 70s Wallpaper from Shane, https://www.shadertoy.com/view/ls33DN
-            vec2 p = state.fhp.xz;
+            vec2 p = rec.fhp.xz;
             p.x *= sign(cos(length(ceil(p /= 2.))*99.));
     
             float f = clamp(cos(min(length(p = fract(p)), length(--p))*44.), 0., 1.);
             
             f = clamp(f, 0., 1.);
             
-            state.mat.clearcoat = f;
-            state.mat.clearcoatRoughness = f;
-            state.mat.baseColor = mix(state.mat.baseColor, 
+            rec.mat.clearcoat = f;
+            rec.mat.clearcoatRoughness = f;
+            rec.mat.baseColor = mix(rec.mat.baseColor, 
                         vec3(1.0, 0.71, 0.29), f);
                         
-            state.hitDist = groundDist;
+            rec.hitDist = groundDist;
         } else {
         
-            state.fhp = ray.origin + ray.direction * t;
+            rec.fhp = ray.origin + ray.direction * t;
         
             // Glass
             if (matId > 0.5 && matId < 1.5) {
-                state.mat.baseColor = vec3(2);
-                state.mat.specTrans = 1.;
-                state.mat.roughness = 0.0;
+                rec.mat.baseColor = vec3(1.0);  // Pure white
+rec.mat.metallic = 1.0;         // Fully metallic
+rec.mat.roughness = 0.0;        // Perfectly smooth
+rec.mat.specTrans = 0.0;        // No transmission
+rec.mat.clearcoat = 0.0;        // No clearcoat
+rec.mat.subsurface = 0.0;       // No subsurface scattering
+
+// Optional: slight tint for realism
+rec.mat.baseColor = vec3(0.95, 0.95, 0.98);  // Slightly bluish
+
 
             } else
             // Red
             if (matId > 1.5 && matId < 2.5) {
-                state.mat.baseColor = vec3(1, 0, 0);
-                state.mat.roughness = 0.5;
-                state.mat.metallic = 0.2;
+                rec.mat.baseColor = vec3(1, 1, 1);
+                rec.mat.roughness = 0.;
+                rec.mat.metallic = 1.;
+                rec.mat.extinction = vec3(10000);
             } else
             // Orange
             if (matId > 2.5 && matId < 3.5) {
-                state.mat.baseColor = vec3(1, 0.186, 0.);
-                state.mat.roughness = 0.001;
-                state.mat.clearcoat = 1.0;
-                state.mat.clearcoatRoughness = 1.0;
+                rec.mat.baseColor = vec3(1, 0.186, 0.);
+                rec.mat.roughness = 0.001;
+                rec.mat.clearcoat = 1.0;
+                rec.mat.clearcoatRoughness = 1.0;
             } else
             // Ping
             if (matId > 3.5 && matId < 4.5) {
-                state.mat.baseColor = vec3(0.93, 0.89, 0.85);
-                state.mat.roughness = 1.;
-                state.mat.subsurface = 1.0;
+                rec.mat.baseColor = vec3(0.93, 0., 0.85);
+                rec.mat.roughness = 1.;
+                rec.mat.subsurface = 1.0;
+                rec.mat.emission = vec3(200000, 200000, 200000);
             } else
             // Silver
             if (matId > 4.5 && matId < 5.5) {
-                state.mat.baseColor = vec3(0.9, 0.9, 0.9);
-                state.mat.roughness = 0.0;
-                state.mat.metallic = 1.;
+                rec.mat.baseColor = vec3(0.9, 0.9, 0.9);
+                rec.mat.roughness = 0.0;
+                rec.mat.metallic = 1.;
+
             } else
             // Marble
             if (matId > 5.5 && matId < 6.5) {
-                state.mat.baseColor = vec3(0.099, 0.24, 0.134);
-                state.mat.roughness = 0.001;
-                state.mat.clearcoat = 1.0;
-                state.mat.clearcoatRoughness = 1.0;
+                rec.mat.baseColor = vec3(0.099, 0.24, 0.134);
+                rec.mat.roughness = 0.001;
+                rec.mat.clearcoat = 1.0;
+                rec.mat.clearcoatRoughness = 1.0;
             }
             
             if (shadowRay == false) {
-                state.normal = calculateNormal(state.fhp);
+                rec.normal = calculateNormal(rec.fhp);
             }
             
-            state.hitDist = t;
+            rec.hitDist = t;
         }
         
         // Hack for enabling transparent reflections
-        if (shadowRay == true && state.mat.specTrans > 0.5) hit = false;
+        if (shadowRay == true && rec.mat.specTrans > 0.5) rec.hit = false;
     }
     
-    return hit;
+    return rec;
 }

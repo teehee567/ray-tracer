@@ -305,11 +305,11 @@ void SampleOneLight(in Light light, in vec3 surfacePos, inout LightSampleRec lig
 }
 
 
-vec3 EmitterSample(in Ray r, in State state, in LightSampleRec lightSampleRec, in BsdfSampleRec bsdfSampleRec)
+vec3 EmitterSample(in Ray r, in int depth, in LightSampleRec lightSampleRec, in BsdfSampleRec bsdfSampleRec)
 {
     vec3 Le;
 
-    if (state.depth == 0)
+    if (depth == 0)
         Le = lightSampleRec.emission;
     else
         Le = PowerHeuristic(bsdfSampleRec.pdf, lightSampleRec.pdf) * lightSampleRec.emission;
@@ -438,7 +438,7 @@ void GetLobeProbabilities(Material mat, float eta, vec3 specCol, float approxFre
     clearcoatWt /= totalWt;
 }
 
-vec3 DisneySample(State state, vec3 V, vec3 N, out vec3 L, out float pdf)
+vec3 DisneySample(HitRecord rec, vec3 V, vec3 N, out vec3 L, out float pdf)
 {
     pdf = 0.0;
     vec3 f = vec3(0.0);
@@ -452,14 +452,14 @@ vec3 DisneySample(State state, vec3 V, vec3 N, out vec3 L, out float pdf)
 
     // Specular and sheen color
     vec3 specCol, sheenCol;
-    GetSpecColor(state.mat, state.eta, specCol, sheenCol);
+    GetSpecColor(rec.mat, rec.eta, specCol, sheenCol);
 
     // Lobe weights
     float diffuseWt, specReflectWt, specRefractWt, clearcoatWt;
     // TODO: Recheck fresnel. Not sure if correct. VDotN produces fireflies with rough dielectric.
     // VDotH matches Mitsuba and gets rid of all fireflies but H isn't available at this stage
-    float approxFresnel = FresnelMix(state.mat, state.eta, V.z);
-    GetLobeProbabilities(state.mat, state.eta, specCol, approxFresnel, diffuseWt, specReflectWt, specRefractWt, clearcoatWt);
+    float approxFresnel = FresnelMix(rec.mat, rec.eta, V.z);
+    GetLobeProbabilities(rec.mat, rec.eta, specCol, approxFresnel, diffuseWt, specReflectWt, specRefractWt, clearcoatWt);
 
     // CDF for picking a lobe
     float cdf[4];
@@ -475,46 +475,46 @@ vec3 DisneySample(State state, vec3 V, vec3 N, out vec3 L, out float pdf)
 
         vec3 H = normalize(L + V);
 
-        f = EvalDiffuse(state.mat, sheenCol, V, L, H, pdf);
+        f = EvalDiffuse(rec.mat, sheenCol, V, L, H, pdf);
         pdf *= diffuseWt;
     }
     else if (r1 < cdf[1]) // Specular Reflection Lobe
     {
         r1 = (r1 - cdf[0]) / (cdf[1] - cdf[0]);
-        vec3 H = SampleGGXVNDF(V, state.mat.roughness, r1, r2);
+        vec3 H = SampleGGXVNDF(V, rec.mat.roughness, r1, r2);
 
         if (H.z < 0.0)
             H = -H;
 
         L = normalize(reflect(-V, H));
 
-        f = EvalSpecReflection(state.mat, state.eta, specCol, V, L, H, pdf);
+        f = EvalSpecReflection(rec.mat, rec.eta, specCol, V, L, H, pdf);
         pdf *= specReflectWt;
     }
     else if (r1 < cdf[2]) // Specular Refraction Lobe
     {
         r1 = (r1 - cdf[1]) / (cdf[2] - cdf[1]);
-        vec3 H = SampleGGXVNDF(V, state.mat.roughness, r1, r2);
+        vec3 H = SampleGGXVNDF(V, rec.mat.roughness, r1, r2);
 
         if (H.z < 0.0)
             H = -H;
 
-        L = normalize(refract(-V, H, state.eta));
+        L = normalize(refract(-V, H, rec.eta));
 
-        f = EvalSpecRefraction(state.mat, state.eta, V, L, H, pdf);
+        f = EvalSpecRefraction(rec.mat, rec.eta, V, L, H, pdf);
         pdf *= specRefractWt;
     }
     else // Clearcoat Lobe
     {
         r1 = (r1 - cdf[2]) / (1.0 - cdf[2]);
-        vec3 H = SampleGTR1(state.mat.clearcoatRoughness, r1, r2);
+        vec3 H = SampleGTR1(rec.mat.clearcoatRoughness, r1, r2);
 
         if (H.z < 0.0)
             H = -H;
 
         L = normalize(reflect(-V, H));
 
-        f = EvalClearcoat(state.mat, V, L, H, pdf);
+        f = EvalClearcoat(rec.mat, V, L, H, pdf);
         pdf *= clearcoatWt;
     }
 
@@ -522,7 +522,7 @@ vec3 DisneySample(State state, vec3 V, vec3 N, out vec3 L, out float pdf)
     return f * abs(dot(N, L));
 }
 
-vec3 DisneyEval(State state, vec3 V, vec3 N, vec3 L, out float bsdfPdf)
+vec3 DisneyEval(HitRecord rec, vec3 V, vec3 N, vec3 L, out float bsdfPdf)
 {
     bsdfPdf = 0.0;
     vec3 f = vec3(0.0);
@@ -536,104 +536,59 @@ vec3 DisneyEval(State state, vec3 V, vec3 N, vec3 L, out float bsdfPdf)
     if (L.z > 0.0)
         H = normalize(L + V);
     else
-        H = normalize(L + V * state.eta);
+        H = normalize(L + V * rec.eta);
 
     if (H.z < 0.0)
         H = -H;
 
     // Specular and sheen color
     vec3 specCol, sheenCol;
-    GetSpecColor(state.mat, state.eta, specCol, sheenCol);
+    GetSpecColor(rec.mat, rec.eta, specCol, sheenCol);
 
     // Lobe weights
     float diffuseWt, specReflectWt, specRefractWt, clearcoatWt;
-    float fresnel = FresnelMix(state.mat, state.eta, dot(V, H));
-    GetLobeProbabilities(state.mat, state.eta, specCol, fresnel, diffuseWt, specReflectWt, specRefractWt, clearcoatWt);
+    float fresnel = FresnelMix(rec.mat, rec.eta, dot(V, H));
+    GetLobeProbabilities(rec.mat, rec.eta, specCol, fresnel, diffuseWt, specReflectWt, specRefractWt, clearcoatWt);
 
     float pdf;
 
     // Diffuse
     if (diffuseWt > 0.0 && L.z > 0.0)
     {
-        f += EvalDiffuse(state.mat, sheenCol, V, L, H, pdf);
+        f += EvalDiffuse(rec.mat, sheenCol, V, L, H, pdf);
         bsdfPdf += pdf * diffuseWt;
     }
 
     // Specular Reflection
     if (specReflectWt > 0.0 && L.z > 0.0 && V.z > 0.0)
     {
-        f += EvalSpecReflection(state.mat, state.eta, specCol, V, L, H, pdf);
+        f += EvalSpecReflection(rec.mat, rec.eta, specCol, V, L, H, pdf);
         bsdfPdf += pdf * specReflectWt;
     }
 
     // Specular Refraction
     if (specRefractWt > 0.0 && L.z < 0.0)
     {
-        f += EvalSpecRefraction(state.mat, state.eta, V, L, H, pdf);
+        f += EvalSpecRefraction(rec.mat, rec.eta, V, L, H, pdf);
         bsdfPdf += pdf * specRefractWt;
     }
 
     // Clearcoat
     if (clearcoatWt > 0.0 && L.z > 0.0 && V.z > 0.0)
     {
-        f += EvalClearcoat(state.mat, V, L, H, pdf);
+        f += EvalClearcoat(rec.mat, V, L, H, pdf);
         bsdfPdf += pdf * clearcoatWt;
     }
 
     return f * abs(L.z);
 }
 
-// Intersection
-
-float SphereIntersect(float rad, vec3 pos, Ray r)
-{
-    vec3 op = pos - r.origin;
-    float eps = 0.001;
-    float b = dot(op, r.direction);
-    float det = b * b - dot(op, op) + rad * rad;
-    if (det < 0.0)
-        return INF;
-
-    det = sqrt(det);
-    float t1 = b - det;
-    if (t1 > eps)
-        return t1;
-
-    float t2 = b + det;
-    if (t2 > eps)
-        return t2;
-
-    return INF;
-}
-
-float RectIntersect(in vec3 pos, in vec3 u, in vec3 v, in vec4 plane, in Ray r)
-{
-    vec3 n = vec3(plane);
-    float dt = dot(r.direction, n);
-    float t = (plane.w - dot(n, r.origin)) / dt;
-
-    if (t > EPS)
-    {
-        vec3 p = r.origin + r.direction * t;
-        vec3 vi = p - pos;
-        float a1 = dot(u, vi);
-        if (a1 >= 0.0 && a1 <= 1.0)
-        {
-            float a2 = dot(v, vi);
-            if (a2 >= 0.0 && a2 <= 1.0)
-                return t;
-        }
-    }
-
-    return INF;
-}
-
 
 // DirectLight
-vec3 DirectLight(in Ray r, in State state)
+vec3 DirectLight(in Ray r, in HitRecord rec)
 {
     vec3 Li = vec3(0.0);
-    vec3 surfacePos = state.fhp + state.normal * EPS;
+    vec3 surfacePos = rec.fhp + rec.normal * EPS;
 
     BsdfSampleRec bsdfSampleRec;
 
@@ -652,7 +607,7 @@ vec3 DirectLight(in Ray r, in State state)
 
         if (!inShadow)
         {
-            bsdfSampleRec.f = DisneyEval(state, -r.direction, state.ffnormal, lightDir, bsdfSampleRec.pdf);
+            bsdfSampleRec.f = DisneyEval(rec, -r.direction, rec.ffnormal, lightDir, bsdfSampleRec.pdf);
 
             if (bsdfSampleRec.pdf > 0.0)
             {
@@ -681,10 +636,10 @@ vec3 DirectLight(in Ray r, in State state)
         if (dot(lightSampleRec.direction, lightSampleRec.normal) < 0.0) // Required for quad lights with single sided emission
         {
             Ray shadowRay = Ray(surfacePos, lightSampleRec.direction);
-            bool inShadow = getSceneHit(shadowRay, true, state);//AnyHit(shadowRay, lightSampleRec.dist - EPS);
+            bool inShadow = getSceneHit(shadowRay, true).hit;//AnyHit(shadowRay, lightSampleRec.dist - EPS);
 
             if (!inShadow) {
-                bsdfSampleRec.f = DisneyEval(state, -r.direction, state.ffnormal, lightSampleRec.direction, bsdfSampleRec.pdf);
+                bsdfSampleRec.f = DisneyEval(rec, -r.direction, rec.ffnormal, lightSampleRec.direction, bsdfSampleRec.pdf);
 
                 float weight = 1.0;
                 if(light.area > 0.0) // No MIS for distant light
@@ -706,28 +661,11 @@ vec3 PathTrace(Ray r)
 {
     vec3 radiance = vec3(0.0);
     vec3 throughput = vec3(1.0);
-    State state;
     LightSampleRec lightSampleRec;
     BsdfSampleRec bsdfSampleRec;
     vec3 absorption = vec3(0.0);
     
     // Initial material values
-    state.mat.anisotropic  = 0.0;
-
-    state.mat.metallic     = 0.0;
-    state.mat.roughness    = 0.5;
-    state.mat.subsurface   = 0.0;
-    state.mat.specularTint = 0.0;
-            
-    state.mat.sheen        = 0.0;
-    state.mat.sheenTint    = 0.0;
-    state.mat.clearcoat    = 0.0;
-    state.mat.clearcoatRoughness = 0.0;
-            
-    state.mat.roughness    = 0.;
-    state.mat.ior          = 1.45;
-    state.mat.extinction   = vec3(1);
-    state.mat.atDistance   = 1.;
 
 
     initLights();
@@ -736,90 +674,41 @@ vec3 PathTrace(Ray r)
     const int maxDepth = 4;
     for (int depth = 0; depth < maxDepth; depth++)
     {
-        state.depth = depth;
-        bool hit = getSceneHit(r, false, state);
+        HitRecord rec = getSceneHit(r, false);
 
-        if (!hit) {
+        if (!rec.hit) {
             radiance += getBackground(r) * throughput;
         } else {        
-            state.ffnormal = dot(state.normal, r.direction) <= 0.0 ? state.normal : -state.normal;
-            Onb(state.normal, state.tangent, state.bitangent);
-            state.mat.roughness = max(state.mat.roughness, 0.001);
-            state.eta = dot(state.normal, state.ffnormal) > 0.0 ? (1.0 / state.mat.ior) : state.mat.ior;
-        }
-        
-        // Lights
-        for (int i = 0; i < numOfLights; i++)
-        {
-            Light light = lights[i];
-            
-            // Intersect rectangular area light
-            if (light.type == 0)
-            {
-                vec3 u = light.u;
-                vec3 v = light.v;
-                vec3 normal = normalize(cross(light.u, light.v));
-                //if (dot(normal, r.direction) > 0.) // Hide backfacing quad light
-                    //continue;
-                vec4 plane = vec4(normal, dot(normal, light.position));
-                u *= 1.0f / dot(u, u);
-                v *= 1.0f / dot(v, v);
-
-                float d = RectIntersect(light.position, u, v, plane, r);
-                if (d < 0.)
-                    d = INF;
-                    
-                if (d < state.hitDist)
-                {
-                    state.hitDist = d;
-                    float cosTheta = dot(-r.direction, normal);
-                    float pdf = (d * d) / (light.area * cosTheta);
-                    lightSampleRec.emission = light.emission;
-                    lightSampleRec.pdf = pdf;
-                    state.isEmitter = true;
-                }
-            } else
-            // Intersect spherical area light
-            if (light.type == 1)
-            {
-                float d = SphereIntersect(light.radius, light.position, r);
-                if (d < 0.)
-                    d = INF;
-                if (d < state.hitDist)
-                {
-                    state.hitDist = d;
-                    float pdf = (d * d) / light.area;
-                    lightSampleRec.emission = light.emission;
-                    lightSampleRec.pdf = pdf;
-                    state.isEmitter = true;
-                }
-            }
+            rec.ffnormal = dot(rec.normal, r.direction) <= 0.0 ? rec.normal : -rec.normal;
+            Onb(rec.normal, rec.tangent, rec.bitangent);
+            rec.mat.roughness = max(rec.mat.roughness, 0.001);
+            rec.eta = dot(rec.normal, rec.ffnormal) > 0.0 ? (1.0 / rec.mat.ior) : rec.mat.ior;
         }
         
         // Reset absorption when ray is going out of surface
-        if (dot(state.normal, state.ffnormal) > 0.0)
+        if (dot(rec.normal, rec.ffnormal) > 0.0)
             absorption = vec3(0.0);
 
-        radiance += state.mat.emission * throughput;
+        radiance += rec.mat.emission * throughput;
 
-#ifdef LIGHTS
-        if (state.isEmitter)
+
+        if (any(greaterThan(rec.mat.emission, vec3(EPS))))
         {
-            radiance += EmitterSample(r, state, lightSampleRec, bsdfSampleRec) * throughput;
+            radiance += EmitterSample(r, depth, lightSampleRec, bsdfSampleRec) * throughput;
             break;
         }
-#endif
+
 
         // Add absoption
-        throughput *= exp(-absorption * state.hitDist);
+        throughput *= exp(-absorption * rec.hitDist);
 
-        radiance += DirectLight(r, state) * throughput;
+        radiance += DirectLight(r, rec) * throughput;
 
-        bsdfSampleRec.f = DisneySample(state, -r.direction, state.ffnormal, bsdfSampleRec.L, bsdfSampleRec.pdf);
+        bsdfSampleRec.f = DisneySample(rec, -r.direction, rec.ffnormal, bsdfSampleRec.L, bsdfSampleRec.pdf);
 
         // Set absorption only if the ray is currently inside the object.
-        if (dot(state.ffnormal, bsdfSampleRec.L) < 0.0)
-            absorption = -log(state.mat.extinction) / state.mat.atDistance;
+        if (dot(rec.ffnormal, bsdfSampleRec.L) < 0.0)
+            absorption = -log(rec.mat.extinction) / rec.mat.atDistance;
 
         if (bsdfSampleRec.pdf > 0.0)
             throughput *= bsdfSampleRec.f / bsdfSampleRec.pdf;
@@ -838,7 +727,7 @@ vec3 PathTrace(Ray r)
 #endif
 
         r.direction = bsdfSampleRec.L;
-        r.origin = state.fhp + r.direction * EPS;
+        r.origin = rec.fhp + r.direction * EPS;
     }
 
     return radiance;
