@@ -63,7 +63,10 @@ pub unsafe fn create_logical_device(
     let mut features12 = vk::PhysicalDeviceVulkan12Features::builder()
         .runtime_descriptor_array(true)
         .shader_sampled_image_array_non_uniform_indexing(true)
-        .descriptor_indexing(true);
+        .descriptor_indexing(true)
+        .descriptor_binding_uniform_buffer_update_after_bind(true)
+        .descriptor_binding_storage_image_update_after_bind(true)
+        .descriptor_binding_storage_buffer_update_after_bind(true);
 
     // Create
 
