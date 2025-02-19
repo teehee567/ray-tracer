@@ -63,7 +63,6 @@ pub struct Material {
     // Clearcoat extension
     pub clearcoat: Alignedf32,
     pub clearcoat_roughness: Alignedf32,
-    pub motion_blur: AlignedVec3,
     pub shade_smooth: Alignedu32,
     // textures
     pub base_color_tex: Alignedu32,
@@ -89,7 +88,6 @@ impl Default for Material {
             clearcoat: Alignedf32(0.),
             clearcoat_roughness: Alignedf32(0.),
 
-            motion_blur: AlignedVec3(Vec3::ZERO),
             shade_smooth: Alignedu32(0),
 
             base_color_tex: Alignedu32(u32::MAX),
