@@ -635,7 +635,7 @@ vec3 DirectLight(in Ray r, in HitRecord rec)
         if (dot(lightSampleRec.direction, lightSampleRec.normal) < 0.0) // Required for quad lights with single sided emission
         {
             Ray shadowRay = Ray(surfacePos, lightSampleRec.direction);
-            bool inShadow = getSceneHit(shadowRay, true).hit;//AnyHit(shadowRay, lightSampleRec.dist - EPS);
+            bool inShadow = getSceneHit(shadowRay, true).did_hit;//AnyHit(shadowRay, lightSampleRec.dist - EPS);
 
             if (!inShadow) {
                 bsdfSampleRec.f = DisneyEval(rec, -r.direction, rec.ffnormal, lightSampleRec.direction, bsdfSampleRec.pdf);
@@ -665,12 +665,12 @@ vec3 PathTrace(Ray r)
     initLights();
     numOfLights = NUM_LIGHTS;
 
-    const int maxDepth = 4;
+    const int maxDepth = 8;
     for (int depth = 0; depth < maxDepth; depth++)
     {
         HitRecord rec = getSceneHit(r, false);
 
-        if (!rec.hit) {
+        if (!rec.did_hit) {
             radiance += getBackground(r) * throughput;
         } else {        
             rec.ffnormal = dot(rec.normal, r.direction) <= 0.0 ? rec.normal : -rec.normal;

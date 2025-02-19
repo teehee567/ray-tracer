@@ -22,7 +22,7 @@ struct Ray
     vec3 direction;
 };
 
-struct material
+struct Material
 {
     vec3 baseColor;
     vec3 emission;
@@ -62,12 +62,12 @@ struct HitRecord
     vec3 bitangent;
 
     vec2 uv;
-    material material;
+    Material material;
 
     bool did_hit;
 };
 
-#define NUM_LIGHTS 17
+#define NUM_LIGHTS 10
 Light lights[NUM_LIGHTS];
 
 void initLights() {
@@ -102,8 +102,9 @@ void getCameraPos(inout vec3 origin, inout vec3 lookAt) {
 
 // Get the scene background color
 vec3 getBackground(Ray ray) {
-    float blend = 0.5 * ray.direction.y + 0.5;
-    return mix(vec3(0.6, 0.8, 1.0), vec3(0.2, 0.4, 1.0), blend);
+    //float blend = 0.5 * ray.direction.y + 0.5;
+    //return mix(vec3(0.6, 0.8, 1.0), vec3(0.2, 0.4, 1.0), blend);
+    return vec3(0.2);
 
 }
 
@@ -127,13 +128,13 @@ vec2 map(vec3 p) {
     obj = opU(vec2(length(p - vec3(-0.57, 2.2, 6.55)) - 1.2, 5), obj);
 
     // Ping
-    obj = opU(vec2(length(p - vec3(2.6, 1.4, 3.6)) - 0.8, 4), obj);
+    obj = opU(vec2(length(p - vec3(2.6, 5., 3.6)) - 0.8, 4), obj);
 
     // Orange
     obj = opU(vec2(length(p - vec3(-0.8, 1.86, -3.59)) - 1., 3), obj);
 
     // Glass
-    obj = opU(vec2(length(p - vec3(1.8, 2.6, -6.59)) - 1.3, 1), obj);
+    obj = opU(vec2(length(p - vec3(1.8, 1.6, 2.59)) - 1.3, 1), obj);
 
     // Marble
     obj = opU(vec2(length(p - vec3(3.5, 1.2, -1.5)) - 0.6, 6), obj);
@@ -178,7 +179,7 @@ HitRecord getSceneHit(Ray ray, bool shadowRay) {
     float groundDist = (0. - ray.origin.y) / ray.direction.y;
     float material = -1.;
 
-    rec.hit = groundDist > 0. ? true : false;
+    rec.did_hit = groundDist > 0. ? true : false;
 
     // Raymarch the rest 
     for(int i = 0; i < 120; ++i) {
@@ -188,7 +189,7 @@ HitRecord getSceneHit(Ray ray, bool shadowRay) {
         float ad = abs(d.x);
 
         if (ad < (0.0001)) {
-            rec.hit = true;
+            rec.did_hit = true;
             material = d.y;
             break;
          }
@@ -198,14 +199,14 @@ HitRecord getSceneHit(Ray ray, bool shadowRay) {
          if (t>27.0) { break; }
     }
     
-    if (rec.hit) {
+    if (rec.did_hit) {
 
         if ( (groundDist > 0. && groundDist < t) || material < 0.5 ) {
 
             // Ground
             rec.material.baseColor = vec3(1, 0, 0);
             rec.material.roughness = 0.5;
-            rec.material.metallic = 0.8;
+            rec.material.metallic = 0.;
                 
             rec.pos = ray.origin + ray.direction * groundDist;
             rec.normal = vec3(0, 1, 0);
@@ -230,19 +231,19 @@ HitRecord getSceneHit(Ray ray, bool shadowRay) {
         
             // Glass
             if (material > 0.5 && material < 1.5) {
-    rec.material.baseColor = vec3(0.2, 0.3, 0.); // Example: Reddish glass
+    rec.material.baseColor = vec3(1); // Example: Reddish glass
     // Or vec3(0.95, 0.95, 1.0) for slightly blue-tinted clear glass
     rec.material.metallic = 0.0;
     rec.material.roughness = 0.0;
     rec.material.specTrans = 1.0;  // Fully transmissive
-    rec.material.ior = 1.5;
+    rec.material.ior = 7.;
 
             } else
             // Red
             if (material > 1.5 && material < 2.5) {
                 rec.material.baseColor = vec3(1, 1, 1);
-                rec.material.roughness = 0.;
-                rec.material.metallic = 1.;
+                rec.material.roughness = 1.;
+                rec.material.metallic = 0.;
             } else
             // Orange
             if (material > 2.5 && material < 3.5) {
@@ -256,7 +257,7 @@ HitRecord getSceneHit(Ray ray, bool shadowRay) {
                 rec.material.baseColor = vec3(0.93, 0., 0.85);
                 rec.material.roughness = 1.;
                 rec.material.subsurface = 1.0;
-                rec.material.emission = vec3(200000, 200000, 200000);
+                rec.material.emission = vec3(1);
             } else
             // Silver
             if (material > 4.5 && material < 5.5) {
@@ -281,7 +282,7 @@ HitRecord getSceneHit(Ray ray, bool shadowRay) {
         }
         
         // Hack for enabling transparent reflections
-        if (shadowRay == true && rec.material.specTrans > 0.5) rec.hit = false;
+        if (shadowRay == true && rec.material.specTrans > 0.5) rec.did_hit = false;
     }
     
     return rec;
