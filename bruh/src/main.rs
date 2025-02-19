@@ -98,8 +98,8 @@ fn main() -> Result<()> {
     // let scene = Scene::from_gltf("./bmw_m4_csl_2023/scene.gltf")?;
     // let scene = Scene::from_gltf("./2017-mclaren-720s-lb/source/untitled.gltf")?;
     // let scene = Scene::from_gltf("./gltf/DragonAttenuation.gltf")?;
-    let scene = Scene::from_weird("./benedikt/lego_bulldozer.json")?;
-    // let scene = Scene::from_weird("./benedikt/spaceship.json")?;
+    // let scene = Scene::from_weird("./benedikt/lego_bulldozer.json")?;
+    let scene = Scene::from_weird("./benedikt/coffe_maker.json")?;
     // let scene = Scene::from_gltf("./Interior/room.gltf")?;
     // let scene = Scene::from_gltf("./glTF/DamagedHelmet.gltf")?;
 

@@ -7,7 +7,7 @@
       "focal_length": 50,
       "sensor_width": 35,
       "eye": [ 0, 0, -3.5 ],
-      "look_at": 0,
+      "look_at": [0, 0, 0],
       "image" : { 
         "width": 512,
         "height": 512

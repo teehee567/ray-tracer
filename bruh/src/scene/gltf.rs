@@ -161,7 +161,7 @@ impl Scene {
             root: Value::default(),
         };
 
-        scene.components.camera = camera_sponza();
+        scene.components.camera = camera_interior();
 
         scene.load_textures(&images)?;
 
@@ -416,7 +416,7 @@ impl Scene {
         });
 
         let materiala = Material {
-            base_colour: AlignedVec3::new(base_color[0], base_color[1], base_color[2]),
+            base_colour: AlignedVec3(Vec4::from(base_color).truncate()),
             emission,
             metallic,
             roughness,
@@ -426,7 +426,7 @@ impl Scene {
             clearcoat: Alignedf32(clearcoat_factor),
             clearcoat_roughness: Alignedf32(clearcoat_roughness),
 
-            shade_smooth: Alignedu32(1),
+            shade_smooth: Alignedu32(0),
 
             base_color_tex: Alignedu32(base_color_tex),
             metallic_roughness_tex: Alignedu32(metallic_roughness_tex),
