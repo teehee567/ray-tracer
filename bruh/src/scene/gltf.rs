@@ -421,10 +421,7 @@ impl Scene {
             metallic,
             roughness,
             ior,
-            transmission,
-
-            specular: Alignedf32(specular),
-            specular_color: AlignedVec3(specular_colour),
+            spec_trans: transmission,
 
             clearcoat: Alignedf32(clearcoat_factor),
             clearcoat_roughness: Alignedf32(clearcoat_roughness),
@@ -435,8 +432,7 @@ impl Scene {
             metallic_roughness_tex: Alignedu32(metallic_roughness_tex),
             normal_tex: Alignedu32(normal_tex),
             emission_tex: Alignedu32(emission_tex),
-            specular_tex: Alignedu32(specular_tex),
-            clearcoat_tex: Alignedu32(clearcoat_texture),
+            ..Default::default()
         };
         // dbg!(&materiala);
 

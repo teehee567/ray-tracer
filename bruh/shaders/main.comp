@@ -17,7 +17,9 @@
 
 
 #include "imports/ray.comp"
+#include "imports/global.comp"
 #include "imports/random.comp"
+#include "imports/disney.comp"
 
 /* AABB node of the BVH tree */
 struct BvhNode {
@@ -27,75 +29,12 @@ struct BvhNode {
     uint amt;
 };
 
-/* Material of a Mesh.
- *
- * base_color           is the base color of the mesh;
- * emission             is strenght of the emitted light by the object per channel;
- * reflectivity         describes how reflective the object is (blends between lambertian and metallic);
- * roughness            describes how rough the reflective surface is;
- * is_glass             indicates whether the material will be rendered with a glass shader;
- * ior                  is the index of refractivity of the glass material, if is_glass is true;         
- * shaded_smooth        only valid for triangle meshes, determines whether normals are interpolated;
- */
-struct Material {
-    vec4 base_color;
-    vec4 emission;
-    float metallic;
-    float roughness;
-    float ior;
-    float transmission;
-    float specular;
-    vec4 specular_color;
-    float clearcoat;
-    float clearcoat_roughness;
-    bool shaded_smooth;
-
-    uint base_color_tex;
-    uint metallic_roughness_tex;
-    uint normal_tex;
-    uint emission_tex;
-    uint specular_tex;
-    uint clearcoat_tex;
-};
 
 // perf: these triangles are pretty huge.
 // Since if not shaded smooth the normals are ignored, then they can be used to 
 // store 2 triangle per triangle...
 // Or maybe just remove the normals altogether
-struct Triangle {
-    uint material_idx;
-    bool is_sphere;
-    vec3[3] vertices;
-    vec3[3] normals;
-    vec2 uvs[3];
-};
 
-/* Record of a ray intersection.
- *
- * did_hit      indicates whether an intesection even happened;
- *              !! If no intersection happened, then the following fields are undefined !!
- * pos          is the physical location of the intersection;
- * normal       is the normal vector of the intersected surface;
- * t            is the value of the parametric variable for the ray equation;
- * material     is the material of the intersected mesh;
- */
-struct HitRecord {
-    float eta;
-    float hit_dist;
-
-    vec3 pos;
-    vec3 normal;
-    vec3 ffnormal;
-    vec3 tangent;
-    vec3 bitangent;
-
-    vec2 uv;
-    Material material;
-
-    bool did_hit;
-    bool is_exiting;
-    Triangle triangle;
-};
 
 layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -334,17 +273,6 @@ HitRecord hit_meshes(Ray ray, inout uint mesh_tests) {
     return hit;
 }
 
-// Schlick approximation of Fresnel on glass
-float schlick_reflectance(float cos_angle, float ior) {
-    float r0 = (1 - ior) / (1 + ior);
-    r0 = r0 * r0;
-    return r0 + (1 - r0) * pow((1 - cos_angle), 5);
-}
-// Fresnel-Schlick approximation
-vec3 F_Schlick(vec3 f0, float cos_theta) {
-    return f0 + (1.0 - f0) * pow(1.0 - cos_theta, 5.0);
-}
-
 vec3 calculate_surface_normal(HitRecord hit, Triangle triangle) {
     if (hit.material.normal_tex == 0xFFFFFFFF) {
         return hit.normal;
@@ -371,152 +299,62 @@ vec3 calculate_surface_normal(HitRecord hit, Triangle triangle) {
 }
 
 vec3 ray_color(Ray ray, inout uint mesh_tests) {
+    vec3 radiance = vec3(0.0);
     vec3 throughput = vec3(1.0);
-    vec3 accumulated_light = vec3(0.0);
+    LightSampleRec lightSampleRec;
+    BsdfSampleRec bsdfSampleRec;
+
+    initLights();
+    numOfLights = NUM_LIGHTS;
     
     for(int bounce = 0; bounce < BOUNCES; bounce++) {
         HitRecord hit = hit_meshes(ray, mesh_tests);
         
         if(!hit.did_hit) {
-            accumulated_light += throughput * background_color(ray);
+            radiance += getBackground(ray) * throughput;
+        } else {
+            hit.ffnormal = dot(hit.normal, ray.direction) <= 0.0 ? hit.normal : -hit.normal;
+            Onb(hit.normal, hit.tangent, hit.bitangent);
+            hit.material.roughness = max(hit.material.roughness, 0.001);
+            hit.eta = dot(hit.normal, hit.ffnormal) > 0.0 ? (1.0 / hit.material.ior) : hit.material.ior;
+        }
+
+        radiance += hit.material.emission.xyz * throughput;
+
+        //vec3 surface_normal = calculate_surface_normal(hit, hit.triangle);
+
+        if (any(greaterThan(hit.material.emission.xyz, vec3(EPSILON)))) {
+            radiance += EmitterSample(ray, bounce, lightSampleRec, bsdfSampleRec) * throughput;
             break;
         }
 
-        accumulated_light += throughput * AMBIENT_COLOR * AMBIENT_INTENSITY * hit.material.base_color.rgb;
-
-        vec3 surface_normal = calculate_surface_normal(hit, hit.triangle);
-
-        // Add emission immediately
-        if(any(greaterThan(hit.material.emission.rgb, vec3(0.0)))) {
-            vec3 emission = hit.material.emission.rgb;
-            if(hit.material.emission_tex != 0xFFFFFFFF) {
-                vec3 emission_tex = texture(textures[nonuniformEXT(hit.material.emission_tex)], hit.uv).rgb;
-                // Only apply emission and break if the texture color is not black
-                if(any(greaterThan(emission_tex, vec3(0.001)))) {
-                    emission *= emission_tex;
-                    accumulated_light += throughput * emission;
-                    break;
-                }
-                // If texture is black, continue path tracing without breaking
-            } else {
-                accumulated_light += throughput * emission;
-                break;
-            }
+        if (dot(hit.normal, hit.ffnormal) < 0.0 && hit.material.spec_trans > 0.0) {
+            throughput *= exp(-log(hit.material.base_color.rgb) * hit.hit_dist);
         }
 
-        // Get material properties
-        vec3 base_color = hit.material.base_color.rgb;
-        if(hit.material.base_color_tex != 0xFFFFFFFF) {
-            base_color *= texture(textures[nonuniformEXT(hit.material.base_color_tex)], hit.uv).rgb;
-        }
+        radiance += DirectLight(ray, hit) * throughput;
 
-        float metallic = hit.material.metallic;
-        float roughness = hit.material.roughness;
-        if(hit.material.metallic_roughness_tex != 0xFFFFFFFF) {
-            vec4 mr = texture(textures[nonuniformEXT(hit.material.metallic_roughness_tex)], hit.uv);
-            metallic *= mr.b;
-            roughness *= mr.g;
-        }
+        bsdfSampleRec.f = DisneySample(hit, -ray.direction, hit.ffnormal, bsdfSampleRec.L, bsdfSampleRec.pdf);
 
-        // Handle glass/transmission
-        if(hit.material.transmission > 0.0) {
-            vec3 normal = surface_normal;
-            if(hit.is_exiting) {
-                normal = -normal;
-            }
-            
-            float ior_ratio = hit.is_exiting ? hit.material.ior : 1.0/hit.material.ior;
-            float cos_theta = min(dot(-ray.direction, normal), 1.0);
-            float reflectance = schlick_reflectance(cos_theta, ior_ratio);
-
-            if(pgc_random(seed) < reflectance) {
-                // Reflection
-                ray.direction = reflect(ray.direction, normal);
-            } else {
-                // Refraction
-                ray.direction = refract(ray.direction, normal, ior_ratio);
-                if(length(ray.direction) == 0.0) {
-                    // Total internal reflection
-                    ray.direction = reflect(ray.direction, normal);
-                }
-            }
-            
-            ray.origin = hit.pos + ray.direction * 0.001; // Offset in the direction we're going
-            
-            // Only apply glass tint when exiting
-            if(hit.is_exiting) {
-                throughput *= base_color;
-            }
-            continue; // Skip the Russian Roulette for glass
-        } 
-        // Handle regular materials
-        else {
-            vec3 V = -ray.direction;
-            vec3 N = surface_normal;
-            
-            // Base metallicity path
-            vec3 F0 = mix(vec3(0.04), base_color, metallic);
-            
-            // Apply specular
-            if (hit.material.specular > 0.0) {
-                vec3 specular_factor = hit.material.specular_color.xyz * hit.material.specular;
-                if(hit.material.specular_tex != 0xFFFFFFFF) {
-                    specular_factor *= texture(textures[nonuniformEXT(hit.material.specular_tex)], hit.uv).rgb;
-                }
-                F0 = mix(F0, specular_factor, hit.material.specular);
-            }
-
-            float cos_theta = max(dot(N, V), 0.0);
-            vec3 F = F_Schlick(F0, cos_theta);
-            
-            // Handle clearcoat
-            float clearcoat = hit.material.clearcoat;
-            if(hit.material.clearcoat_tex != 0xFFFFFFFF) {
-                clearcoat *= texture(textures[nonuniformEXT(hit.material.clearcoat_tex)], hit.uv).r;
-            }
-            
-            if(clearcoat > 0.0) {
-                float clearcoat_rough = hit.material.clearcoat_roughness;
-                vec3 clearcoat_F = F_Schlick(vec3(0.04), cos_theta);
-                float clearcoat_prob = max(max(clearcoat_F.r, clearcoat_F.g), clearcoat_F.b) * clearcoat;
-                
-                if(pgc_random(seed) < clearcoat_prob) {
-                    // Clearcoat reflection
-                    vec3 reflected = reflect(-V, N);
-                    ray.direction = normalize(reflected + clearcoat_rough * random_unit_vector(seed));
-                    throughput *= clearcoat_F * clearcoat / clearcoat_prob;
-                    ray.origin = hit.pos + N * 0.001;
-                    continue;
-                }
-            }
-
-            float specular_prob = max(max(F.r, F.g), F.b);
-            
-            if(pgc_random(seed) < specular_prob) {
-                // Specular reflection
-                vec3 reflected = reflect(-V, N);
-                ray.direction = normalize(reflected + roughness * random_unit_vector(seed));
-                throughput *= F / specular_prob;
-            } else {
-                // Diffuse reflection
-                ray.direction = normalize(N + random_unit_vector(seed));
-                throughput *= base_color * (1.0 - F) / (1.0 - specular_prob);
-            }
-            
-            ray.origin = hit.pos + N * 0.001;
+        if (bsdfSampleRec.pdf > 0.0) {
+            throughput *= bsdfSampleRec.f / bsdfSampleRec.pdf;
+        } else {
+            break;
         }
         
         // Russian Roulette
         if(bounce > 2) {
-            float p = max(0.05, max(throughput.r, max(throughput.g, throughput.b))); // Minimum probability
+            float p = max(0.05, max(throughput.r, max(throughput.g, throughput.b)));
             if(pgc_random(seed) > p) {
                 break;
             }
             throughput /= p;
         }
+        ray.direction = bsdfSampleRec.L;
+        ray.origin = hit.pos + ray.direction * EPSILON;
     }
     
-    return accumulated_light;
+    return radiance;
 }
 
 // ACES tone mapping curve fit
