@@ -6,6 +6,7 @@
 #define MAX_BVH_DEPTH 64
 #define AMBIENT_COLOR vec3(0.1, 0.1, 0.1)
 #define AMBIENT_INTENSITY 0.1
+#define INFINITY 10000000.
 
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_scalar_block_layout : enable
@@ -79,13 +80,20 @@ struct Triangle {
  * material     is the material of the intersected mesh;
  */
 struct HitRecord {
-    bool did_hit;
-    bool is_exiting;
+    float eta;
+    float hit_dist;
+
     vec3 pos;
     vec3 normal;
-    float t;
-    Material material;
+    vec3 ffnormal;
+    vec3 tangent;
+    vec3 bitangent;
+
     vec2 uv;
+    Material material;
+
+    bool did_hit;
+    bool is_exiting;
     Triangle triangle;
 };
 
@@ -154,13 +162,6 @@ vec3 background_color(Ray ray) {
     return vec3(0.6);
 }
 
-// Schlick approximation of Fresnel on glass
-float schlick_reflectance(float cos_angle, float ior) {
-    float r0 = (1 - ior) / (1 + ior);
-    r0 = r0 * r0;
-    return r0 + (1 - r0) * pow((1 - cos_angle), 5);
-}
-
 // Möller-Trumbore intersection algorithm (https://www.graphics.cornell.edu/pubs/1997/MT97.pdf)
 HitRecord hit_triangle(Triangle triangle, Ray ray, bool interpolate_normals) {
     /* This algorithm uses barycentric coordinates to determine whether the intersection falls within
@@ -189,6 +190,10 @@ HitRecord hit_triangle(Triangle triangle, Ray ray, bool interpolate_normals) {
      */
     HitRecord hit;
     hit.did_hit = false;
+    hit.hit_dist = INFINITY;
+    hit.eta = 1.;
+    hit.is_exiting = false;
+    hit.triangle = triangle;
 
     // Get the normal vector of the plane the triangle lays on.
     // This is done by performing a cross product between two of the sides of the triangle.
@@ -222,7 +227,7 @@ HitRecord hit_triangle(Triangle triangle, Ray ray, bool interpolate_normals) {
     if (any(lessThan(coords, vec3(0))) || any(greaterThan(coords, vec3(1)))) return hit;
 
     hit.did_hit = true;
-    hit.t = t;
+    hit.hit_dist = t;
     hit.pos = ray_at(ray, t);
     hit.is_exiting = dot(plane_normal, ray.direction) > 0;
     hit.uv = triangle.uvs[0] * w + 
@@ -237,6 +242,17 @@ HitRecord hit_triangle(Triangle triangle, Ray ray, bool interpolate_normals) {
     } else {
         hit.normal = plane_normal;
     }
+
+    hit.ffnormal = dot(hit.normal, ray.direction) < 0 ? hit.normal : -hit.normal;
+
+    vec3 edge1 = triangle.vertices[1] - triangle.vertices[0];
+    vec3 edge2 = triangle.vertices[2] - triangle.vertices[0];
+    vec2 duv1 = triangle.uvs[1] - triangle.uvs[0];
+    vec2 duv2 = triangle.uvs[2] - triangle.uvs[0];
+
+    float f = 1.0 / (duv1.x * duv2.y - duv2.x * duv1.y);
+    hit.tangent = normalize(f * (duv2.y * edge1 - duv1.y * edge2));
+    hit.bitangent = normalize(f * (-duv2.x * edge1 + duv1.x * edge2));
 
     return hit;
 }
@@ -273,7 +289,7 @@ float dist_aabb(Ray ray, BvhNode aabb) {
 // todo: this is recursive, might be optimizable to a loop
 HitRecord hit_meshes(Ray ray, inout uint mesh_tests) {
     HitRecord hit;
-    hit.t = 1.0 / 0.0; // infinity
+    hit.hit_dist = 1.0 / 0.0; // infinity
     hit.did_hit = false;
 
     // Setup stack for tree traversal
@@ -294,7 +310,7 @@ HitRecord hit_meshes(Ray ray, inout uint mesh_tests) {
 
                 current_hit = hit_triangle(triangle, ray, materials.get[triangle.material_idx].shaded_smooth);
 
-                if (current_hit.did_hit && current_hit.t < hit.t) {
+                if (current_hit.did_hit && current_hit.hit_dist < hit.hit_dist) {
                     hit = current_hit;
                     hit.material = materials.get[triangle.material_idx];
                     hit.triangle = triangle;
@@ -309,11 +325,11 @@ HitRecord hit_meshes(Ray ray, inout uint mesh_tests) {
             float dist_right = dist_aabb(ray, bvh.nodes[idx + 1]);
 
             if (dist_left < dist_right) {
-                if (dist_right < hit.t) stack[stack_ptr++] = idx + 1;
-                if (dist_left < hit.t)  stack[stack_ptr++] = idx;
+                if (dist_right < hit.hit_dist) stack[stack_ptr++] = idx + 1;
+                if (dist_left < hit.hit_dist)  stack[stack_ptr++] = idx;
             } else {
-                if (dist_left < hit.t)  stack[stack_ptr++] = idx; 
-                if (dist_right < hit.t) stack[stack_ptr++] = idx + 1;
+                if (dist_left < hit.hit_dist)  stack[stack_ptr++] = idx; 
+                if (dist_right < hit.hit_dist) stack[stack_ptr++] = idx + 1;
             }
         }
     }
@@ -321,6 +337,12 @@ HitRecord hit_meshes(Ray ray, inout uint mesh_tests) {
     return hit;
 }
 
+// Schlick approximation of Fresnel on glass
+float schlick_reflectance(float cos_angle, float ior) {
+    float r0 = (1 - ior) / (1 + ior);
+    r0 = r0 * r0;
+    return r0 + (1 - r0) * pow((1 - cos_angle), 5);
+}
 // Fresnel-Schlick approximation
 vec3 F_Schlick(vec3 f0, float cos_theta) {
     return f0 + (1.0 - f0) * pow(1.0 - cos_theta, 5.0);
