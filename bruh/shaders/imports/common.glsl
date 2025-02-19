@@ -22,14 +22,14 @@ struct Ray
     vec3 direction;
 };
 
-struct Material
+struct material
 {
     vec3 baseColor;
     vec3 emission;
-    float anisotropic;
     float metallic;
     float roughness;
     float subsurface;
+    float anisotropic;
     float specularTint;
     float sheen;
     float sheenTint;
@@ -52,21 +52,19 @@ struct Light
 
 struct HitRecord
 {    
-    int depth;
     float eta;
     float hitDist;
 
-    vec3 fhp;
+    vec3 pos;
     vec3 normal;
     vec3 ffnormal;
     vec3 tangent;
     vec3 bitangent;
 
-    vec2 texCoord;
-    int matID;
-    Material mat;
+    vec2 uv;
+    material material;
 
-    bool hit;
+    bool did_hit;
 };
 
 #define NUM_LIGHTS 17
@@ -158,27 +156,27 @@ vec3 calculateNormal(vec3 p) {
 HitRecord getSceneHit(Ray ray, bool shadowRay) {
 
     HitRecord rec;
-    rec.mat.anisotropic  = 0.0;
+    rec.material.anisotropic  = 0.0;
 
-    rec.mat.metallic     = 0.0;
-    rec.mat.roughness    = 0.5;
-    rec.mat.subsurface   = 0.0;
-    rec.mat.specularTint = 0.0;
+    rec.material.metallic     = 0.0;
+    rec.material.roughness    = 0.5;
+    rec.material.subsurface   = 0.0;
+    rec.material.specularTint = 0.0;
             
-    rec.mat.sheen        = 0.0;
-    rec.mat.sheenTint    = 0.0;
-    rec.mat.clearcoat    = 0.0;
-    rec.mat.clearcoatRoughness = 0.0;
+    rec.material.sheen        = 0.0;
+    rec.material.sheenTint    = 0.0;
+    rec.material.clearcoat    = 0.0;
+    rec.material.clearcoatRoughness = 0.0;
             
-    rec.mat.roughness    = 0.;
-    rec.mat.ior          = 1.45;
+    rec.material.roughness    = 0.;
+    rec.material.ior          = 1.45;
 
 
     float t = 0.001;
     
     // Analytical floor
     float groundDist = (0. - ray.origin.y) / ray.direction.y;
-    float matId = -1.;
+    float material = -1.;
 
     rec.hit = groundDist > 0. ? true : false;
 
@@ -191,7 +189,7 @@ HitRecord getSceneHit(Ray ray, bool shadowRay) {
 
         if (ad < (0.0001)) {
             rec.hit = true;
-            matId = d.y;
+            material = d.y;
             break;
          }
             
@@ -202,88 +200,88 @@ HitRecord getSceneHit(Ray ray, bool shadowRay) {
     
     if (rec.hit) {
 
-        if ( (groundDist > 0. && groundDist < t) || matId < 0.5 ) {
+        if ( (groundDist > 0. && groundDist < t) || material < 0.5 ) {
 
             // Ground
-            rec.mat.baseColor = vec3(1, 0, 0);
-            rec.mat.roughness = 0.5;
-            rec.mat.metallic = 0.8;
+            rec.material.baseColor = vec3(1, 0, 0);
+            rec.material.roughness = 0.5;
+            rec.material.metallic = 0.8;
                 
-            rec.fhp = ray.origin + ray.direction * groundDist;
+            rec.pos = ray.origin + ray.direction * groundDist;
             rec.normal = vec3(0, 1, 0);
 
             // 70s Wallpaper from Shane, https://www.shadertoy.com/view/ls33DN
-            vec2 p = rec.fhp.xz;
+            vec2 p = rec.pos.xz;
             p.x *= sign(cos(length(ceil(p /= 2.))*99.));
     
             float f = clamp(cos(min(length(p = fract(p)), length(--p))*44.), 0., 1.);
             
             f = clamp(f, 0., 1.);
             
-            rec.mat.clearcoat = f;
-            rec.mat.clearcoatRoughness = f;
-            rec.mat.baseColor = mix(rec.mat.baseColor, 
+            rec.material.clearcoat = f;
+            rec.material.clearcoatRoughness = f;
+            rec.material.baseColor = mix(rec.material.baseColor, 
                         vec3(1.0, 0.71, 0.29), f);
                         
             rec.hitDist = groundDist;
         } else {
         
-            rec.fhp = ray.origin + ray.direction * t;
+            rec.pos = ray.origin + ray.direction * t;
         
             // Glass
-            if (matId > 0.5 && matId < 1.5) {
-    rec.mat.baseColor = vec3(0.2, 0.3, 0.); // Example: Reddish glass
+            if (material > 0.5 && material < 1.5) {
+    rec.material.baseColor = vec3(0.2, 0.3, 0.); // Example: Reddish glass
     // Or vec3(0.95, 0.95, 1.0) for slightly blue-tinted clear glass
-    rec.mat.metallic = 0.0;
-    rec.mat.roughness = 0.0;
-    rec.mat.specTrans = 1.0;  // Fully transmissive
-    rec.mat.ior = 1.5;
+    rec.material.metallic = 0.0;
+    rec.material.roughness = 0.0;
+    rec.material.specTrans = 1.0;  // Fully transmissive
+    rec.material.ior = 1.5;
 
             } else
             // Red
-            if (matId > 1.5 && matId < 2.5) {
-                rec.mat.baseColor = vec3(1, 1, 1);
-                rec.mat.roughness = 0.;
-                rec.mat.metallic = 1.;
+            if (material > 1.5 && material < 2.5) {
+                rec.material.baseColor = vec3(1, 1, 1);
+                rec.material.roughness = 0.;
+                rec.material.metallic = 1.;
             } else
             // Orange
-            if (matId > 2.5 && matId < 3.5) {
-                rec.mat.baseColor = vec3(1, 0.186, 0.);
-                rec.mat.roughness = 1.0;
-                rec.mat.clearcoat = 1.0;
-                rec.mat.clearcoatRoughness = 1.0;
+            if (material > 2.5 && material < 3.5) {
+                rec.material.baseColor = vec3(1, 0.186, 0.);
+                rec.material.roughness = 1.0;
+                rec.material.clearcoat = 1.0;
+                rec.material.clearcoatRoughness = 1.0;
             } else
             // Ping
-            if (matId > 3.5 && matId < 4.5) {
-                rec.mat.baseColor = vec3(0.93, 0., 0.85);
-                rec.mat.roughness = 1.;
-                rec.mat.subsurface = 1.0;
-                rec.mat.emission = vec3(200000, 200000, 200000);
+            if (material > 3.5 && material < 4.5) {
+                rec.material.baseColor = vec3(0.93, 0., 0.85);
+                rec.material.roughness = 1.;
+                rec.material.subsurface = 1.0;
+                rec.material.emission = vec3(200000, 200000, 200000);
             } else
             // Silver
-            if (matId > 4.5 && matId < 5.5) {
-                rec.mat.baseColor = vec3(0.9, 0.9, 0.9);
-                rec.mat.roughness = 0.0;
-                rec.mat.metallic = 1.;
+            if (material > 4.5 && material < 5.5) {
+                rec.material.baseColor = vec3(0.9, 0.9, 0.9);
+                rec.material.roughness = 0.0;
+                rec.material.metallic = 1.;
 
             } else
             // Marble
-            if (matId > 5.5 && matId < 6.5) {
-                rec.mat.baseColor = vec3(0.099, 0.24, 0.134);
-                rec.mat.roughness = 0.001;
-                rec.mat.clearcoat = 1.0;
-                rec.mat.clearcoatRoughness = 1.0;
+            if (material > 5.5 && material < 6.5) {
+                rec.material.baseColor = vec3(0.099, 0.24, 0.134);
+                rec.material.roughness = 0.001;
+                rec.material.clearcoat = 1.0;
+                rec.material.clearcoatRoughness = 1.0;
             }
             
             if (shadowRay == false) {
-                rec.normal = calculateNormal(rec.fhp);
+                rec.normal = calculateNormal(rec.pos);
             }
             
             rec.hitDist = t;
         }
         
         // Hack for enabling transparent reflections
-        if (shadowRay == true && rec.mat.specTrans > 0.5) rec.hit = false;
+        if (shadowRay == true && rec.material.specTrans > 0.5) rec.hit = false;
     }
     
     return rec;
