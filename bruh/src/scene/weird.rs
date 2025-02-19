@@ -60,6 +60,13 @@ impl Scene {
                 if let Some(refl) = mat_data["reflectance"].as_str() {
                     material.base_colour = AlignedVec3(parse_rgb(refl));
                 } 
+                if let Some(refl) = mat_data["reflectance"].as_array() {
+                    material.base_colour = AlignedVec3(Vec3::new(
+                        refl[0].as_f64().unwrap_or(0.0) as f32,
+                        refl[1].as_f64().unwrap_or(0.0) as f32,  
+                        refl[2].as_f64().unwrap_or(0.0) as f32
+                    ));
+                }
                 if let Some(refl) = mat_data["reflectance"].as_f64() {
                     material.metallic = Alignedf32(refl as f32);
                 }

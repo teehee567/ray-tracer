@@ -312,12 +312,32 @@ vec3 ray_color(Ray ray, inout uint mesh_tests) {
         
         if(!hit.did_hit) {
             radiance += getBackground(ray) * throughput;
-        } else {
+            break;
+        }
+            if (hit.material.base_color_tex != 0xFFFFFFFF) {
+                hit.material.base_color *= texture(textures[hit.material.base_color_tex], hit.uv);
+            }
+            
+            if (hit.material.metallic_roughness_tex != 0xFFFFFFFF) {
+                vec4 metallic_roughness = texture(textures[hit.material.metallic_roughness_tex], hit.uv);
+                hit.material.metallic *= metallic_roughness.b;
+                hit.material.roughness *= metallic_roughness.g;
+            }
+            
+            if (hit.material.emission_tex != 0xFFFFFFFF) {
+                hit.material.emission *= texture(textures[hit.material.emission_tex], hit.uv);
+            }
+            
+            if (hit.material.normal_tex != 0xFFFFFFFF) {
+                vec3 texNormal = texture(textures[hit.material.normal_tex], hit.uv).xyz * 2.0 - 1.0;
+                mat3 TBN = mat3(hit.tangent, hit.bitangent, hit.normal);
+                hit.normal = normalize(TBN * texNormal);
+            }
+
             hit.ffnormal = dot(hit.normal, ray.direction) <= 0.0 ? hit.normal : -hit.normal;
             Onb(hit.normal, hit.tangent, hit.bitangent);
             hit.material.roughness = max(hit.material.roughness, 0.001);
             hit.eta = dot(hit.normal, hit.ffnormal) > 0.0 ? (1.0 / hit.material.ior) : hit.material.ior;
-        }
 
         radiance += hit.material.emission.xyz * throughput;
 
