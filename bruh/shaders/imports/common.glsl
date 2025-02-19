@@ -53,7 +53,7 @@ struct Light
 struct HitRecord
 {    
     float eta;
-    float hitDist;
+    float hit_dist;
 
     vec3 pos;
     vec3 normal;
