@@ -329,14 +329,14 @@ vec3 ToLocal(vec3 X, vec3 Y, vec3 Z, vec3 V)
     return vec3(dot(V, X), dot(V, Y), dot(V, Z));
 }
 
-float FresnelMix(Material mat, float eta, float VDotH)
+float FresnelMix(Material material, float eta, float VDotH)
 {
     float metallicFresnel = SchlickFresnel(VDotH);
     float dielectricFresnel = DielectricFresnel(VDotH, eta);
-    return mix(dielectricFresnel, metallicFresnel, mat.metallic);
+    return mix(dielectricFresnel, metallicFresnel, material.metallic);
 }
 
-vec3 EvalDiffuse(Material mat, vec3 Csheen, vec3 V, vec3 L, vec3 H, out float pdf)
+vec3 EvalDiffuse(Material material, vec3 Csheen, vec3 V, vec3 L, vec3 H, out float pdf)
 {
     pdf = 0.0;
     if (L.z <= 0.0)
@@ -346,59 +346,59 @@ vec3 EvalDiffuse(Material mat, vec3 Csheen, vec3 V, vec3 L, vec3 H, out float pd
     float FL = SchlickFresnel(L.z);
     float FV = SchlickFresnel(V.z);
     float FH = SchlickFresnel(dot(L, H));
-    float Fd90 = 0.5 + 2.0 * dot(L, H) * dot(L, H) * mat.roughness;
+    float Fd90 = 0.5 + 2.0 * dot(L, H) * dot(L, H) * material.roughness;
     float Fd = mix(1.0, Fd90, FL) * mix(1.0, Fd90, FV);
 
     // Fake Subsurface TODO: Replace with volumetric scattering
-    float Fss90 = dot(L, H) * dot(L, H) * mat.roughness;
+    float Fss90 = dot(L, H) * dot(L, H) * material.roughness;
     float Fss = mix(1.0, Fss90, FL) * mix(1.0, Fss90, FV);
     float ss = 1.25 * (Fss * (1.0 / (L.z + V.z) - 0.5) + 0.5);
 
     // Sheen
-    vec3 Fsheen = FH * mat.sheen * Csheen;
+    vec3 Fsheen = FH * material.sheen * Csheen;
 
     pdf = L.z * INV_PI;
-    return (INV_PI * mix(Fd, ss, mat.subsurface) * mat.baseColor + Fsheen) * (1.0 - mat.metallic) * (1.0 - mat.specTrans);
+    return (INV_PI * mix(Fd, ss, material.subsurface) * material.baseColor + Fsheen) * (1.0 - material.metallic) * (1.0 - material.specTrans);
 }
 
-vec3 EvalSpecReflection(Material mat, float eta, vec3 specCol, vec3 V, vec3 L, vec3 H, out float pdf)
+vec3 EvalSpecReflection(Material material, float eta, vec3 specCol, vec3 V, vec3 L, vec3 H, out float pdf)
 {
     pdf = 0.0;
     if (L.z <= 0.0)
         return vec3(0.0);
 
-    float FM = FresnelMix(mat, eta, dot(L, H));
+    float FM = FresnelMix(material, eta, dot(L, H));
     vec3 F = mix(specCol, vec3(1.0), FM);
-    float D = GTR2(H.z, mat.roughness);
-    float G1 = SmithG(abs(V.z), mat.roughness);
-    float G2 = G1 * SmithG(abs(L.z), mat.roughness);
+    float D = GTR2(H.z, material.roughness);
+    float G1 = SmithG(abs(V.z), material.roughness);
+    float G2 = G1 * SmithG(abs(L.z), material.roughness);
     float jacobian = 1.0 / (4.0 * dot(V, H));
 
     pdf = G1 * max(0.0, dot(V, H)) * D * jacobian / V.z;
     return F * D * G2 / (4.0 * L.z * V.z);
 }
 
-vec3 EvalSpecRefraction(Material mat, float eta, vec3 V, vec3 L, vec3 H, out float pdf)
+vec3 EvalSpecRefraction(Material material, float eta, vec3 V, vec3 L, vec3 H, out float pdf)
 {
     pdf = 0.0;
     if (L.z >= 0.0)
         return vec3(0.0);
 
     float F = DielectricFresnel(abs(dot(V, H)), eta);
-    float D = GTR2(H.z, mat.roughness);
+    float D = GTR2(H.z, material.roughness);
     float denom = dot(L, H) + dot(V, H) * eta;
     denom *= denom;
-    float G1 = SmithG(abs(V.z), mat.roughness);
-    float G2 = G1 * SmithG(abs(L.z), mat.roughness);
+    float G1 = SmithG(abs(V.z), material.roughness);
+    float G2 = G1 * SmithG(abs(L.z), material.roughness);
     float jacobian = abs(dot(L, H)) / denom;
 
     pdf = G1 * max(0.0, dot(V, H)) * D * jacobian / V.z;
 
-    vec3 specColor = pow(mat.baseColor, vec3(0.5));
-    return specColor * (1.0 - mat.metallic) * mat.specTrans * (1.0 - F) * D * G2 * abs(dot(V, H)) * abs(dot(L, H)) * eta * eta / (denom * abs(L.z) * abs(V.z));
+    vec3 specColor = pow(material.baseColor, vec3(0.5));
+    return specColor * (1.0 - material.metallic) * material.specTrans * (1.0 - F) * D * G2 * abs(dot(V, H)) * abs(dot(L, H)) * eta * eta / (denom * abs(L.z) * abs(V.z));
 }
 
-vec3 EvalClearcoat(Material mat, vec3 V, vec3 L, vec3 H, out float pdf)
+vec3 EvalClearcoat(Material material, vec3 V, vec3 L, vec3 H, out float pdf)
 {
     pdf = 0.0;
     if (L.z <= 0.0)
@@ -406,30 +406,30 @@ vec3 EvalClearcoat(Material mat, vec3 V, vec3 L, vec3 H, out float pdf)
 
     float FH = DielectricFresnel(dot(V, H), 1.0 / 1.5);
     float F = mix(0.04, 1.0, FH);
-    float D = GTR1(H.z, mat.clearcoatRoughness);
+    float D = GTR1(H.z, material.clearcoatRoughness);
     float G = SmithG(L.z, 0.25)
         * SmithG(V.z, 0.25);
     float jacobian = 1.0 / (4.0 * dot(V, H));
 
     pdf = D * H.z * jacobian;
-    return vec3(0.25) * mat.clearcoat * F * D * G / (4.0 * L.z * V.z);
+    return vec3(0.25) * material.clearcoat * F * D * G / (4.0 * L.z * V.z);
 }
 
-void GetSpecColor(Material mat, float eta, out vec3 specCol, out vec3 sheenCol)
+void GetSpecColor(Material material, float eta, out vec3 specCol, out vec3 sheenCol)
 {
-    float lum = Luminance(mat.baseColor);
-    vec3 ctint = lum > 0.0 ? mat.baseColor / lum : vec3(1.0f);
+    float lum = Luminance(material.baseColor);
+    vec3 ctint = lum > 0.0 ? material.baseColor / lum : vec3(1.0f);
     float F0 = (1.0 - eta) / (1.0 + eta);
-    specCol = mix(F0 * F0 * mix(vec3(1.0), ctint, mat.specularTint), mat.baseColor, mat.metallic);
-    sheenCol = mix(vec3(1.0), ctint, mat.sheenTint);
+    specCol = mix(F0 * F0 * mix(vec3(1.0), ctint, material.specularTint), material.baseColor, material.metallic);
+    sheenCol = mix(vec3(1.0), ctint, material.sheenTint);
 }
 
-void GetLobeProbabilities(Material mat, float eta, vec3 specCol, float approxFresnel, out float diffuseWt, out float specReflectWt, out float specRefractWt, out float clearcoatWt)
+void GetLobeProbabilities(Material material, float eta, vec3 specCol, float approxFresnel, out float diffuseWt, out float specReflectWt, out float specRefractWt, out float clearcoatWt)
 {
-    diffuseWt = Luminance(mat.baseColor) * (1.0 - mat.metallic) * (1.0 - mat.specTrans);
+    diffuseWt = Luminance(material.baseColor) * (1.0 - material.metallic) * (1.0 - material.specTrans);
     specReflectWt = Luminance(mix(specCol, vec3(1.0), approxFresnel));
-    specRefractWt = (1.0 - approxFresnel) * (1.0 - mat.metallic) * mat.specTrans * Luminance(mat.baseColor);
-    clearcoatWt = mat.clearcoat * (1.0 - mat.metallic);
+    specRefractWt = (1.0 - approxFresnel) * (1.0 - material.metallic) * material.specTrans * Luminance(material.baseColor);
+    clearcoatWt = material.clearcoat * (1.0 - material.metallic);
     float totalWt = diffuseWt + specReflectWt + specRefractWt + clearcoatWt;
 
     diffuseWt /= totalWt;
@@ -452,14 +452,14 @@ vec3 DisneySample(HitRecord rec, vec3 V, vec3 N, out vec3 L, out float pdf)
 
     // Specular and sheen color
     vec3 specCol, sheenCol;
-    GetSpecColor(rec.mat, rec.eta, specCol, sheenCol);
+    GetSpecColor(rec.material, rec.eta, specCol, sheenCol);
 
     // Lobe weights
     float diffuseWt, specReflectWt, specRefractWt, clearcoatWt;
     // TODO: Recheck fresnel. Not sure if correct. VDotN produces fireflies with rough dielectric.
-    // VDotH matches Mitsuba and gets rid of all fireflies but H isn't available at this stage
-    float approxFresnel = FresnelMix(rec.mat, rec.eta, V.z);
-    GetLobeProbabilities(rec.mat, rec.eta, specCol, approxFresnel, diffuseWt, specReflectWt, specRefractWt, clearcoatWt);
+    // VDotH material Mitsuba and gets rid of all fireflies but H isn't available at this stage
+    float approxFresnel = FresnelMix(rec.material, rec.eta, V.z);
+    GetLobeProbabilities(rec.material, rec.eta, specCol, approxFresnel, diffuseWt, specReflectWt, specRefractWt, clearcoatWt);
 
     // CDF for picking a lobe
     float cdf[4];
@@ -475,46 +475,46 @@ vec3 DisneySample(HitRecord rec, vec3 V, vec3 N, out vec3 L, out float pdf)
 
         vec3 H = normalize(L + V);
 
-        f = EvalDiffuse(rec.mat, sheenCol, V, L, H, pdf);
+        f = EvalDiffuse(rec.material, sheenCol, V, L, H, pdf);
         pdf *= diffuseWt;
     }
     else if (r1 < cdf[1]) // Specular Reflection Lobe
     {
         r1 = (r1 - cdf[0]) / (cdf[1] - cdf[0]);
-        vec3 H = SampleGGXVNDF(V, rec.mat.roughness, r1, r2);
+        vec3 H = SampleGGXVNDF(V, rec.material.roughness, r1, r2);
 
         if (H.z < 0.0)
             H = -H;
 
         L = normalize(reflect(-V, H));
 
-        f = EvalSpecReflection(rec.mat, rec.eta, specCol, V, L, H, pdf);
+        f = EvalSpecReflection(rec.material, rec.eta, specCol, V, L, H, pdf);
         pdf *= specReflectWt;
     }
     else if (r1 < cdf[2]) // Specular Refraction Lobe
     {
         r1 = (r1 - cdf[1]) / (cdf[2] - cdf[1]);
-        vec3 H = SampleGGXVNDF(V, rec.mat.roughness, r1, r2);
+        vec3 H = SampleGGXVNDF(V, rec.material.roughness, r1, r2);
 
         if (H.z < 0.0)
             H = -H;
 
         L = normalize(refract(-V, H, rec.eta));
 
-        f = EvalSpecRefraction(rec.mat, rec.eta, V, L, H, pdf);
+        f = EvalSpecRefraction(rec.material, rec.eta, V, L, H, pdf);
         pdf *= specRefractWt;
     }
     else // Clearcoat Lobe
     {
         r1 = (r1 - cdf[2]) / (1.0 - cdf[2]);
-        vec3 H = SampleGTR1(rec.mat.clearcoatRoughness, r1, r2);
+        vec3 H = SampleGTR1(rec.material.clearcoatRoughness, r1, r2);
 
         if (H.z < 0.0)
             H = -H;
 
         L = normalize(reflect(-V, H));
 
-        f = EvalClearcoat(rec.mat, V, L, H, pdf);
+        f = EvalClearcoat(rec.material, V, L, H, pdf);
         pdf *= clearcoatWt;
     }
 
@@ -543,40 +543,40 @@ vec3 DisneyEval(HitRecord rec, vec3 V, vec3 N, vec3 L, out float bsdfPdf)
 
     // Specular and sheen color
     vec3 specCol, sheenCol;
-    GetSpecColor(rec.mat, rec.eta, specCol, sheenCol);
+    GetSpecColor(rec.material, rec.eta, specCol, sheenCol);
 
     // Lobe weights
     float diffuseWt, specReflectWt, specRefractWt, clearcoatWt;
-    float fresnel = FresnelMix(rec.mat, rec.eta, dot(V, H));
-    GetLobeProbabilities(rec.mat, rec.eta, specCol, fresnel, diffuseWt, specReflectWt, specRefractWt, clearcoatWt);
+    float fresnel = FresnelMix(rec.material, rec.eta, dot(V, H));
+    GetLobeProbabilities(rec.material, rec.eta, specCol, fresnel, diffuseWt, specReflectWt, specRefractWt, clearcoatWt);
 
     float pdf;
 
     // Diffuse
     if (diffuseWt > 0.0 && L.z > 0.0)
     {
-        f += EvalDiffuse(rec.mat, sheenCol, V, L, H, pdf);
+        f += EvalDiffuse(rec.material, sheenCol, V, L, H, pdf);
         bsdfPdf += pdf * diffuseWt;
     }
 
     // Specular Reflection
     if (specReflectWt > 0.0 && L.z > 0.0 && V.z > 0.0)
     {
-        f += EvalSpecReflection(rec.mat, rec.eta, specCol, V, L, H, pdf);
+        f += EvalSpecReflection(rec.material, rec.eta, specCol, V, L, H, pdf);
         bsdfPdf += pdf * specReflectWt;
     }
 
     // Specular Refraction
     if (specRefractWt > 0.0 && L.z < 0.0)
     {
-        f += EvalSpecRefraction(rec.mat, rec.eta, V, L, H, pdf);
+        f += EvalSpecRefraction(rec.material, rec.eta, V, L, H, pdf);
         bsdfPdf += pdf * specRefractWt;
     }
 
     // Clearcoat
     if (clearcoatWt > 0.0 && L.z > 0.0 && V.z > 0.0)
     {
-        f += EvalClearcoat(rec.mat, V, L, H, pdf);
+        f += EvalClearcoat(rec.material, V, L, H, pdf);
         bsdfPdf += pdf * clearcoatWt;
     }
 
@@ -588,7 +588,7 @@ vec3 DisneyEval(HitRecord rec, vec3 V, vec3 N, vec3 L, out float bsdfPdf)
 vec3 DirectLight(in Ray r, in HitRecord rec)
 {
     vec3 Li = vec3(0.0);
-    vec3 surfacePos = rec.fhp + rec.normal * EPS;
+    vec3 surfacePos = rec.pos + rec.normal * EPS;
 
     BsdfSampleRec bsdfSampleRec;
 
@@ -621,7 +621,6 @@ vec3 DirectLight(in Ray r, in HitRecord rec)
 #endif
 
     // Analytic Lights 
-#ifdef LIGHTS
     {
         LightSampleRec lightSampleRec;
 
@@ -650,7 +649,6 @@ vec3 DirectLight(in Ray r, in HitRecord rec)
             }
         }
     }
-#endif
 
     return Li;
 }
@@ -677,21 +675,21 @@ vec3 PathTrace(Ray r)
         } else {        
             rec.ffnormal = dot(rec.normal, r.direction) <= 0.0 ? rec.normal : -rec.normal;
             Onb(rec.normal, rec.tangent, rec.bitangent);
-            rec.mat.roughness = max(rec.mat.roughness, 0.001);
-            rec.eta = dot(rec.normal, rec.ffnormal) > 0.0 ? (1.0 / rec.mat.ior) : rec.mat.ior;
+            rec.material.roughness = max(rec.material.roughness, 0.001);
+            rec.eta = dot(rec.normal, rec.ffnormal) > 0.0 ? (1.0 / rec.material.ior) : rec.material.ior;
         }
 
-        radiance += rec.mat.emission * throughput;
+        radiance += rec.material.emission * throughput;
 
-        if (any(greaterThan(rec.mat.emission, vec3(EPS))))
+        if (any(greaterThan(rec.material.emission, vec3(EPS))))
         {
             radiance += EmitterSample(r, depth, lightSampleRec, bsdfSampleRec) * throughput;
             break;
         }
 
         // Calculate absorption directly if inside medium
-        if (dot(rec.normal, rec.ffnormal) < 0.0 && rec.mat.specTrans > 0.0) {
-            throughput *= exp(-log(rec.mat.baseColor) * rec.hitDist);
+        if (dot(rec.normal, rec.ffnormal) < 0.0 && rec.material.specTrans > 0.0) {
+            throughput *= exp(-log(rec.material.baseColor) * rec.hitDist);
         }
         radiance += DirectLight(r, rec) * throughput;
 
@@ -702,7 +700,6 @@ vec3 PathTrace(Ray r)
         else
             break;
 
-#ifdef RR
         if (depth >= RR_DEPTH)
         {
             float q = min(max(throughput.x, max(throughput.y, throughput.z)) + 0.001, 0.95);
@@ -710,10 +707,9 @@ vec3 PathTrace(Ray r)
                 break;
             throughput /= q;
         }
-#endif
 
         r.direction = bsdfSampleRec.L;
-        r.origin = rec.fhp + r.direction * EPS;
+        r.origin = rec.pos + r.direction * EPS;
     }
 
     return radiance;
