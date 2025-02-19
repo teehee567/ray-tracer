@@ -231,7 +231,6 @@ impl Scene {
             roughness: Alignedf32(roughness),
             ior: Alignedf32(ior),
             transmission: Alignedf32(transmission),
-            motion_blur: motion_blur.into(),
             shade_smooth: Alignedu32(if shade_smooth { 1 } else { 0 }),
             ..Default::default()
         })

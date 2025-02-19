@@ -429,7 +429,6 @@ impl Scene {
             clearcoat: Alignedf32(clearcoat_factor),
             clearcoat_roughness: Alignedf32(clearcoat_roughness),
 
-            motion_blur: AlignedVec3(Vec3::ZERO),
             shade_smooth: Alignedu32(1),
 
             base_color_tex: Alignedu32(base_color_tex),

@@ -161,7 +161,6 @@ impl<'a> BvhBuilder<'a> {
         //         println!("Node: {}", node.min_idx.idx.idx.0);
         //     }
         // }
-        self.apply_motion_blur(0);
 
         self.bvh_list
     }
@@ -285,46 +284,6 @@ impl<'a> BvhBuilder<'a> {
             .map(|&i| items[i as usize].clone())
             .collect();
         *items = sorted;
-    }
-
-    fn apply_motion_blur(&mut self, node_idx: usize) {
-
-        let is_leaf = {
-            let node = &self.bvh_list[node_idx];
-            unsafe { node.max_amt.amt.amt.0 != 0 }
-        };
-
-        if is_leaf {
-            unsafe {
-                let offset = self.bvh_list[node_idx].min_idx.idx.idx.0;
-
-                let material_index =
-                    self.triangles[offset as usize].material_index.0 as usize;
-                let motion_blur = self.materials[material_index].motion_blur.0;
-                let node = &mut self.bvh_list[node_idx];
-
-                let min_with_blur =
-                    node.min_idx.min.0.min(node.min_idx.min.0 + motion_blur);
-                let max_with_blur =
-                    node.max_amt.max.0.max(node.max_amt.max.0 + motion_blur);
-                node.min_idx.min = AlignedVec3(min_with_blur);
-                node.max_amt.max = AlignedVec3(max_with_blur);
-            }
-        } else {
-
-            unsafe {
-                let child_idx = self.bvh_list[node_idx].min_idx.idx.idx.0 as usize;
-                self.apply_motion_blur(child_idx);
-                self.apply_motion_blur(child_idx + 1);
-                let child1 = &self.bvh_list[child_idx];
-                let child2 = &self.bvh_list[child_idx + 1];
-                let new_min = child1.min_idx.min.0.min(child2.min_idx.min.0);
-                let new_max = child1.max_amt.max.0.max(child2.max_amt.max.0);
-                let node = &mut self.bvh_list[node_idx];
-                node.min_idx.min = AlignedVec3(new_min);
-                node.max_amt.max = AlignedVec3(new_max);
-            }
-        }
     }
 }
 
