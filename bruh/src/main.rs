@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 
 #![allow(
     dead_code,
@@ -32,7 +31,7 @@ use vulkan::pipeline::{create_compute_pipeline, create_render_pass};
 use vulkan::sampler::create_sampler;
 use vulkan::swapchain::{create_swapchain, create_swapchain_image_views};
 use vulkan::sync_objects::create_sync_objects;
-use vulkan::texture::{create_texture_image, create_texture_sampler, Texture};
+use vulkan::texture::{create_cubemap_sampler, create_cubemap_texture, create_texture_image, create_texture_sampler, Texture};
 use vulkan::utils::get_memory_type_index;
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
@@ -246,6 +245,8 @@ struct AppData {
     //textures
     textures: Vec<Texture>,
     texture_sampler: vk::Sampler,
+    skybox_texture: Texture,
+    skybox_sampler: vk::Sampler,
 }
 
 /// Our Vulkan app.
@@ -292,6 +293,7 @@ impl App {
         transition_image_layout(&device, &mut data)?;
 
         data.texture_sampler = create_texture_sampler(&device)?;
+        data.skybox_sampler = create_cubemap_sampler(&device)?;
 
         for texture_data in &data.scene.components.textures {
             let texture = create_texture_image(
@@ -304,6 +306,18 @@ impl App {
             )?;
             data.textures.push(texture);
         }
+
+        let skybox_data = &data.scene.components.skybox;
+        data.skybox_texture =
+            create_cubemap_texture(
+                &instance,
+                &device,
+                &data,
+                &skybox_data.pixels,
+                skybox_data.width,
+                skybox_data.height,
+            )?;
+
         create_descriptor_pool(&device, &mut data)?;
         create_sampler(&device, &mut data)?;
         // create_descriptor_sets(&device, &mut data)?;

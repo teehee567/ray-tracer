@@ -200,7 +200,7 @@ impl Scene {
             let texture = TextureData {
                 width: image.width,
                 height: image.height,
-                format: TextureFormat::R8G8B8A8, // Always use RGBA8 for consistency
+                format: TextureFormat::R8G8B8A8,
                 pixels,
             };
             self.components.textures.push(texture);

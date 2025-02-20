@@ -64,14 +64,16 @@ layout(std430, set = 0, binding = 3) readonly buffer TriangleBuffer {
 layout(set = 0, binding = 4, rgba8) uniform image2D accumulator;
 layout(set = 0, binding = 5) writeonly uniform image2D framebuffer;
 layout(set = 0, binding = 6) uniform sampler2D textures[];
+layout(set = 0, binding = 7) uniform samplerCube skybox;
 
 #include "imports/generate_ray.comp"
 #include "imports/intersects.comp"
 #include "imports/disney.comp"
 
 vec3 background_color(Ray ray) {
-    float blend = 0.5 * ray.direction.y + 0.5;
-    return mix(vec3(0.6, 0.8, 1.0), vec3(0.2, 0.4, 1.0), blend);
+    return texture(skybox, ray.direction).rgb;
+    //float blend = 0.5 * ray.direction.y + 0.5;
+    //return mix(vec3(0.6, 0.8, 1.0), vec3(0.2, 0.4, 1.0), blend);
     //return vec3(0.6);
 }
 
@@ -113,7 +115,7 @@ vec3 ray_color(Ray ray, inout uint mesh_tests) {
         HitRecord hit = hit_meshes(ray, mesh_tests, false);
         
         if(!hit.did_hit) {
-            radiance += getBackground(ray) * throughput;
+            radiance += background_color(ray) * throughput;
             break;
         }
             if (hit.material.base_color_tex != 0xFFFFFFFF) {

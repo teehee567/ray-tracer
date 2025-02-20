@@ -1,10 +1,10 @@
-use std::{fs::File, io::Read};
+use std::{fs::File, io::Read, path::{Path, PathBuf}};
 
 use crate::{AVec2, AVec3, Af32, Au32, CameraBufferObject, Material, SceneComponents, Triangle};
 
 use super::Scene;
 
-use anyhow::{Result};
+use anyhow::Result;
 use glam::Vec3;
 
 impl Scene {
@@ -30,12 +30,23 @@ impl Scene {
         let mut scene = SceneComponents::default();
         let mut material_name_to_index = std::collections::HashMap::new();
 
+
+        // Load skybox
+        if let Some(skybox) = yaml["skybox"].as_sequence() {
+            let skyboxes: Vec<PathBuf> = skybox.iter().map(|skybox_path| {
+                let base_dir = std::path::Path::new(path).parent().unwrap();
+                base_dir.join(skybox_path.as_str().unwrap())
+            }).collect();
+            let skybox_array: [PathBuf; 6] = skyboxes.try_into().unwrap();
+            scene.skybox = Self::load_cubemap_textures(skybox_array).unwrap();
+        }
+
         // Load materials
         if let Some(materials) = yaml["materials"].as_mapping() {
             for (name, mat_data) in materials {
                 let name = name.as_str().unwrap();
                 
-                let mut material: Material = serde_yaml::from_value(mat_data.clone())
+                let material: Material = serde_yaml::from_value(mat_data.clone())
                     .expect(&format!("Failed to deserialize material '{}'", name));
 
                 let material_index = scene.materials.len();
