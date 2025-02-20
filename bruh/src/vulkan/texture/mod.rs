@@ -15,6 +15,7 @@ unsafe fn transition_texture_layout(
     format: vk::Format,
     old_layout: vk::ImageLayout,
     new_layout: vk::ImageLayout,
+    layers: u32
 ) -> Result<()> {
     let command_buffer = begin_single_time_commands(device, data)?;
 
@@ -45,7 +46,7 @@ unsafe fn transition_texture_layout(
             base_mip_level: 0,
             level_count: 1,
             base_array_layer: 0,
-            layer_count: 1,
+            layer_count: layers,
         })
         .src_access_mask(src_access_mask)
         .dst_access_mask(dst_access_mask)
