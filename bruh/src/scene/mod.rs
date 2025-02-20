@@ -15,6 +15,7 @@ use crate::vulkan::bufferbuilder::BufferBuilder;
 pub mod yaml;
 pub mod gltf;
 pub mod weird;
+pub mod loader;
 
 #[derive(Clone, Copy, Debug)]
 pub enum TextureFormat {

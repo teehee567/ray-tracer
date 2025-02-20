@@ -1,13 +1,13 @@
 use glam::Vec3;
 
-use crate::{AlignedVec3, Alignedu32, Material, Triangle};
+use crate::{AVec3, Au32, Material, Triangle};
 
-const MAX_VAL: AlignedVec3 = AlignedVec3(Vec3 {
+const MAX_VAL: AVec3 = AVec3(Vec3 {
     x: 1e30,
     y: 1e30,
     z: 1e30,
 });
-const MIN_VAL: AlignedVec3 = AlignedVec3(Vec3 {
+const MIN_VAL: AVec3 = AVec3(Vec3 {
     x: -1e30,
     y: -1e30,
     z: -1e30,
@@ -25,7 +25,7 @@ pub struct BvhNode {
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub union MinIdxUnion {
-    min: AlignedVec3,
+    min: AVec3,
     idx: IdxStruct,
 }
 
@@ -33,13 +33,13 @@ pub union MinIdxUnion {
 #[derive(Copy, Clone)]
 pub struct IdxStruct {
     pad: [i32; 3],
-    idx: Alignedu32,
+    idx: Au32,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub union MaxAmtUnion {
-    max: AlignedVec3,
+    max: AVec3,
     amt: AmtStruct,
 }
 
@@ -47,7 +47,7 @@ pub union MaxAmtUnion {
 #[derive(Copy, Clone)]
 pub struct AmtStruct {
     pad: [i32; 3],
-    amt: Alignedu32,
+    amt: Au32,
 }
 
 impl Default for BvhNode {
@@ -78,8 +78,8 @@ impl BvhNode {
             let mut current_max = self.max_amt.max.0;
             current_min = current_min.min(tri.min_bound());
             current_max = current_max.max(tri.max_bound());
-            self.min_idx.min = AlignedVec3(current_min);
-            self.max_amt.max = AlignedVec3(current_max);
+            self.min_idx.min = AVec3(current_min);
+            self.max_amt.max = AVec3(current_max);
         }
     }
 
@@ -88,43 +88,43 @@ impl BvhNode {
             self.expand(&triangles[i as usize]);
         }
         unsafe {
-            let min_ptr = &mut self.min_idx.min as *mut AlignedVec3 as *mut u8;
-            let idx_ptr = min_ptr.add(12) as *mut Alignedu32;
-            *idx_ptr = Alignedu32(offset);
-            let max_ptr = &mut self.max_amt.max as *mut AlignedVec3 as *mut u8;
-            let amt_ptr = max_ptr.add(12) as *mut Alignedu32;
-            *amt_ptr = Alignedu32(indices.len() as u32);
+            let min_ptr = &mut self.min_idx.min as *mut AVec3 as *mut u8;
+            let idx_ptr = min_ptr.add(12) as *mut Au32;
+            *idx_ptr = Au32(offset);
+            let max_ptr = &mut self.max_amt.max as *mut AVec3 as *mut u8;
+            let amt_ptr = max_ptr.add(12) as *mut Au32;
+            *amt_ptr = Au32(indices.len() as u32);
         }
     }
 
     fn is_leaf(&self) -> bool {
         unsafe {
-            let max_ptr = &self.max_amt.max as *const AlignedVec3 as *const u8;
-            let amt_ptr = max_ptr.add(12) as *const Alignedu32;
+            let max_ptr = &self.max_amt.max as *const AVec3 as *const u8;
+            let amt_ptr = max_ptr.add(12) as *const Au32;
             (*amt_ptr).0 != 0
         }
     }
 
     fn left(&self) -> u32 {
         unsafe {
-            let min_ptr = &self.min_idx.min as *const AlignedVec3 as *const u8;
-            let idx_ptr = min_ptr.add(12) as *const Alignedu32;
+            let min_ptr = &self.min_idx.min as *const AVec3 as *const u8;
+            let idx_ptr = min_ptr.add(12) as *const Au32;
             (*idx_ptr).0
         }
     }
 
     fn idx(&self) -> u32 {
         unsafe {
-            let min_ptr = &self.min_idx.min as *const AlignedVec3 as *const u8;
-            let idx_ptr = min_ptr.add(12) as *const Alignedu32;
+            let min_ptr = &self.min_idx.min as *const AVec3 as *const u8;
+            let idx_ptr = min_ptr.add(12) as *const Au32;
             (*idx_ptr).0
         }
     }
 
     fn amt(&self) -> u32 {
         unsafe {
-            let max_ptr = &self.max_amt.max as *const AlignedVec3 as *const u8;
-            let amt_ptr = max_ptr.add(12) as *const Alignedu32;
+            let max_ptr = &self.max_amt.max as *const AVec3 as *const u8;
+            let amt_ptr = max_ptr.add(12) as *const Au32;
             (*amt_ptr).0
         }
     }
@@ -213,13 +213,13 @@ impl<'a> BvhBuilder<'a> {
 
         unsafe {
             let node = &mut self.bvh_list[node_idx];
-            let min_ptr = &mut node.min_idx.min as *mut AlignedVec3 as *mut u8;
-            let idx_ptr = min_ptr.add(12) as *mut Alignedu32;
-            *idx_ptr = Alignedu32(left_node_idx as u32);
+            let min_ptr = &mut node.min_idx.min as *mut AVec3 as *mut u8;
+            let idx_ptr = min_ptr.add(12) as *mut Au32;
+            *idx_ptr = Au32(left_node_idx as u32);
 
-            let max_ptr = &mut node.max_amt.max as *mut AlignedVec3 as *mut u8;
-            let amt_ptr = max_ptr.add(12) as *mut Alignedu32;
-            *amt_ptr = Alignedu32(0);
+            let max_ptr = &mut node.max_amt.max as *mut AVec3 as *mut u8;
+            let amt_ptr = max_ptr.add(12) as *mut Au32;
+            *amt_ptr = Au32(0);
         }
 
         let (left_indices, right_indices) = indices.split_at_mut(left_count);
