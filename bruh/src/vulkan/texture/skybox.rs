@@ -77,14 +77,14 @@ pub unsafe fn create_cubemap_texture(
     device.bind_image_memory(image, image_memory, 0)?;
 
     // Transition image layout and copy data
-    transition_skybox_layout(
+    transition_texture_layout(
         device,
         data,
         image,
         vk::Format::R8G8B8A8_SRGB,
         vk::ImageLayout::UNDEFINED,
         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-        true
+        6
     )?;
 
     copy_buffer_to_cubemap(
@@ -96,14 +96,14 @@ pub unsafe fn create_cubemap_texture(
         height,
     )?;
 
-    transition_skybox_layout(
+    transition_texture_layout(
         device,
         data,
         image,
         vk::Format::R8G8B8A8_SRGB,
         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        true
+        6
     )?;
 
     // Create cubemap image view
@@ -181,66 +181,6 @@ unsafe fn copy_buffer_to_cubemap(
 
     Ok(())
 }
-
-unsafe fn transition_skybox_layout(
-    device: &Device,
-    data: &AppData,
-    image: vk::Image,
-    format: vk::Format,
-    old_layout: vk::ImageLayout,
-    new_layout: vk::ImageLayout,
-    is_cubemap: bool, // Add this parameter
-) -> Result<()> {
-    let command_buffer = begin_single_time_commands(device, data)?;
-
-    let (src_access_mask, dst_access_mask, src_stage_mask, dst_stage_mask) = match (old_layout, new_layout) {
-        (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
-            vk::AccessFlags::empty(),
-            vk::AccessFlags::TRANSFER_WRITE,
-            vk::PipelineStageFlags::TOP_OF_PIPE,
-            vk::PipelineStageFlags::TRANSFER,
-        ),
-        (vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL) => (
-            vk::AccessFlags::TRANSFER_WRITE,
-            vk::AccessFlags::SHADER_READ,
-            vk::PipelineStageFlags::TRANSFER,
-            vk::PipelineStageFlags::COMPUTE_SHADER,
-        ),
-        _ => return Err(anyhow!("Unsupported image layout transition!")),
-    };
-
-    let barrier = vk::ImageMemoryBarrier::builder()
-        .old_layout(old_layout)
-        .new_layout(new_layout)
-        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .image(image)
-        .subresource_range(vk::ImageSubresourceRange {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            base_mip_level: 0,
-            level_count: 1,
-            base_array_layer: 0,
-            layer_count: if is_cubemap { 6 } else { 1 }, // Handle all 6 faces for cubemap
-        })
-        .src_access_mask(src_access_mask)
-        .dst_access_mask(dst_access_mask)
-        .build();
-
-    device.cmd_pipeline_barrier(
-        command_buffer,
-        src_stage_mask,
-        dst_stage_mask,
-        vk::DependencyFlags::empty(),
-        &[] as &[vk::MemoryBarrier],
-        &[] as &[vk::BufferMemoryBarrier],
-        &[barrier],
-    );
-
-    end_single_time_commands(device, data, command_buffer)?;
-
-    Ok(())
-}
-
 pub unsafe fn create_cubemap_sampler(device: &Device) -> Result<vk::Sampler> {
     let sampler_info = vk::SamplerCreateInfo::builder()
         .mag_filter(vk::Filter::LINEAR)
