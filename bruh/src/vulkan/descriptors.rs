@@ -109,6 +109,12 @@ pub unsafe fn create_descriptor_sets(
             })
             .collect();
 
+        let skybox_info = vk::DescriptorImageInfo::builder()
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .image_view(data.skybox_texture.view)
+            .sampler(data.skybox_sampler)
+            .build();
+
         let uniform_buffer_array = [uniform_buffer_info];
         let write_uniform = vk::WriteDescriptorSet::builder()
             .dst_set(data.compute_descriptor_sets[i])
@@ -171,6 +177,16 @@ pub unsafe fn create_descriptor_sets(
             .image_info(&texture_info)
             .build();
 
+        let skybox_write_slice = std::slice::from_ref(&skybox_info);
+        let skybox_write = vk::WriteDescriptorSet::builder()
+            .dst_set(data.compute_descriptor_sets[i])
+            .dst_binding(7)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(skybox_write_slice)
+            .build();
+
+
         let descriptor_writes = &[
             write_uniform,
             bvh_shader,
@@ -179,6 +195,7 @@ pub unsafe fn create_descriptor_sets(
             write_accumulator,
             write_swapchain,
             texture_write,
+            skybox_write,
         ];
 
         device.update_descriptor_sets(descriptor_writes, &[] as &[vk::CopyDescriptorSet]);
@@ -229,10 +246,17 @@ pub unsafe fn create_compute_descriptor_set_layout(
         .stage_flags(vk::ShaderStageFlags::COMPUTE);
 
     let texture_binding = vk::DescriptorSetLayoutBinding::builder()
-        .binding(6) // Make sure this matches your shader binding
+        .binding(6)
         .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
         .descriptor_count(data.scene.components.textures.len() as u32) // Array of textures
         .stage_flags(vk::ShaderStageFlags::COMPUTE);
+
+    let skybox_binding = vk::DescriptorSetLayoutBinding::builder()
+        .binding(7)
+        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+        .descriptor_count(1)
+        .stage_flags(vk::ShaderStageFlags::COMPUTE);
+
 
     let bindings = &[
         ubo_binding,
@@ -242,6 +266,7 @@ pub unsafe fn create_compute_descriptor_set_layout(
         accumulator_binding,
         swapchain_binding,
         texture_binding,
+        skybox_binding,
     ];
     let info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(bindings);
 

@@ -6,6 +6,14 @@ camera:
   location: [8, 15, 30]
   # location: [30, 15, -10]
   look_at: [0, 5, 0]
+skybox: [
+  "data/test_scene/boiler_room_skybox/px.png",
+  "data/test_scene/boiler_room_skybox/nx.png",
+  "data/test_scene/boiler_room_skybox/py.png",
+  "data/test_scene/boiler_room_skybox/ny.png",
+  "data/test_scene/boiler_room_skybox/pz.png",
+  "data/test_scene/boiler_room_skybox/nz.png",
+]
 materials:
   Grid:
     base_colour: [20, 20, 20]
@@ -49,8 +57,8 @@ materials:
   OBJ_Base:
     base_colour: [10, 10, 10]
     specular_tint: 0.3
-    roughness: 0.01
-    metallic: 0.8
+    roughness: 1.
+    metallic: 0.
     subsurface: 0.0
     anisotropic: 0.0
     sheen: 0.0

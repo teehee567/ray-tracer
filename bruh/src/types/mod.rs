@@ -14,7 +14,6 @@ mod triangle;
 pub use triangle::*;
 
 
-#[repr(C)]
 #[derive(Clone, Default)]
 pub struct SceneComponents {
     pub camera: CameraBufferObject,
@@ -22,6 +21,7 @@ pub struct SceneComponents {
     pub materials: Vec<Material>,
     pub triangles: Vec<Triangle>,
     pub textures: Vec<TextureData>,
+    pub skybox: TextureData
 }
 
 #[repr(C)]

@@ -1,11 +1,14 @@
 use serde_yaml::Value;
 use std::os::raw::c_void;
+use std::path::Path;
 use std::time::Instant;
 
 use crate::accelerators::bvh::BvhBuilder;
 use crate::{
     CameraBufferObject, SceneComponents
 };
+
+use anyhow::Result;
 
 const CONFIG_VERSION: &str = "0.2";
 
@@ -33,6 +36,24 @@ pub struct TextureData {
     pub height: u32,
     pub format: TextureFormat,
     pub pixels: Vec<u8>,
+}
+
+impl Default for TextureData {
+    fn default() -> Self {
+        Self {
+            width: 1,
+            height: 1,
+            format: TextureFormat::R8G8B8A8,
+            pixels: vec![
+                255, 255, 255, 255,  // Right face (+X)
+                255, 255, 255, 255,  // Left face (-X)
+                255, 255, 255, 255,  // Top face (+Y)
+                255, 255, 255, 255,  // Bottom face (-Y)
+                255, 255, 255, 255,  // Front face (+Z)
+                255, 255, 255, 255,  // Back face (-Z)
+            ],
+        }
+    }
 }
 
 /// A scene loaded from a YAML file.
@@ -136,6 +157,32 @@ impl Scene {
         self.components.camera
     }
 
+    fn load_cubemap_textures<P: AsRef<Path>>(paths: [P; 6]) -> Result<TextureData> {
+        let mut combined_pixels = Vec::new();
+        let mut width = 0;
+        let mut height = 0;
+        
+        for path in paths.iter() {
+            let img = image::open(path)?;
+            let img_rgba = img.into_rgba8();
+            
+            if width == 0 {
+                width = img_rgba.width();
+                height = img_rgba.height();
+            } else if width != img_rgba.width() || height != img_rgba.height() {
+                return Err(anyhow::anyhow!("All cubemap faces must have the same dimensions"));
+            }
+            
+            combined_pixels.extend_from_slice(&img_rgba.into_raw());
+        }
+
+        Ok(TextureData {
+            width,
+            height,
+            format: TextureFormat::R8G8B8A8,
+            pixels: combined_pixels,
+        })
+    }
 
 }
 
