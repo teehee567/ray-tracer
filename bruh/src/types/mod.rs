@@ -1,6 +1,4 @@
-use glam::{Mat4, UVec2, Vec2, Vec3, Vec4};
-use serde::Serialize;
-use vulkanalia::vk::{self, HasBuilder};
+use glam::Vec3;
 
 use crate::{accelerators::{self, bvh::BvhNode, Primitive}, scene::TextureData};
 

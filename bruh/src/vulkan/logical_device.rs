@@ -75,7 +75,7 @@ pub unsafe fn create_logical_device(
         .shader_sampled_image_array_non_uniform_indexing(true);
 
     // Create
-    let mut info = vk::DeviceCreateInfo::builder()
+    let info = vk::DeviceCreateInfo::builder()
         .push_next(&mut features12)
         .push_next(&mut descriptor_indexing)
         .queue_create_infos(&queue_infos)
