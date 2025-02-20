@@ -44,7 +44,6 @@ pub unsafe fn create_logical_device(
         .map(|n| n.as_ptr())
         .collect::<Vec<_>>();
 
-
     if cfg!(target_os = "macos") && entry.version()? >= PORTABILITY_MACOS_VERSION {
         extensions.push(vk::KHR_PORTABILITY_SUBSET_EXTENSION.name.as_ptr());
     }
@@ -56,38 +55,28 @@ pub unsafe fn create_logical_device(
         .shader_sampled_image_array_dynamic_indexing(true)
         .shader_storage_image_array_dynamic_indexing(true);
 
-    // Descriptor indexing features
-    let mut descriptor_indexing = vk::PhysicalDeviceDescriptorIndexingFeaturesEXT::builder()
-        .descriptor_binding_uniform_buffer_update_after_bind(true)
-        .descriptor_binding_storage_image_update_after_bind(true)
-        .descriptor_binding_storage_buffer_update_after_bind(true)
-        .runtime_descriptor_array(true)
-        .descriptor_binding_sampled_image_update_after_bind(true)
-        .descriptor_binding_partially_bound(true)
-        .descriptor_binding_variable_descriptor_count(true);
-
+    // Vulkan 1.2 features (including descriptor indexing)
     let mut features12 = vk::PhysicalDeviceVulkan12Features::builder()
         .runtime_descriptor_array(true)
         .descriptor_indexing(true)
         .descriptor_binding_uniform_buffer_update_after_bind(true)
         .descriptor_binding_storage_image_update_after_bind(true)
         .descriptor_binding_storage_buffer_update_after_bind(true)
+        .descriptor_binding_sampled_image_update_after_bind(true)
+        .descriptor_binding_partially_bound(true)
+        .descriptor_binding_variable_descriptor_count(true)
         .shader_sampled_image_array_non_uniform_indexing(true);
 
     // Create
     let info = vk::DeviceCreateInfo::builder()
         .push_next(&mut features12)
-        .push_next(&mut descriptor_indexing)
         .queue_create_infos(&queue_infos)
         .enabled_layer_names(&layers)
         .enabled_extension_names(&extensions)
         .enabled_features(&features);
 
-    // Check if device supports descriptor indexing
-    let mut indexing_properties = vk::PhysicalDeviceDescriptorIndexingPropertiesEXT::default();
-    let mut device_properties = vk::PhysicalDeviceProperties2::builder()
-        .push_next(&mut indexing_properties);
-    
+    // Check device properties
+    let mut device_properties = vk::PhysicalDeviceProperties2::default();
     instance.get_physical_device_properties2(data.physical_device, &mut device_properties);
 
     let device = instance.create_device(data.physical_device, &info, None)?;
