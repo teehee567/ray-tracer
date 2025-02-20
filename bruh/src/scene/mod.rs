@@ -1,5 +1,4 @@
 use serde_yaml::Value;
-use std::io::Write;
 use std::os::raw::c_void;
 use std::time::Instant;
 
