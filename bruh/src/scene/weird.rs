@@ -1,7 +1,7 @@
 use std::{fs::File, io::Read, path::Component};
 
 use crate::{
-    AlignedMat4, AlignedUVec2, AlignedVec2, AlignedVec3, Alignedf32, Alignedu32,
+    AMat4, AUVec2, AVec2, AVec3, Af32, Au32,
     CameraBufferObject, Material, SceneComponents, Triangle,
 };
 
@@ -58,55 +58,55 @@ impl Scene {
                 // Handle reflectance (base_colour)
                 dbg!(&mat_data["reflectance"]);
                 if let Some(refl) = mat_data["reflectance"].as_str() {
-                    material.base_colour = AlignedVec3(parse_rgb(refl));
+                    material.base_colour = AVec3(parse_rgb(refl));
                 } 
                 if let Some(refl) = mat_data["reflectance"].as_array() {
-                    material.base_colour = AlignedVec3(Vec3::new(
+                    material.base_colour = AVec3(Vec3::new(
                         refl[0].as_f64().unwrap_or(0.0) as f32,
                         refl[1].as_f64().unwrap_or(0.0) as f32,  
                         refl[2].as_f64().unwrap_or(0.0) as f32
                     ));
                 }
                 if let Some(refl) = mat_data["reflectance"].as_f64() {
-                    material.metallic = Alignedf32(refl as f32);
+                    material.metallic = Af32(refl as f32);
                 }
 
                 if let Some(refl) = mat_data["specular"].as_f64() {
-                    material.specular_tint = Alignedf32(refl as f32);
+                    material.specular_tint = Af32(refl as f32);
                 }
 
                 // Handle emittance
                 if let Some(emit) = mat_data["emittance"].as_str() {
-                    material.emission = AlignedVec3(parse_rgb(emit));
+                    material.emission = AVec3(parse_rgb(emit));
                     if let Some(emit) = mat_data["emissive_strength"].as_f64() {
-                        material.emission = AlignedVec3(material.emission.0 * emit as f32);
+                        material.emission = AVec3(material.emission.0 * emit as f32);
                     }
                 }
 
                 // Handle IOR
                 if let Some(ior) = mat_data["ior"].as_f64() {
-                    material.ior = Alignedf32(ior as f32);
+                    material.ior = Af32(ior as f32);
                 }
 
                 // Handle transparency
                 if let Some(trans) = mat_data["transparency"].as_f64() {
-                    material.spec_trans = Alignedf32(trans as f32);
+                    material.spec_trans = Af32(trans as f32);
                 }
                 if let Some(trans) = mat_data["transmittance"].as_str() {
-                    material.base_colour = AlignedVec3(parse_rgb(trans));
+                    material.base_colour = AVec3(parse_rgb(trans));
                 }
 
                 // Handle perfect mirror
                 if let Some(true) = mat_data["perfect_mirror"].as_bool() {
-                    material.metallic = Alignedf32(1.0);
-                    material.roughness = Alignedf32(0.0);
+                    material.metallic = Af32(1.0);
+                    material.roughness = Af32(0.0);
                 }
 
                 // Handle specular roughness
                 if let Some(rough) = mat_data["specular_roughness"].as_f64() {
-                    material.roughness = Alignedf32(rough as f32);
+                    material.roughness = Af32(rough as f32);
                 }
-                material.metallic = Alignedf32(0.3);
+                material.metallic = Af32(0.3);
                 // material.emission = material.base_colour;
 
                 let material_index = scene.materials.len();
@@ -153,17 +153,17 @@ impl Scene {
                     for tri_indices in triangles {
                         if let Some(indices) = tri_indices.as_array() {
                             let triangle = Triangle {
-                                material_index: Alignedu32(material_index as u32),
-                                is_sphere: Alignedu32(0),
+                                material_index: Au32(material_index as u32),
+                                is_sphere: Au32(0),
                                 vertices: [
-                                    AlignedVec3(verts[indices[0].as_u64().unwrap() as usize]),
-                                    AlignedVec3(verts[indices[1].as_u64().unwrap() as usize]),
-                                    AlignedVec3(verts[indices[2].as_u64().unwrap() as usize]),
+                                    AVec3(verts[indices[0].as_u64().unwrap() as usize]),
+                                    AVec3(verts[indices[1].as_u64().unwrap() as usize]),
+                                    AVec3(verts[indices[2].as_u64().unwrap() as usize]),
                                 ],
                                 normals: [
-                                    AlignedVec3(Vec3::ZERO),
-                                    AlignedVec3(Vec3::ZERO),
-                                    AlignedVec3(Vec3::ZERO),
+                                    AVec3(Vec3::ZERO),
+                                    AVec3(Vec3::ZERO),
+                                    AVec3(Vec3::ZERO),
                                 ],
                                 uvs: Default::default(),
                             };
@@ -257,22 +257,22 @@ impl Scene {
                                     }
 
                                     let triangle = Triangle {
-                                        material_index: Alignedu32(material_index as u32),
-                                        is_sphere: Alignedu32(0),
+                                        material_index: Au32(material_index as u32),
+                                        is_sphere: Au32(0),
                                         vertices: [
-                                            AlignedVec3(v0),
-                                            AlignedVec3(v1),
-                                            AlignedVec3(v2),
+                                            AVec3(v0),
+                                            AVec3(v1),
+                                            AVec3(v2),
                                         ],
                                         normals: [
-                                            AlignedVec3(n0),
-                                            AlignedVec3(n1),
-                                            AlignedVec3(n2),
+                                            AVec3(n0),
+                                            AVec3(n1),
+                                            AVec3(n2),
                                         ],
                                         uvs: [
-                                            AlignedVec2(uv0.into()),
-                                            AlignedVec2(uv1.into()),
-                                            AlignedVec2(uv2.into()),
+                                            AVec2(uv0.into()),
+                                            AVec2(uv1.into()),
+                                            AVec2(uv2.into()),
                                         ],
                                     };
 
@@ -302,15 +302,15 @@ impl Scene {
             look_at[2].as_f64().unwrap() as f32,
         );
         let mut ubo = CameraBufferObject {
-            focal_length: Alignedf32(3.),
-            focus_distance: Alignedf32(1.),
-            aperture_radius: Alignedf32(0.),
-            location: AlignedVec3(location),
+            focal_length: Af32(3.),
+            focus_distance: Af32(1.),
+            aperture_radius: Af32(0.),
+            location: AVec3(location),
             ..Default::default()
         };
         let resolution = UVec2::new(1920, 1080);
 
-        ubo.rotation = AlignedMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
+        ubo.rotation = AMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
 
         let ratio = resolution[0] as f32 / resolution[1] as f32;
         let (u, v) = if ratio > 1.0 {
@@ -318,8 +318,8 @@ impl Scene {
         } else {
             (1.0, 1.0 / ratio)
         };
-        ubo.view_port_uv = AlignedVec2(Vec2::new(u, v));
-        ubo.resolution = AlignedUVec2(resolution);
+        ubo.view_port_uv = AVec2(Vec2::new(u, v));
+        ubo.resolution = AUVec2(resolution);
         scene.camera = ubo;
 
         scene
