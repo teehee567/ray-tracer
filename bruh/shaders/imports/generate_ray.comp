@@ -1,0 +1,30 @@
+
+Ray generate_ray(vec2 frag_coord) {
+    // Scale the virtual camera to make the UV plane coincide with the focus plane
+    vec2 focus_plane_uv = camera.uv * (camera.focus_distance / camera.focal_len);
+
+    // The distance between pixels in world-space
+    vec2 pixel_delta = focus_plane_uv / camera.resolution;
+    pixel_delta *= vec2(1, -1); // Y grows downwards in vulkan, so we have to invert it
+
+    vec3 viewport_origin = vec3(-focus_plane_uv.x/2, focus_plane_uv.y/2, -camera.focus_distance) + // Top left of focus plane
+                           vec3(pixel_delta/2, 0);  // Center the pixel
+
+    vec3 pixel_coords = viewport_origin + 
+                        vec3(pixel_delta * (frag_coord + pixel_offset(seed)), 0); // Jitter for anti-aliasing
+
+    vec3 aperture_offset = vec3(random_disc(seed), 0) * camera.aperture_radius;
+
+    // Vector from origin to pixel, rotated
+    vec3 ray_direction = mat3(camera.rotation) * normalize(pixel_coords - aperture_offset);
+
+    // Rotated aperture offset, shifted by camera origin 
+    vec3 ray_origin = (mat3(camera.rotation) * aperture_offset) + camera.origin.xyz;
+
+    Ray ray; 
+    ray.direction = ray_direction;
+    ray.origin = ray_origin;
+    ray.time = pgc_random(seed);
+    return ray;
+}
+
