@@ -65,6 +65,7 @@ const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[
     vk::KHR_SWAPCHAIN_EXTENSION.name,
     vk::KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION.name,
     vk::KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION.name,
+    vk::EXT_DESCRIPTOR_INDEXING_EXTENSION.name,
 ];
 /// The Vulkan SDK version that started requiring the portability subset extension for macOS.
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
@@ -89,7 +90,6 @@ fn main() -> Result<()> {
     print_size!(Material);
     print_size!(SceneComponents);
     print_size!(Sphere);
-    print_size!(Vertex);
 
     // let scene = Scene::from_yaml("./fancy.yaml")?;
     // let scene = Scene::from_gltf("./weekly_voxel_-_furniture/scene.gltf")?;
@@ -395,11 +395,11 @@ impl App {
         // MVP
 
         let mut ubo = self.data.scene.get_camera_controls();
-        ubo.resolution = AlignedUVec2(UVec2::new(
+        ubo.resolution = AUVec2(UVec2::new(
             self.data.swapchain_extent.width,
             self.data.swapchain_extent.height,
         ));
-        ubo.time = Alignedu32(self.frame as u32);
+        ubo.time = Au32(self.frame as u32);
 
         let memory = self.device.map_memory(
             self.data.uniform_buffer_memory,

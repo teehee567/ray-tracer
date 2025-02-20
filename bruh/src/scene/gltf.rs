@@ -3,7 +3,7 @@ use serde_yaml::Value;
 use vulkanalia::vk;
 
 use crate::{
-    AlignedMat4, AlignedUVec2, AlignedVec2, AlignedVec3, Alignedf32, Alignedu32,
+    AMat4, AUVec2, AVec2, AVec3, Af32, Au32,
     CameraBufferObject, Material, SceneComponents, Triangle,
 };
 
@@ -37,15 +37,15 @@ impl TextureFormat {
 
 fn camera_lake() -> CameraBufferObject {
     let mut ubo = CameraBufferObject {
-        focal_length: Alignedf32(1.),
-        focus_distance: Alignedf32(55.),
-        aperture_radius: Alignedf32(0.),
-        location: AlignedVec3::new(35.0, 12.0, 35.0),
+        focal_length: Af32(1.),
+        focus_distance: Af32(55.),
+        aperture_radius: Af32(0.),
+        location: AVec3(Vec3::new(35.0, 12.0, 35.0)),
         ..Default::default()
     };
     let resolution = UVec2::new(1920, 1080);
     let look_at = Vec3::new(0.0, 0.0, 0.0);
-    ubo.rotation = AlignedMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
+    ubo.rotation = AMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
 
     let ratio = resolution[0] as f32 / resolution[1] as f32;
     let (u, v) = if ratio > 1.0 {
@@ -53,22 +53,22 @@ fn camera_lake() -> CameraBufferObject {
     } else {
         (1.0, 1.0 / ratio)
     };
-    ubo.view_port_uv = AlignedVec2(Vec2::new(u, v));
-    ubo.resolution = AlignedUVec2(resolution);
+    ubo.view_port_uv = AVec2(Vec2::new(u, v));
+    ubo.resolution = AUVec2(resolution);
     ubo
 }
 
 fn camera_car() -> CameraBufferObject {
     let mut ubo = CameraBufferObject {
-        focal_length: Alignedf32(2.),
-        focus_distance: Alignedf32(55.),
-        aperture_radius: Alignedf32(0.),
-        location: AlignedVec3::new(3.0, 1.0, 5.),
+        focal_length: Af32(2.),
+        focus_distance: Af32(55.),
+        aperture_radius: Af32(0.),
+        location: AVec3(Vec3::new(3.0, 1.0, 5.)),
         ..Default::default()
     };
     let resolution = UVec2::new(1920, 1080);
     let look_at = Vec3::new(0.0, 0.0, 0.0);
-    ubo.rotation = AlignedMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
+    ubo.rotation = AMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
 
     let ratio = resolution[0] as f32 / resolution[1] as f32;
     let (u, v) = if ratio > 1.0 {
@@ -76,22 +76,22 @@ fn camera_car() -> CameraBufferObject {
     } else {
         (1.0, 1.0 / ratio)
     };
-    ubo.view_port_uv = AlignedVec2(Vec2::new(u, v));
-    ubo.resolution = AlignedUVec2(resolution);
+    ubo.view_port_uv = AVec2(Vec2::new(u, v));
+    ubo.resolution = AUVec2(resolution);
     ubo
 }
 
 fn camera_sponza() -> CameraBufferObject {
     let mut ubo = CameraBufferObject {
-        focal_length: Alignedf32(1.),
-        focus_distance: Alignedf32(55.),
-        aperture_radius: Alignedf32(0.),
-        location: AlignedVec3::new(3.0, 2.0, 0.0),
+        focal_length: Af32(1.),
+        focus_distance: Af32(55.),
+        aperture_radius: Af32(0.),
+        location: AVec3(Vec3::new(3.0, 2.0, 0.0)),
         ..Default::default()
     };
     let resolution = UVec2::new(1920, 1080);
     let look_at = Vec3::new(-4.0, 2.0, 0.0);
-    ubo.rotation = AlignedMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
+    ubo.rotation = AMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
 
     let ratio = resolution[0] as f32 / resolution[1] as f32;
     let (u, v) = if ratio > 1.0 {
@@ -99,24 +99,24 @@ fn camera_sponza() -> CameraBufferObject {
     } else {
         (1.0, 1.0 / ratio)
     };
-    ubo.view_port_uv = AlignedVec2(Vec2::new(u, v));
-    ubo.resolution = AlignedUVec2(resolution);
+    ubo.view_port_uv = AVec2(Vec2::new(u, v));
+    ubo.resolution = AUVec2(resolution);
     ubo
 }
 
 fn camera_mclaren() -> CameraBufferObject {
     let mut ubo = CameraBufferObject {
-        focal_length: Alignedf32(70.),
-        focus_distance: Alignedf32(55.),
-        aperture_radius: Alignedf32(0.),
-        location: AlignedVec3::new(1.15, 0.1, 2.),
+        focal_length: Af32(70.),
+        focus_distance: Af32(55.),
+        aperture_radius: Af32(0.),
+        location: AVec3(Vec3::new(1.15, 0.1, 2.)),
         ..Default::default()
     };
     let resolution = UVec2::new(1920, 1080);
     let rotation = Vec3::new(-2.5, 210., -0.);
     
     let look_at = Vec3::new(0.0, 0.0, 0.0);
-    ubo.rotation = AlignedMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
+    ubo.rotation = AMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
 
     let ratio = resolution[0] as f32 / resolution[1] as f32;
     let (u, v) = if ratio > 1.0 {
@@ -124,22 +124,22 @@ fn camera_mclaren() -> CameraBufferObject {
     } else {
         (1.0, 1.0 / ratio)
     };
-    ubo.view_port_uv = AlignedVec2(Vec2::new(u, v));
-    ubo.resolution = AlignedUVec2(resolution);
+    ubo.view_port_uv = AVec2(Vec2::new(u, v));
+    ubo.resolution = AUVec2(resolution);
     ubo
 }
 
 fn camera_interior() -> CameraBufferObject {
     let mut ubo = CameraBufferObject {
-        focal_length: Alignedf32(1.),
-        focus_distance: Alignedf32(55.),
-        aperture_radius: Alignedf32(0.),
-        location: AlignedVec3::new(0.0, 0.0, 5.0),
+        focal_length: Af32(1.),
+        focus_distance: Af32(55.),
+        aperture_radius: Af32(0.),
+        location: AVec3(Vec3::new(0.0, 0.0, 5.0)),
         ..Default::default()
     };
     let resolution = UVec2::new(1920, 1080);
     let look_at = Vec3::new(0.0, 0.0, 0.0);
-    ubo.rotation = AlignedMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
+    ubo.rotation = AMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
 
     let ratio = resolution[0] as f32 / resolution[1] as f32;
     let (u, v) = if ratio > 1.0 {
@@ -147,8 +147,8 @@ fn camera_interior() -> CameraBufferObject {
     } else {
         (1.0, 1.0 / ratio)
     };
-    ubo.view_port_uv = AlignedVec2(Vec2::new(u, v));
-    ubo.resolution = AlignedUVec2(resolution);
+    ubo.view_port_uv = AVec2(Vec2::new(u, v));
+    ubo.resolution = AUVec2(resolution);
     ubo
 }
 
@@ -283,11 +283,11 @@ impl Scene {
                     for chunk in indices.chunks(3) {
                         if chunk.len() == 3 {
                             let mut triangle = Triangle {
-                                material_index: Alignedu32(material_index),
-                                is_sphere: Alignedu32(0),
-                                vertices: [AlignedVec3(Vec3::ZERO); 3],
-                                normals: [AlignedVec3(Vec3::ZERO); 3],
-                                uvs: [AlignedVec2(Vec2::ZERO); 3], // Initialize UVs
+                                material_index: Au32(material_index),
+                                is_sphere: Au32(0),
+                                vertices: [AVec3(Vec3::ZERO); 3],
+                                normals: [AVec3(Vec3::ZERO); 3],
+                                uvs: [AVec2(Vec2::ZERO); 3], // Initialize UVs
                             };
 
                             for (i, &index) in chunk.iter().enumerate() {
@@ -299,9 +299,9 @@ impl Scene {
                                 let transformed_normal =
                                     transform.transform_vector3(Vec3::from(normal)).normalize();
 
-                                triangle.vertices[i] = AlignedVec3(transformed_pos);
-                                triangle.normals[i] = AlignedVec3(transformed_normal);
-                                triangle.uvs[i] = AlignedVec2(Vec2::new(uv[0], uv[1]));
+                                triangle.vertices[i] = AVec3(transformed_pos);
+                                triangle.normals[i] = AVec3(transformed_normal);
+                                triangle.uvs[i] = AVec2(Vec2::new(uv[0], uv[1]));
                             }
 
                             self.components.triangles.push(triangle);
@@ -342,11 +342,11 @@ impl Scene {
             .unwrap_or(u32::MAX);
 
         let base_color = pbr.base_color_factor();
-        let metallic = Alignedf32(pbr.metallic_factor());
-        let roughness = Alignedf32(pbr.roughness_factor());
+        let metallic = Af32(pbr.metallic_factor());
+        let roughness = Af32(pbr.roughness_factor());
         let emissive = material.emissive_factor();
-        let ior = Alignedf32(material.ior().unwrap_or(1.5));
-        let transmission = Alignedf32(
+        let ior = Af32(material.ior().unwrap_or(1.5));
+        let transmission = Af32(
             material
                 .transmission()
                 .and_then(|ext| Some(ext.transmission_factor()))
@@ -405,7 +405,7 @@ impl Scene {
             .map(|i| i as u32)
             .unwrap_or(u32::MAX);
 
-        let emission = AlignedVec3(if emissive_strength != 0.0 {
+        let emission = AVec3(if emissive_strength != 0.0 {
             Vec3::new(
                 emissive[0] * emissive_strength,
                 emissive[1] * emissive_strength,
@@ -416,22 +416,22 @@ impl Scene {
         });
 
         let materiala = Material {
-            base_colour: AlignedVec3(Vec4::from(base_color).truncate()),
+            base_colour: AVec3(Vec4::from(base_color).truncate()),
             emission,
             metallic,
             roughness,
             ior,
             spec_trans: transmission,
 
-            clearcoat: Alignedf32(clearcoat_factor),
-            clearcoat_roughness: Alignedf32(clearcoat_roughness),
+            clearcoat: Af32(clearcoat_factor),
+            clearcoat_roughness: Af32(clearcoat_roughness),
 
-            shade_smooth: Alignedu32(0),
+            shade_smooth: Au32(0),
 
-            base_color_tex: Alignedu32(base_color_tex),
-            metallic_roughness_tex: Alignedu32(metallic_roughness_tex),
-            normal_tex: Alignedu32(normal_tex),
-            emission_tex: Alignedu32(emission_tex),
+            base_color_tex: Au32(base_color_tex),
+            metallic_roughness_tex: Au32(metallic_roughness_tex),
+            normal_tex: Au32(normal_tex),
+            emission_tex: Au32(emission_tex),
             ..Default::default()
         };
         // dbg!(&materiala);
@@ -445,14 +445,14 @@ impl Scene {
                 let transform = Mat4::from_cols_array_2d(&node.transform().matrix());
                 let position = transform.col(3).truncate();
 
-                self.components.camera.focal_length = Alignedf32(persp.yfov().to_degrees());
-                self.components.camera.focus_distance = Alignedf32(persp.znear());
+                self.components.camera.focal_length = Af32(persp.yfov().to_degrees());
+                self.components.camera.focus_distance = Af32(persp.znear());
                 self.components.camera.location =
-                    AlignedVec3::new(position.x, position.y, position.z);
+                    AVec3(Vec3::new(position.x, position.y, position.z));
 
                 // Extract rotation from transform
                 self.components.camera.rotation =
-                    AlignedMat4(Mat4::from_cols_array_2d(&node.transform().matrix()));
+                    AMat4(Mat4::from_cols_array_2d(&node.transform().matrix()));
             }
             gltf::camera::Projection::Orthographic(_) => {
                 unimplemented!("ORTHOGAPHIC CAMERA NOT IMPLEMENTED")

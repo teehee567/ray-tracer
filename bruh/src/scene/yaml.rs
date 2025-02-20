@@ -1,6 +1,6 @@
 use std::fs::File;
 
-use crate::{AlignedMat4, AlignedUVec2, AlignedVec2, AlignedVec3, Alignedf32, Alignedu32, CameraBufferObject, Material, SceneComponents, Triangle};
+use crate::{AMat4, AUVec2, AVec2, AVec3, Af32, Au32, CameraBufferObject, Material, SceneComponents, Triangle};
 
 use super::{Scene, CONFIG_VERSION};
 
@@ -42,15 +42,15 @@ impl Scene {
         let look_at: [f32; 3] = serde_yaml::from_value(camera.get("look_at").unwrap().clone())?;
 
         let mut ubo = CameraBufferObject {
-            resolution: AlignedUVec2(UVec2::from(resolution)),
-            focal_length: Alignedf32(focal_length),
-            focus_distance: Alignedf32(focus_distance),
-            aperture_radius: Alignedf32(aperture_radius),
-            location: AlignedVec3(Vec3::from(location)),
+            resolution: AUVec2(UVec2::from(resolution)),
+            focal_length: Af32(focal_length),
+            focus_distance: Af32(focus_distance),
+            aperture_radius: Af32(aperture_radius),
+            location: AVec3(Vec3::from(location)),
             ..Default::default()
         };
 
-        ubo.rotation = AlignedMat4(Mat4::look_at_rh(ubo.location.0, Vec3::from(look_at), Vec3::Y).transpose());
+        ubo.rotation = AMat4(Mat4::look_at_rh(ubo.location.0, Vec3::from(look_at), Vec3::Y).transpose());
 
         let ratio = resolution[0] as f32 / resolution[1] as f32;
         let (u, v) = if ratio > 1.0 {
@@ -58,7 +58,7 @@ impl Scene {
         } else {
             (1.0, 1.0 / ratio)
         };
-        ubo.view_port_uv = AlignedVec2(Vec2::new(u, v));
+        ubo.view_port_uv = AVec2(Vec2::new(u, v));
 
         self.components.camera = ubo;
         Ok(())
@@ -117,24 +117,24 @@ impl Scene {
         // Append triangles.
         for i in 0..triangle_amt {
             let mut tri = Triangle {
-                material_index: Alignedu32(material_index),
-                is_sphere: Alignedu32(0),
+                material_index: Au32(material_index),
+                is_sphere: Au32(0),
                 vertices: [
-                    AlignedVec3::default(),
-                    AlignedVec3::default(),
-                    AlignedVec3::default(),
+                    AVec3::default(),
+                    AVec3::default(),
+                    AVec3::default(),
                 ],
                 normals: [
-                    AlignedVec3::default(),
-                    AlignedVec3::default(),
-                    AlignedVec3::default(),
+                    AVec3::default(),
+                    AVec3::default(),
+                    AVec3::default(),
                 ],
                 ..Default::default()
             };
             for j in 0..3 {
                 let off = i * 9 + j * 3;
-                tri.vertices[j] = AlignedVec3::new(verts[off], verts[off + 1], verts[off + 2]);
-                tri.normals[j] = AlignedVec3::new(norms[off], norms[off + 1], norms[off + 2]);
+                tri.vertices[j] = AVec3(Vec3::new(verts[off], verts[off + 1], verts[off + 2]));
+                tri.normals[j] = AVec3(Vec3::new(norms[off], norms[off + 1], norms[off + 2]));
             }
             self.components.triangles.push(tri);
         }
@@ -167,23 +167,23 @@ impl Scene {
             .and_then(|v| v.as_f64())
             .ok_or_else(|| anyhow!("Missing or invalid radius field"))? as f32;
         let mut tri = Triangle {
-            material_index: Alignedu32(material_index),
-            is_sphere: Alignedu32(1),
+            material_index: Au32(material_index),
+            is_sphere: Au32(1),
             vertices: [
-                AlignedVec3::default(),
-                AlignedVec3::default(),
-                AlignedVec3::default(),
+                AVec3::default(),
+                AVec3::default(),
+                AVec3::default(),
             ],
             normals: [
-                AlignedVec3::default(),
-                AlignedVec3::default(),
-                AlignedVec3::default(),
+                AVec3::default(),
+                AVec3::default(),
+                AVec3::default(),
             ],
             ..Default::default()
         };
-        tri.vertices[0] = AlignedVec3::new(center[0], center[1], center[2]);
+        tri.vertices[0] = AVec3(Vec3::new(center[0], center[1], center[2]));
         // The sphere is represented as a triangle that “stores” the radius.
-        tri.vertices[1] = AlignedVec3::new(radius, 0.0, 0.0);
+        tri.vertices[1] = AVec3(Vec3::new(radius, 0.0, 0.0));
         self.components.triangles.push(tri);
         Ok(())
     }
@@ -225,13 +225,13 @@ impl Scene {
             .unwrap_or(false);
 
         Ok(Material {
-            base_colour: base_colour.into(),
-            emission: emission.into(),
-            metallic: Alignedf32(metallic),
-            roughness: Alignedf32(roughness),
-            ior: Alignedf32(ior),
-            spec_trans: Alignedf32(transmission),
-            shade_smooth: Alignedu32(if shade_smooth { 1 } else { 0 }),
+            base_colour: AVec3(base_colour.into()),
+            emission: AVec3(emission.into()),
+            metallic: Af32(metallic),
+            roughness: Af32(roughness),
+            ior: Af32(ior),
+            spec_trans: Af32(transmission),
+            shade_smooth: Au32(if shade_smooth { 1 } else { 0 }),
             ..Default::default()
         })
     }
