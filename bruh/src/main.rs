@@ -14,7 +14,7 @@ use std::time::Instant;
 
 use anyhow::{anyhow, Result};
 use glam::UVec2;
-use image::{ImageBuffer, Rgba};
+use image::ImageBuffer;
 use log::info;
 use scene::Scene;
 use vulkan::accumulate_image::{create_image, transition_image_layout};

@@ -2,7 +2,7 @@ use std::fs::File;
 
 use crate::{AMat4, AUVec2, AVec2, AVec3, Af32, Au32, CameraBufferObject, Material, SceneComponents, Triangle};
 
-use super::{Scene, CONFIG_VERSION};
+use super::Scene;
 
 use anyhow::{anyhow, bail, Result};
 use glam::{Mat4, UVec2, Vec2, Vec3};
