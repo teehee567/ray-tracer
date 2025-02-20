@@ -8,7 +8,7 @@ use super::{AVec2, AVec3, Au32};
 
 #[repr(C)]
 #[repr(align(16))]
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct Triangle {
     pub material_index: Au32,
     pub is_sphere: Au32,

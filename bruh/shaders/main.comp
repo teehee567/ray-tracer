@@ -1,7 +1,7 @@
 #version 460
 
 #define SAMPLES 8
-#define BOUNCES 12
+#define BOUNCES 24
 #define EPSILON 0.0001
 #define MAX_BVH_DEPTH 64
 #define AMBIENT_COLOR vec3(0.1, 0.1, 0.1)
@@ -19,7 +19,6 @@
 #include "imports/ray.comp"
 #include "imports/global.comp"
 #include "imports/random.comp"
-#include "imports/disney.comp"
 
 /* AABB node of the BVH tree */
 struct BvhNode {
@@ -68,11 +67,12 @@ layout(set = 0, binding = 6) uniform sampler2D textures[];
 
 #include "imports/generate_ray.comp"
 #include "imports/intersects.comp"
+#include "imports/disney.comp"
 
 vec3 background_color(Ray ray) {
-    //float blend = 0.5 * ray.direction.y + 0.5;
-    //return mix(vec3(0.6, 0.8, 1.0), vec3(0.2, 0.4, 1.0), blend);
-    return vec3(0.6);
+    float blend = 0.5 * ray.direction.y + 0.5;
+    return mix(vec3(0.6, 0.8, 1.0), vec3(0.2, 0.4, 1.0), blend);
+    //return vec3(0.6);
 }
 
 vec3 calculate_surface_normal(HitRecord hit, Triangle triangle) {
@@ -110,7 +110,7 @@ vec3 ray_color(Ray ray, inout uint mesh_tests) {
     numOfLights = NUM_LIGHTS;
     
     for(int bounce = 0; bounce < BOUNCES; bounce++) {
-        HitRecord hit = hit_meshes(ray, mesh_tests);
+        HitRecord hit = hit_meshes(ray, mesh_tests, false);
         
         if(!hit.did_hit) {
             radiance += getBackground(ray) * throughput;
@@ -145,16 +145,15 @@ vec3 ray_color(Ray ray, inout uint mesh_tests) {
 
         //vec3 surface_normal = calculate_surface_normal(hit, hit.triangle);
 
-        if (any(greaterThan(hit.material.emission.xyz, vec3(EPSILON)))) {
-            radiance += EmitterSample(ray, bounce, lightSampleRec, bsdfSampleRec) * throughput;
-            break;
-        }
+        //if (any(greaterThan(hit.material.emission.xyz, vec3(EPSILON)))) {
+        //    radiance += EmitterSample(ray, bounce, lightSampleRec, bsdfSampleRec) * throughput;
+        //}
 
         if (dot(hit.normal, hit.ffnormal) < 0.0 && hit.material.spec_trans > 0.0) {
             throughput *= exp(-log(hit.material.base_color.rgb) * hit.hit_dist);
         }
 
-        radiance += DirectLight(ray, hit) * throughput;
+        radiance += DirectLight(ray, hit, mesh_tests) * throughput;
 
         bsdfSampleRec.f = DisneySample(hit, -ray.direction, hit.ffnormal, bsdfSampleRec.L, bsdfSampleRec.pdf);
 
@@ -165,8 +164,9 @@ vec3 ray_color(Ray ray, inout uint mesh_tests) {
         }
         
         // Russian Roulette
+        
         if(bounce > 2) {
-            float p = max(0.05, max(throughput.r, max(throughput.g, throughput.b)));
+            float p = max(0.05, min(0.95, max(throughput.r, max(throughput.g, throughput.b))));
             if(pgc_random(seed) > p) {
                 break;
             }
@@ -179,60 +179,35 @@ vec3 ray_color(Ray ray, inout uint mesh_tests) {
     return radiance;
 }
 
-// ACES tone mapping curve fit
-// Source: https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
-vec3 aces_film(vec3 x) {
-    float a = 2.51f;
-    float b = 0.03f;
-    float c = 2.43f;
-    float d = 0.59f;
-    float e = 0.14f;
-    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
-}
-
-// Alternative tone mapping operator (Reinhard)
-vec3 reinhard(vec3 x) {
-    return x / (1.0 + x);
-}
-vec3 rgb_to_hsv(vec3 rgb) {
-    vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
-    vec4 p = mix(vec4(rgb.bg, K.wz), vec4(rgb.gb, K.xy), step(rgb.b, rgb.g));
-    vec4 q = mix(vec4(p.xyw, rgb.r), vec4(rgb.r, p.yzx), step(p.x, rgb.r));
+vec3 filmic_tone_mapping(vec3 color) {
+    // Increased pre-exposure for more brightness
+    color *= 1.5; // Changed from 0.6 to 1.5
     
-    float d = q.x - min(q.w, q.y);
-    float e = 1.0e-10;
-    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
-}
-vec3 hsv_to_rgb(vec3 hsv) {
-    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
-    vec3 p = abs(fract(hsv.xxx + K.xyz) * 6.0 - K.www);
-    return hsv.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), hsv.y);
-}
-
-// Adjusts saturation using HSV
-vec3 adjust_saturation(vec3 color, float saturation) {
-    vec3 hsv = rgb_to_hsv(color);
-    hsv.y *= saturation;  // Multiply saturation
-    return hsv_to_rgb(hsv);
-}
-
-// Extended Reinhard tone mapping with white point
-vec3 reinhard_extended(vec3 x, float white_point) {
-    vec3 numerator = x * (1.0 + (x / (white_point * white_point)));
-    return numerator / (1.0 + x);
+    // Adjusted filmic curve parameters
+    const float A = 0.15;  // Reduced from 0.22 to soften shoulder
+    const float B = 0.50;  // Increased from 0.30 for more contrast
+    const float C = 0.10;
+    const float D = 0.20;
+    const float E = 0.02;  // Slightly increased toe brightness
+    const float F = 0.30;
+    
+    vec3 result = ((color * (A * color + C * B) + D * E) / (color * (A * color + B) + D * F)) - E/F;
+    
+    // Increased white point for more dynamic range
+    const float white = 11.2;
+    result /= ((white * (A * white + C * B) + D * E) / (white * (A * white + B) + D * F)) - E/F;
+    
+    // Increased saturation
+    const float saturation = 1.7; // Increased from 1.4 for more vibrant colors
+    vec3 luminance = vec3(dot(result, vec3(0.2126, 0.7152, 0.0722)));
+    result = mix(luminance, result, saturation);
+    
+    // Adjusted gamma for more punch
+    return pow(max(result, 0.0), vec3(1.0 / 2.4)); // Changed from 2.2 to 2.4 for slightly more contrast
 }
 
 vec4 gamma_correction(vec4 color) {
-    // Apply tone mapping first
-    vec3 tone_mapped = aces_film(color.rgb);
-
-    float saturation = 1.5;  // Adjust this value (1.0 is normal, >1.0 increases saturation)
-    tone_mapped = adjust_saturation(tone_mapped, saturation);
-    
-    // Then apply gamma correction
-    vec3 gamma_corrected = pow(tone_mapped, vec3(1.0/2.2));
-    
-    return vec4(gamma_corrected, color.a);
+    return vec4(filmic_tone_mapping(color.rgb), color.a);
 }
 
 void main() {

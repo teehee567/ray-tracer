@@ -161,7 +161,7 @@ impl Scene {
             root: Value::default(),
         };
 
-        scene.components.camera = camera_interior();
+        scene.components.camera = camera_sponza();
 
         scene.load_textures(&images)?;
 

@@ -23,7 +23,7 @@ pub unsafe fn create_image(instance: &Instance, device: &Device, data: &mut AppD
         .samples(vk::SampleCountFlags::_1)
         .tiling(vk::ImageTiling::OPTIMAL)
         .sharing_mode(vk::SharingMode::EXCLUSIVE)
-        .usage(vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::STORAGE)
+        .usage(vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::TRANSFER_SRC)
         .initial_layout(vk::ImageLayout::UNDEFINED);
 
     let image = device.create_image(&image_info.build(), None)?;

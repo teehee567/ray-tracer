@@ -8,7 +8,7 @@ use super::{AMat4, AUVec2, AVec2, AVec3, Af32, Au32};
 
 #[repr(C)]
 #[repr(align(64))]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct CameraBufferObject {
     pub resolution: AUVec2,
     pub view_port_uv: AVec2,
@@ -144,11 +144,7 @@ impl<'de> Deserialize<'de> for CameraBufferObject {
                 let focus_distance = focus_distance.unwrap_or(1.0);
                 let aperture_radius = aperture_radius.unwrap_or(0.0);
 
-                // Calculate rotation from look_at
-                let forward = (look_at - location).normalize();
-                let right = Vec3::Y.cross(forward).normalize();
-                let up = forward.cross(right);
-                let rotation = Mat4::look_at_rh(location, look_at, up);
+                let rotation = Mat4::look_at_rh(location, look_at, Vec3::Y).transpose();
 
                 // Calculate view_port_uv
                 let ratio = resolution.x as f32 / resolution.y as f32;

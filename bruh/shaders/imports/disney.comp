@@ -540,7 +540,7 @@ vec3 DisneyEval(HitRecord rec, vec3 V, vec3 N, vec3 L, out float bsdfPdf)
 
 
 // DirectLight
-vec3 DirectLight(in Ray r, in HitRecord rec)
+vec3 DirectLight(in Ray r, in HitRecord rec, inout uint mesh_tests)
 {
     vec3 Li = vec3(0.0);
     vec3 surfacePos = rec.pos + rec.normal * EPS;
@@ -574,36 +574,39 @@ vec3 DirectLight(in Ray r, in HitRecord rec)
     }
 #endif
 #endif
-
+    
+    #define LDFJLSKDFJLSD
+    #ifdef LDFJLSKDFJLSD
     // Analytic Lights 
     {
-        //LightSampleRec lightSampleRec;
+        LightSampleRec lightSampleRec;
 
         //Pick a light to sample
-        //int index = int(pgc_random(seed) * float(numOfLights));
+        int index = int(pgc_random(seed) * float(numOfLights));
 
-        //Light light = lights[index];
+        Light light = lights[index];
 
-        //light = Light(light.position, light.emission, light.u, light.v, light.radius, light.area, light.type);
-        //SampleOneLight(light, surfacePos, lightSampleRec);
+        light = Light(light.position, light.emission, light.u, light.v, light.radius, light.area, light.type);
+        SampleOneLight(light, surfacePos, lightSampleRec);
 
-        //if (dot(lightSampleRec.direction, lightSampleRec.normal) < 0.0) // Required for quad lights with single sided emission
-        //{
-        //    Ray shadowRay = Ray(surfacePos, lightSampleRec.direction);
-        //    bool inShadow = getSceneHit(shadowRay, true).did_hit;//AnyHit(shadowRay, lightSampleRec.dist - EPS);
+        if (dot(lightSampleRec.direction, lightSampleRec.normal) < 0.0)
+        {
+            Ray shadowRay = Ray(surfacePos, lightSampleRec.direction, 0.);
+            bool inShadow = hit_meshes(shadowRay, mesh_tests, true).did_hit;//AnyHit(shadowRay, lightSampleRec.dist - EPS);
 
-        //    if (!inShadow) {
-        //        bsdfSampleRec.f = DisneyEval(rec, -r.direction, rec.ffnormal, lightSampleRec.direction, bsdfSampleRec.pdf);
+            if (!inShadow) {
+                bsdfSampleRec.f = DisneyEval(rec, -r.direction, rec.ffnormal, lightSampleRec.direction, bsdfSampleRec.pdf);
 
-        //        float weight = 1.0;
-        //        if(light.area > 0.0) // No MIS for distant light
-        //            weight = PowerHeuristic(lightSampleRec.pdf, bsdfSampleRec.pdf);
+                float weight = 1.0;
+                if(light.area > 0.0) // No MIS for distant light
+                    weight = PowerHeuristic(lightSampleRec.pdf, bsdfSampleRec.pdf);
 
-        //        if (bsdfSampleRec.pdf > 0.0)
-        //            Li += weight * bsdfSampleRec.f * lightSampleRec.emission / lightSampleRec.pdf;
-        //    }
-        //}
+                if (bsdfSampleRec.pdf > 0.0)
+                    Li += weight * bsdfSampleRec.f * lightSampleRec.emission / lightSampleRec.pdf;
+            }
+        }
     }
+    #endif
 
     return Li;
 }

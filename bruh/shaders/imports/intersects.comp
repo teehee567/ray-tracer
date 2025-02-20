@@ -121,7 +121,7 @@ float dist_aabb(Ray ray, BvhNode aabb) {
 }
 
 // todo: this is recursive, might be optimizable to a loop
-HitRecord hit_meshes(Ray ray, inout uint mesh_tests) {
+HitRecord hit_meshes(Ray ray, inout uint mesh_tests, in bool shadow_ray) {
     HitRecord hit;
     hit.hit_dist = 1.0 / 0.0; // infinity
     hit.did_hit = false;
@@ -148,6 +148,9 @@ HitRecord hit_meshes(Ray ray, inout uint mesh_tests) {
                     hit = current_hit;
                     hit.material = materials.get[triangle.material_idx];
                     hit.triangle = triangle;
+                }
+                if (shadow_ray == true && hit.material.spec_trans > 0.5) {
+                    hit.did_hit = false;
                 }
             }
 

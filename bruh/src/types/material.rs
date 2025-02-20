@@ -1,5 +1,5 @@
 use glam::Vec3;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::{AVec3, Af32, Au32};
 
@@ -57,3 +57,18 @@ impl Default for Material {
     }
 }
 
+fn deserialize_color<'de, D>(deserializer: D) -> Result<AVec3, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let vec: Vec<f32> = Vec::deserialize(deserializer)?;
+    let mut color = Vec3::new(vec[0], vec[1], vec[2]);
+    
+    if color.x > 1.0 || color.y > 1.0 || color.z > 1.0 {
+        color.x /= 255.0;
+        color.y /= 255.0;
+        color.z /= 255.0;
+    }
+    
+    Ok(AVec3(color))
+}
