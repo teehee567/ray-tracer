@@ -53,10 +53,10 @@ impl Scene {
         // Load materials
         if let Some(materials) = json["materials"].as_object() {
             for (name, mat_data) in materials {
+                println!("{}", name);
                 let mut material = Material::default();
 
                 // Handle reflectance (base_colour)
-                dbg!(&mat_data["reflectance"]);
                 if let Some(refl) = mat_data["reflectance"].as_str() {
                     material.base_colour = AVec3(parse_rgb(refl));
                 } 
@@ -109,6 +109,7 @@ impl Scene {
                 material.metallic = Af32(0.3);
                 // material.emission = material.base_colour;
 
+                dbg!(&material);
                 let material_index = scene.materials.len();
                 material_name_to_index.insert(name.clone(), material_index);
                 scene.materials.push(material);

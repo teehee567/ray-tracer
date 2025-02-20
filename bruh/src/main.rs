@@ -70,7 +70,7 @@ const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[
 /// The Vulkan SDK version that started requiring the portability subset extension for macOS.
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 const TILE_SIZE: u32 = 8;
-const TO_SAVE: usize = 2000;
+const TO_SAVE: usize = 20;
 macro_rules! print_size {
     ($t:ty) => {
         println!(
@@ -79,6 +79,28 @@ macro_rules! print_size {
             std::mem::size_of::<$t>()
         );
     };
+}
+
+fn assert_vecs_equal<T: std::fmt::Debug + PartialEq>(v1: &[T], v2: &[T], context: usize) {
+    if v1.len() != v2.len() {
+        panic!("Vectors have different lengths: {} vs {}", v1.len(), v2.len());
+    }
+
+    for (i, (a, b)) in v1.iter().zip(v2.iter()).enumerate() {
+        if a != b {
+            let start = i.saturating_sub(context);
+            let end = (i + context + 1).min(v1.len());
+            
+            println!("Vectors differ at index {}:", i);
+            println!("Vector 1 context: {:?}", &v1[start..end]);
+            println!("Vector 2 context: {:?}", &v2[start..end]);
+            println!("Specific difference: {:?} != {:?}", a, b);
+            dbg!(a);
+            dbg!(b);
+            
+            panic!("Vector mismatch at index {}", i);
+        }
+    }
 }
 
 #[rustfmt::skip]
@@ -99,9 +121,11 @@ fn main() -> Result<()> {
     // let scene = Scene::from_gltf("./2017-mclaren-720s-lb/source/untitled.gltf")?;
     // let scene = Scene::from_gltf("./gltf/DragonAttenuation.gltf")?;
     // let scene = Scene::from_weird("./benedikt/lego_bulldozer.json")?;
-    let scene = Scene::from_weird("./benedikt/coffe_maker.json")?;
+    // let scene = Scene::from_weird("./benedikt/coffe_maker.json")?;
     // let scene = Scene::from_gltf("./Interior/room.gltf")?;
     // let scene = Scene::from_gltf("./glTF/DamagedHelmet.gltf")?;
+    // let scene = Scene::from_new("./scenes/lego_bulldozer.yaml")?;
+    let scene = Scene::from_new("./scenes/test_scene.yaml")?;
 
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
@@ -582,9 +606,9 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
     device.begin_command_buffer(command_buffer, &begin_info)?;
 
     let barrier = vk::ImageMemoryBarrier::builder()
-        .old_layout(vk::ImageLayout::GENERAL)
+        .old_layout(vk::ImageLayout::PRESENT_SRC_KHR)
         .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-        .image(data.accumulator_image)
+        .image(data.swapchain_images[0]) // Use the first swapchain image, or the current one
         .subresource_range(vk::ImageSubresourceRange {
             aspect_mask: vk::ImageAspectFlags::COLOR,
             base_mip_level: 0,
@@ -592,12 +616,12 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
             base_array_layer: 0,
             layer_count: 1,
         })
-        .src_access_mask(vk::AccessFlags::MEMORY_WRITE)
+        .src_access_mask(vk::AccessFlags::MEMORY_READ)
         .dst_access_mask(vk::AccessFlags::TRANSFER_READ);
 
     device.cmd_pipeline_barrier(
         command_buffer,
-        vk::PipelineStageFlags::COMPUTE_SHADER,
+        vk::PipelineStageFlags::TRANSFER,
         vk::PipelineStageFlags::TRANSFER,
         vk::DependencyFlags::empty(),
         &[] as &[vk::MemoryBarrier],
@@ -620,7 +644,7 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
 
     device.cmd_copy_image_to_buffer(
         command_buffer,
-        data.accumulator_image,
+        data.swapchain_images[0], // Use the first swapchain image, or the current one
         vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
         staging_buffer,
         &[copy],
@@ -628,8 +652,8 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
 
     let barrier = vk::ImageMemoryBarrier::builder()
         .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-        .new_layout(vk::ImageLayout::GENERAL)
-        .image(data.accumulator_image)
+        .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+        .image(data.swapchain_images[0]) // Use the first swapchain image, or the current one
         .subresource_range(vk::ImageSubresourceRange {
             aspect_mask: vk::ImageAspectFlags::COLOR,
             base_mip_level: 0,
@@ -638,12 +662,12 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
             layer_count: 1,
         })
         .src_access_mask(vk::AccessFlags::TRANSFER_READ)
-        .dst_access_mask(vk::AccessFlags::MEMORY_WRITE);
+        .dst_access_mask(vk::AccessFlags::MEMORY_READ);
 
     device.cmd_pipeline_barrier(
         command_buffer,
         vk::PipelineStageFlags::TRANSFER,
-        vk::PipelineStageFlags::COMPUTE_SHADER,
+        vk::PipelineStageFlags::TRANSFER,
         vk::DependencyFlags::empty(),
         &[] as &[vk::MemoryBarrier],
         &[] as &[vk::BufferMemoryBarrier],
@@ -670,27 +694,19 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
     let buffer = std::slice::from_raw_parts(data_ptr, size as usize);
 
     // Convert RGBA to proper format and create image
-let width = data.swapchain_extent.width as u32;
+    let width = data.swapchain_extent.width as u32;
     let height = data.swapchain_extent.height as u32;
     let mut img = ImageBuffer::new(width, height);
 
     for y in 0..height {
         for x in 0..width {
             let i = ((y * width + x) * 4) as usize;
-            
-            // Read raw color values as floats (0-1)
-            let r = buffer[i + 0] as f32 / 255.0;
-            let g = buffer[i + 1] as f32 / 255.0;
-            let b = buffer[i + 2] as f32 / 255.0;
-            let a = buffer[i + 3] as f32 / 255.0;
-
-            // Apply gamma correction (same as in shader)
-            let r = (r.sqrt() * 255.0) as u8;
-            let g = (g.sqrt() * 255.0) as u8;
-            let b = (b.sqrt() * 255.0) as u8;
-            let a = (a * 255.0) as u8;
-
-            let pixel = image::Rgba([r, g, b, a]);
+            let pixel = image::Rgba([
+                buffer[i],
+                buffer[i + 1],
+                buffer[i + 2],
+                buffer[i + 3],
+            ]);
             img.put_pixel(x, y, pixel);
         }
     }
@@ -703,6 +719,5 @@ let width = data.swapchain_extent.width as u32;
     device.free_memory(staging_memory, None);
 
     img.save(format!("frame_{}.png", frame))?;
-
     Ok(())
 }
