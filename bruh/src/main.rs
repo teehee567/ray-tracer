@@ -716,10 +716,10 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
         for x in 0..width {
             let i = ((y * width + x) * 4) as usize;
             let pixel = image::Rgba([
-                buffer[i],
-                buffer[i + 1],
-                buffer[i + 2],
-                buffer[i + 3],
+                buffer[i + 2], // Blue channel becomes Red
+                buffer[i + 1], // Green stays the same
+                buffer[i],     // Red channel becomes Blue
+                buffer[i + 3], // Alpha stays the same
             ]);
             img.put_pixel(x, y, pixel);
         }
@@ -731,6 +731,8 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
     device.free_command_buffers(data.command_pool, &[command_buffer]);
     device.destroy_buffer(staging_buffer, None);
     device.free_memory(staging_memory, None);
+
+    println!("Saved Buffer");
 
     img.save(format!("frame_{}.png", frame))?;
     Ok(())
