@@ -725,6 +725,45 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
         }
     }
 
+    let mut input_img = vec![0.0f32; (3 * width * height) as usize];
+    for y in 0..height {
+        for x in 0..width {
+            let pixel = img.get_pixel(x, y);
+            for c in 0..3 {
+                input_img[3 * ((y * width + x) as usize) + c] = pixel[c] as f32 / 255.0;
+            }
+        }
+    }
+
+    // Apply denoising
+    let mut filter_output = vec![0.0f32; input_img.len()];
+    let odin_device = oidn::Device::new();
+    let mut filter = oidn::RayTracing::new(&odin_device);
+    
+    filter
+        .srgb(true)
+        .image_dimensions(width as usize, height as usize);
+    
+    filter
+        .filter(&input_img[..], &mut filter_output[..])
+        .map_err(|e| anyhow!("Denoising error: {:?}", e))?;
+
+    if let Err(e) = odin_device.get_error() {
+        println!("Warning: Denoising error: {}", e.1);
+    }
+
+    // Convert back to u8 RGB image
+    let mut denoised_img = ImageBuffer::new(width, height);
+    for y in 0..height {
+        for x in 0..width {
+            let idx = 3 * ((y * width + x) as usize);
+            let r = (filter_output[idx].clamp(0.0, 1.0) * 255.0) as u8;
+            let g = (filter_output[idx + 1].clamp(0.0, 1.0) * 255.0) as u8;
+            let b = (filter_output[idx + 2].clamp(0.0, 1.0) * 255.0) as u8;
+            denoised_img.put_pixel(x, y, image::Rgb([r, g, b]));
+        }
+    }
+
     device.unmap_memory(staging_memory);
 
     // Cleanup
@@ -734,6 +773,6 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
 
     println!("Saved Buffer");
 
-    img.save(format!("frame_{}.png", frame))?;
+    denoised_img.save(format!("frame_{}.png", frame))?;
     Ok(())
 }
