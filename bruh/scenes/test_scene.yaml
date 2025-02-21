@@ -84,7 +84,7 @@ materials:
     base_colour: [25, 51, 247]
     specular_tint: 0.
     roughness: 0.
-    metallic: 0.
+    metallic: 1.
     subsurface: 0.0
     anisotropic: 0.0
     sheen: 0.0
