@@ -362,12 +362,12 @@ vec3 EvalClearcoat(Material material, vec3 V, vec3 L, vec3 H, out float pdf)
     float FH = DielectricFresnel(dot(V, H), 1.0 / 1.5);
     float F = mix(0.04, 1.0, FH);
     float D = GTR1(H.z, material.clearcoat_roughness);
-    float G = SmithG(L.z, 0.25)
-        * SmithG(V.z, 0.25);
+    float G = SmithG(L.z, material.clearcoat_roughness) * 
+          SmithG(V.z, material.clearcoat_roughness);
     float jacobian = 1.0 / (4.0 * dot(V, H));
 
     pdf = D * H.z * jacobian;
-    return vec3(0.25) * material.clearcoat * F * D * G / (4.0 * L.z * V.z);
+    return vec3(1) * material.clearcoat * F * D * G / (4.0 * L.z * V.z);
 }
 
 void GetSpecColor(Material material, float eta, out vec3 specCol, out vec3 sheenCol)
@@ -575,8 +575,6 @@ vec3 DirectLight(in Ray r, in HitRecord rec, inout uint mesh_tests)
 #endif
 #endif
     
-    #define LDFJLSKDFJLSD
-    #ifdef LDFJLSKDFJLSD
     // Analytic Lights 
     {
         LightSampleRec lightSampleRec;
@@ -606,7 +604,6 @@ vec3 DirectLight(in Ray r, in HitRecord rec, inout uint mesh_tests)
             }
         }
     }
-    #endif
 
     return Li;
 }

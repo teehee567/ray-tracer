@@ -69,7 +69,7 @@ const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[
 /// The Vulkan SDK version that started requiring the portability subset extension for macOS.
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 const TILE_SIZE: u32 = 8;
-const TO_SAVE: usize = 20;
+const TO_SAVE: usize = 100;
 macro_rules! print_size {
     ($t:ty) => {
         println!(
@@ -124,7 +124,8 @@ fn main() -> Result<()> {
     // let scene = Scene::from_gltf("./Interior/room.gltf")?;
     // let scene = Scene::from_gltf("./glTF/DamagedHelmet.gltf")?;
     // let scene = Scene::from_new("./scenes/lego_bulldozer.yaml")?;
-    let scene = Scene::from_new("./scenes/test_scene.yaml")?;
+    // let scene = Scene::from_new("./scenes/test_scene.yaml")?;
+    let scene = Scene::from_new("./scenes/coffee_machine.yaml")?;
 
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
@@ -346,7 +347,7 @@ impl App {
     /// Renders a frame for our Vulkan app.
     unsafe fn render(&mut self, window: &Window) -> Result<()> {
         self.fps_counter.update();
-        self.fps_counter.print();
+        // self.fps_counter.print();
 
         self.device
             .wait_for_fences(&[self.data.compute_in_flight_fences], true, u64::MAX)?;
@@ -773,6 +774,6 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
 
     println!("Saved Buffer");
 
-    denoised_img.save(format!("frame_{}.png", frame))?;
+    denoised_img.save("images/materials/metallic_00.png")?;
     Ok(())
 }

@@ -150,6 +150,67 @@ impl Scene {
                         }
                         Err(e) => eprintln!("Failed to load OBJ file {}: {:?}", file_path, e),
                     }
+                } else if surface["type"].as_str() == Some("mesh") {
+                    let material_name = surface["material"].as_str().expect("Material not specified");
+                    let material_index = material_name_to_index[material_name];
+
+                    // Load vertices
+                    let vertices: Vec<Vec3> = surface["vertices"]
+                        .as_sequence()
+                        .expect("Vertices not found or invalid")
+                        .iter()
+                        .map(|v| {
+                            let coords = v.as_sequence().expect("Invalid vertex format");
+                            Vec3::new(
+                                coords[0].as_f64().unwrap() as f32,
+                                coords[1].as_f64().unwrap() as f32,
+                                coords[2].as_f64().unwrap() as f32,
+                            )
+                        })
+                        .collect();
+
+                    // Load triangle indices
+                    let triangles = surface["triangles"]
+                        .as_sequence()
+                        .expect("Triangles not found or invalid");
+
+                    // Create triangles from indices
+                    for triangle_indices in triangles {
+                        let indices = triangle_indices.as_sequence().expect("Invalid triangle format");
+                        let i0 = indices[0].as_u64().unwrap() as usize;
+                        let i1 = indices[1].as_u64().unwrap() as usize;
+                        let i2 = indices[2].as_u64().unwrap() as usize;
+
+                        // Calculate normal (flat shading)
+                        let v0 = vertices[i0];
+                        let v1 = vertices[i1];
+                        let v2 = vertices[i2];
+                        
+                        let normal = (v1 - v0).cross(v2 - v0).normalize();
+
+                        let triangle = Triangle {
+                            material_index: Au32(material_index as u32),
+                            is_sphere: Au32(0),
+                            vertices: [
+                                AVec3(vertices[i0]),
+                                AVec3(vertices[i1]), 
+                                AVec3(vertices[i2])
+                            ],
+                            normals: [
+                                AVec3(normal),
+                                AVec3(normal),
+                                AVec3(normal)
+                            ],
+                            uvs: [
+                                AVec2([0.0, 0.0].into()),
+                                AVec2([0.0, 0.0].into()),
+                                AVec2([0.0, 0.0].into())
+                            ],
+                        };
+
+                        scene.triangles.push(triangle);
+                    }
+
                 }
             }
         }
