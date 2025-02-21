@@ -1,0 +1,94 @@
+camera:
+  resolution: [800, 800]
+  focal_length: 2
+  focus_distance: 1
+  aperture_radius: 0
+  location: [-0.0029600381385535, 0.19830328226089478, 0.828150749206543]
+  look_at: [0.002896534511819482, 0.16660931706428528, 0.022717338055372238]
+
+materials:
+  Plastic_Orange:
+    base_colour: [255, 97, 3]
+    roughness: 0.0
+    metallic: 1.0
+    sheen: 0.0
+    clearcoat: 1.
+    specular_tint: 0.0
+    ior: 1.5
+  Plastic_Black: 
+    base_colour: [0, 0, 0]
+    roughness: 0.001
+    metallic: 0.1
+    specular_tint: 0.0063
+    ior: 1.5
+  Glass:
+    roughness: 0.0
+    clearcoat: 1.
+    spec_trans: 1.0
+    ior: 1.5
+  Metal:
+    base_colour: [170, 170, 170]
+    metallic: 1.0
+    roughness: 0.0
+  Floor:
+    base_colour: [147, 147, 147]
+    specular_tint: 0.5786
+    ior: 1.5
+  Light:
+    emission: [255, 255, 255]
+surfaces:
+  - type: "object"
+    smooth: true
+    file: "data/coffee_maker/Plastic_Orange.obj"
+    material: "Plastic_Orange"
+
+  - type: "object" 
+    smooth: true
+    file: "data/coffee_maker/Plastic_Black.obj"
+    material: "Plastic_Black"
+
+  - type: "object"
+    smooth: true
+    file: "data/coffee_maker/Metal.obj"
+    material: "Metal"
+
+  - type: "object"
+    smooth: true
+    file: "data/coffee_maker/Glass.obj" 
+    material: "Glass"
+
+  - type: "object"
+    smooth: true
+    file: "data/coffee_maker/Floor.obj"
+    material: "Floor"
+
+  # Light meshes
+  - type: "mesh"
+    vertices: [
+      [-0.359309, 0.449693, -0.010809],
+      [-0.196537, 0.449693, 0.338256],
+      [-0.196537, 0.000849009, 0.338256],
+      [-0.359309, 0.000848979, -0.010809]
+    ]
+    triangles: [[0,1,2], [0,2,3]]
+    material: "Light"
+
+  - type: "mesh"
+    vertices: [
+      [0.320673, 0.027337, 0.228975],
+      [0.320673, 0.476182, 0.228975],
+      [0.325221, 0.476182, -0.136419],
+      [0.325221, 0.027337, -0.136419]
+    ]
+    triangles: [[0,1,2], [0,2,3]]
+    material: "Light"
+
+  - type: "mesh"
+    vertices: [
+      [0.230128, 0.50385, 0.267372],
+      [-0.230128, 0.50385, 0.267372], 
+      [-0.230128, 0.50385, -0.192885],
+      [0.230128, 0.50385, -0.192885]
+    ]
+    triangles: [[0,1,2], [0,2,3]]
+    material: "Light"

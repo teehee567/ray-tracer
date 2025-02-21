@@ -155,10 +155,6 @@ vec3 ray_color(Ray ray, inout uint mesh_tests) {
 
         //vec3 surface_normal = calculate_surface_normal(hit, hit.triangle);
 
-        //if (any(greaterThan(hit.material.emission.xyz, vec3(EPSILON)))) {
-        //    radiance += EmitterSample(ray, bounce, lightSampleRec, bsdfSampleRec) * throughput;
-        //}
-
         if (dot(hit.normal, hit.ffnormal) < 0.0 && hit.material.spec_trans > 0.0) {
             throughput *= exp(-log(hit.material.base_color.rgb) * hit.hit_dist);
         }
