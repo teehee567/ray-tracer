@@ -1,9 +1,9 @@
 camera:
   resolution: [900, 900]
-  focal_length: 1.8
+  focal_length: 2.1
   focus_distance: 1
   aperture_radius: 0
-  location: [8, 15, 30]
+  location: [8, 25, 30]
   # location: [30, 15, -10]
   look_at: [0, 5, 0]
 skybox: [
@@ -42,10 +42,10 @@ materials:
     spec_trans: 0.0
     ior: 1.5
   Numbers:
-    base_colour: [20, 20, 20]
+    base_colour: [0, 0, 0]
     specular_tint: 0.3
-    roughness: 0.05
-    metallic: 0.3
+    roughness: 1.
+    metallic: 0.
     subsurface: 0.0
     anisotropic: 0.0
     sheen: 0.0
@@ -59,7 +59,7 @@ materials:
     specular_tint: 0.3
     roughness: 1.
     metallic: 0.
-    subsurface: 0.0
+    subsurface: 1.0
     anisotropic: 0.0
     sheen: 0.0
     sheen_tint: 0.0
@@ -81,10 +81,10 @@ materials:
     spec_trans: 0.0
     ior: 1.5
   OBJ_Main:
-    base_colour: [255, 200, 180]
+    base_colour: [25, 51, 247]
     specular_tint: 0.
     roughness: 0.
-    metallic: 1.
+    metallic: 0.
     subsurface: 0.0
     anisotropic: 0.0
     sheen: 0.0
@@ -108,7 +108,7 @@ materials:
     ior: 1.5
   Outer_Circle_In:
     base_colour: [0, 0, 0]
-    emission: [25500, 25500, 25500]
+    # emission: [255, 255, 255]
     specular_tint: 0.3
     roughness: 0.05
     metallic: 0.3
@@ -135,6 +135,7 @@ materials:
     ior: 1.5
   Outer_Light:
     base_colour: [255, 0, 0]
+    emission: [2550, 2550, 2550]
     specular_tint: 0.3
     roughness: 0.05
     metallic: 0.3
