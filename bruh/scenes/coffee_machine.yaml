@@ -35,7 +35,7 @@ materials:
     specular_tint: 0.5786
     ior: 1.5
   Light:
-    emission: [255, 255, 255]
+    emission: [25500, 25500, 25500]
 surfaces:
   - type: "object"
     smooth: true
