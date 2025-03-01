@@ -1,0 +1,9 @@
+struct Ray {
+    vec3 origin;
+    vec3 direction;
+    float time;
+};
+
+vec3 ray_at(Ray ray, float t) {
+    return ray.origin + (ray.direction * t);
+}

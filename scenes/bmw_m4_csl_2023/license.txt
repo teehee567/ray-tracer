@@ -1,0 +1,11 @@
+Model Information:
+* title:	BMW m4 CSL 2023
+* source:	https://sketchfab.com/3d-models/bmw-m4-csl-2023-26d05968e63b4fc28205cbb9abb0ea41
+* author:	Black Snow (https://sketchfab.com/BlackSnow02)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "BMW m4 CSL 2023" (https://sketchfab.com/3d-models/bmw-m4-csl-2023-26d05968e63b4fc28205cbb9abb0ea41) by Black Snow (https://sketchfab.com/BlackSnow02) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
