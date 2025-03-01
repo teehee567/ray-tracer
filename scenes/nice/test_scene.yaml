@@ -1,0 +1,202 @@
+camera:
+  resolution: [900, 900]
+  focal_length: 2.1
+  focus_distance: 1
+  aperture_radius: 0
+  location: [8, 25, 30]
+  # location: [30, 15, -10]
+  look_at: [0, 5, 0]
+skybox: [
+  "data/test_scene/boiler_room_skybox/px.png",
+  "data/test_scene/boiler_room_skybox/nx.png",
+  "data/test_scene/boiler_room_skybox/py.png",
+  "data/test_scene/boiler_room_skybox/ny.png",
+  "data/test_scene/boiler_room_skybox/pz.png",
+  "data/test_scene/boiler_room_skybox/nz.png",
+]
+materials:
+  Grid:
+    base_colour: [20, 20, 20]
+    specular_tint: 0.3
+    roughness: 0.05
+    metallic: 0.3
+    subsurface: 0.0
+    anisotropic: 0.0
+    sheen: 0.0
+    sheen_tint: 0.0
+    clearcoat: 0.0
+    clearcoat_roughness: 0.0
+    spec_trans: 0.0
+    ior: 1.5
+  Measurements:
+    base_colour: [255, 255, 255]
+    specular_tint: 0.3
+    roughness: 0.05
+    metallic: 0.3
+    subsurface: 0.0
+    anisotropic: 0.0
+    sheen: 0.0
+    sheen_tint: 0.0
+    clearcoat: 0.0
+    clearcoat_roughness: 0.0
+    spec_trans: 0.0
+    ior: 1.5
+  Numbers:
+    base_colour: [0, 0, 0]
+    specular_tint: 0.3
+    roughness: 1.
+    metallic: 0.
+    subsurface: 0.0
+    anisotropic: 0.0
+    sheen: 0.0
+    sheen_tint: 0.0
+    clearcoat: 0.0
+    clearcoat_roughness: 0.0
+    spec_trans: 0.0
+    ior: 1.5
+  OBJ_Base:
+    base_colour: [10, 10, 10]
+    specular_tint: 0.3
+    roughness: 1.
+    metallic: 0.
+    subsurface: 1.0
+    anisotropic: 0.0
+    sheen: 0.0
+    sheen_tint: 0.0
+    clearcoat: 0.0
+    clearcoat_roughness: 0.0
+    spec_trans: 0.0
+    ior: 1.5
+  OBJ_Core:
+    base_colour: [10, 10, 10]
+    specular_tint: 0.3
+    roughness: 1.
+    metallic: 0.0
+    subsurface: 0.0
+    anisotropic: 0.0
+    sheen: 0.0
+    sheen_tint: 0.0
+    clearcoat: 0.0
+    clearcoat_roughness: 0.0
+    spec_trans: 0.0
+    ior: 1.5
+  OBJ_Main:
+    base_colour: [25, 51, 247]
+    specular_tint: 0.
+    roughness: 0.0
+    metallic: 0.0
+    subsurface: 0.0
+    anisotropic: 0.0
+    sheen: 0.0
+    sheen_tint: 0.0
+    clearcoat: 0.0
+    clearcoat_roughness: 0.0
+    spec_trans: 0.0
+    ior: 1.5
+  OBJ_Subsurface_Bar:
+    base_colour: [255, 255, 255]
+    specular_tint: 0.3
+    roughness: 0.05
+    metallic: 0.3
+    subsurface: 0.0
+    anisotropic: 0.0
+    sheen: 0.0
+    sheen_tint: 0.0
+    clearcoat: 0.0
+    clearcoat_roughness: 0.0
+    spec_trans: 0.0
+    ior: 1.5
+  Outer_Circle_In:
+    base_colour: [0, 0, 0]
+    # emission: [255, 255, 255]
+    specular_tint: 0.3
+    roughness: 0.05
+    metallic: 0.3
+    subsurface: 0.0
+    anisotropic: 0.0
+    sheen: 0.0
+    sheen_tint: 0.0
+    clearcoat: 0.0
+    clearcoat_roughness: 0.0
+    spec_trans: 0.0
+    ior: 1.5
+  Outer_Circle_Out:
+    base_colour: [255, 255, 255]
+    specular_tint: 0.3
+    roughness: 0.05
+    metallic: 0.3
+    subsurface: 0.0
+    anisotropic: 0.0
+    sheen: 0.0
+    sheen_tint: 0.0
+    clearcoat: 0.0
+    clearcoat_roughness: 0.0
+    spec_trans: 0.0
+    ior: 1.5
+  Outer_Light:
+    base_colour: [255, 0, 0]
+    emission: [2550, 2550, 2550]
+    specular_tint: 0.3
+    roughness: 0.05
+    metallic: 0.3
+    subsurface: 0.0
+    anisotropic: 0.0
+    sheen: 0.0
+    sheen_tint: 0.0
+    clearcoat: 0.0
+    clearcoat_roughness: 0.0
+    spec_trans: 0.0
+    ior: 1.5
+surfaces:
+  - type: "object"
+    smooth: true
+    file: "data/test_scene/grid.obj"
+    material: "Grid"
+  - type: "object"
+    smooth: true
+    file: "data/test_scene/measurements.obj"
+    material: "Measurements"
+  - type: "object"
+    smooth: true
+    file: "data/test_scene/numbers.obj"
+    material: "Numbers"
+  - type: "object"
+    smooth: true
+    file: "data/test_scene/obj_base.obj"
+    material: "OBJ_Base"
+  - type: "object"
+    smooth: true
+    file: "data/test_scene/obj_core.obj"
+    material: "OBJ_Core"
+  - type: "object"
+    smooth: true
+    file: "data/test_scene/obj_main.obj"
+    material: "OBJ_Main"
+  - type: "object"
+    smooth: true
+    file: "data/test_scene/obj_subsurface_bar.obj"
+    material: "OBJ_Subsurface_Bar"
+  - type: "object"
+    smooth: true
+    file: "data/test_scene/outer_circle_in.obj"
+    material: "Outer_Circle_In"
+  - type: "object"
+    smooth: true
+    file: "data/test_scene/outer_circle_out.obj"
+    material: "Outer_Circle_Out"
+  - type: "object"
+    smooth: true
+    file: "data/test_scene/outer_light.obj"
+    material: "Outer_Light"
+  - type: "object"
+    smooth: true
+    file: "data/test_scene/cube1.obj"
+    material: "Outer_Light"
+  - type: "object"
+    smooth: true
+    file: "data/test_scene/cube2.obj"
+    material: "Outer_Light"
+  - type: "object"
+    smooth: true
+    file: "data/test_scene/cube3.obj"
+    material: "Outer_Light"

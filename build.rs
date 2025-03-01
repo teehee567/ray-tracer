@@ -7,7 +7,7 @@ fn main() {
     #[cfg(target_os = "windows")]
     {
         let status = Command::new("cmd")
-            .args(&["/C", "compile_shaders.bat"])
+            .args(&["/C", r"src\shaders\compile_shaders.bat"])
             .status()
             .expect("Could not run compile_shaders.bat on Windows");
 
@@ -20,7 +20,7 @@ fn main() {
     #[cfg(target_os = "macos")]
     {
         let status = Command::new("sh")
-            .arg("compile_shaders.sh")
+            .arg("./src/shaders/compile_shaders.sh")
             .status()
             .expect("Could not run compile_shaders.sh on macOS");
 

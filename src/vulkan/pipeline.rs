@@ -11,7 +11,7 @@ pub unsafe fn create_compute_pipeline(device: &Device, data: &mut AppData) -> Re
         .set_layouts(&binding);
     data.compute_pipeline_layout = device.create_pipeline_layout(&pipeline_layout_info, None)?;
 
-    let compute_shader_src = include_bytes!("../../shaders/main.comp.spv");
+    let compute_shader_src = include_bytes!("../../src/shaders/main.comp.spv");
     let compute_shader = create_shader_module(device, compute_shader_src)?;
 
     let compute_shader_stage_info = vk::PipelineShaderStageCreateInfo::builder()
