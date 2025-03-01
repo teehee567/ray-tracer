@@ -4,7 +4,7 @@ mod skybox;
 pub use skybox::*;
 
 use anyhow::{Result, anyhow};
-use vulkanalia::{Device, Instance};
+use vulkanalia::Device;
 use vulkanalia::prelude::v1_0::*;
 use crate::AppData;
 
