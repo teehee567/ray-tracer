@@ -1,0 +1,176 @@
+
+// Möller-Trumbore intersection algorithm (https://www.graphics.cornell.edu/pubs/1997/MT97.pdf)
+HitRecord hit_triangle(Triangle triangle, Ray ray, bool interpolate_normals) {
+    /* This algorithm uses barycentric coordinates to determine whether the intersection falls within
+     * the triangle.
+     *
+     * O = ray.origin; D = ray.dir; A, B, C = triangle points; u, v, w = barycentric coords.
+     * Check where they intersect by equating the coords to the ray function:
+     *      O + t*D = w*A + u*B + v*C
+     *      O + t*D = (1-u-v)*A + u*B + v*C
+     *      -t*D + u*(B - A) + v*(C - A) = O - A
+     *
+     * That is a linear equation with the following form:
+     * (uppercase is vector, represent a column)
+     *      |             |   | t |   |     |
+     *      | D, B-A, C-A | * | u | = | O-A |
+     *      |             |   | v |   |     |
+     *            (M        *  tuv  =   OA)
+     *
+     * To solve the equation, cramer's rule is used:
+     *      t = det(M with OA replacing 1st col) / det(M)
+     *      u = det(M with OA replacing 2nd col) / det(M)
+     *      v = det(M with OA replacing 3rd col) / det(M)
+     *
+     * Finally, the determinants are calculated using the scalar triple product:
+     *      det(M) = (D × C-A) ⋅ B-A = dot(cross(D, C-A), B-A)
+     */
+    HitRecord hit;
+    hit.did_hit = false;
+    hit.hit_dist = INFINITY;
+    hit.eta = 1.;
+    hit.is_exiting = false;
+    hit.triangle = triangle;
+
+    // Get the normal vector of the plane the triangle lays on.
+    // This is done by performing a cross product between two of the sides of the triangle.
+    vec3 ab = triangle.vertices[1] - triangle.vertices[0];
+    vec3 ac = triangle.vertices[2] - triangle.vertices[0];
+    vec3 plane_normal = normalize(cross(ab, ac));
+
+    // Check if the ray is parallel to the plane, in which case no hit can happen
+    if (abs(dot(plane_normal, ray.direction)) < EPSILON) return hit;
+
+    vec3 o = ray.origin - triangle.vertices[0];
+    vec3 p = cross(ray.direction, ac);
+    vec3 q = cross(o, ab);
+    float inv_det = 1 / dot(p, ab);
+
+    // Find t using cramer's rule, and make sure the intersection happens in front
+    // of the camera
+    float t = dot(q, ac) * inv_det;
+    if (t < EPSILON) return hit;
+
+    // Find the barycentric coordinates
+    float u = dot(p, o) * inv_det;
+    float v = dot(q, ray.direction) * inv_det;
+    float w = 1 - u - v;    // to avoid gaps due to precision issues
+
+    // Check bounds of the barycentric coordinates.
+    vec3 coords = vec3(u, v, w);
+    if (any(lessThan(coords, vec3(0))) || any(greaterThan(coords, vec3(1)))) return hit;
+
+    hit.did_hit = true;
+    hit.hit_dist = t;
+    hit.pos = ray_at(ray, t);
+    hit.is_exiting = dot(plane_normal, ray.direction) > 0;
+    hit.uv = triangle.uvs[0] * w + 
+             triangle.uvs[1] * u + 
+             triangle.uvs[2] * v;
+
+    if (interpolate_normals) {
+        // Normalize after interpolation to ensure unit length
+        hit.normal = normalize(triangle.normals[0] * w +
+                              triangle.normals[1] * u +
+                              triangle.normals[2] * v);
+    } else {
+        hit.normal = plane_normal;
+    }
+
+    hit.ffnormal = dot(hit.normal, ray.direction) < 0 ? hit.normal : -hit.normal;
+
+    vec3 edge1 = triangle.vertices[1] - triangle.vertices[0];
+    vec3 edge2 = triangle.vertices[2] - triangle.vertices[0];
+    vec2 duv1 = triangle.uvs[1] - triangle.uvs[0];
+    vec2 duv2 = triangle.uvs[2] - triangle.uvs[0];
+
+    float f = 1.0 / (duv1.x * duv2.y - duv2.x * duv1.y);
+    hit.tangent = normalize(f * (duv2.y * edge1 - duv1.y * edge2));
+    hit.bitangent = normalize(f * (-duv2.x * edge1 + duv1.x * edge2));
+
+    return hit;
+}
+
+/*
+ * AABB intersection code using the Slab method.
+ *
+ * This works by first solving the t parameter for each plane intersection, and
+ * then checking if any of the intersections with the plane that should be closer
+ * to the camera end up further away than the intersections of the opposite plane.
+ *
+ * More info at https://en.wikipedia.org/wiki/Slab_method
+ */
+float dist_aabb(Ray ray, BvhNode aabb) {
+    vec3 inv_dir = 1 / ray.direction;
+
+    // Solve for the intersection points with all 6 planes:
+    // origin_x + t * direction_x = x  (for all 3 dimensions)
+    vec3 t1 = (aabb.min - ray.origin) * inv_dir;
+    vec3 t2 = (aabb.max - ray.origin) * inv_dir;
+
+    // Get the closest and furthest intersections for each dimension
+    vec3 d_min = min(t1, t2);
+    vec3 d_max = max(t1, t2);
+
+    float t_min = max(max(d_min.x, d_min.y), d_min.z);
+    float t_max = min(min(d_max.x, d_max.y), d_max.z);
+
+    bool did_hit = t_min <= t_max && t_max > 0;
+
+    return did_hit ? t_min : 1.0 / 0.0; //infinity
+}
+
+// todo: this is recursive, might be optimizable to a loop
+HitRecord hit_meshes(Ray ray, inout uint mesh_tests, in bool shadow_ray) {
+    HitRecord hit;
+    hit.hit_dist = 1.0 / 0.0; // infinity
+    hit.did_hit = false;
+
+    // Setup stack for tree traversal
+    uint stack[MAX_BVH_DEPTH + 1], stack_ptr = 0;
+    stack[stack_ptr++] = 0;
+
+    while (stack_ptr > 0) {
+        BvhNode node = bvh.nodes[stack[--stack_ptr]];
+
+        mesh_tests++;
+        // if it's a leaf, attempt to intersect its meshes
+        if (node.amt != 0) {
+            for (int tri = 0; tri < node.amt; tri++) {
+                mesh_tests++;
+
+                Triangle triangle = triangles.get[node.idx + tri];
+                HitRecord current_hit;
+
+                current_hit = hit_triangle(triangle, ray, materials.get[triangle.material_idx].shaded_smooth);
+
+                if (current_hit.did_hit && current_hit.hit_dist < hit.hit_dist) {
+                    hit = current_hit;
+                    hit.material = materials.get[triangle.material_idx];
+                    hit.triangle = triangle;
+                }
+                if (shadow_ray == true && hit.material.spec_trans > 0.5) {
+                    hit.did_hit = false;
+                }
+            }
+
+        // Else push both nodes on the stack, in order of closest to furthest
+        // Only actually push nodes that can be closer than the already-hit
+        } else {
+            uint idx = node.idx;
+            float dist_left =  dist_aabb(ray, bvh.nodes[idx + 0]);
+            float dist_right = dist_aabb(ray, bvh.nodes[idx + 1]);
+
+            if (dist_left < dist_right) {
+                if (dist_right < hit.hit_dist) stack[stack_ptr++] = idx + 1;
+                if (dist_left < hit.hit_dist)  stack[stack_ptr++] = idx;
+            } else {
+                if (dist_left < hit.hit_dist)  stack[stack_ptr++] = idx; 
+                if (dist_right < hit.hit_dist) stack[stack_ptr++] = idx + 1;
+            }
+        }
+    }
+
+    return hit;
+}
+
