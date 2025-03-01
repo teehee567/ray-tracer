@@ -11,30 +11,21 @@
 - **Skybox support** with HDR image-based lighting
 - **Multi-bounce light transport** for global illumination
 - **Efficient scene loading** from YAML configuration
+- **AI Denoising** from Intel Open Ai Denoising
 
 ## 📋 Contents
 
-- [Ray Tracer :)](#ray-tracer-)
-  - [🔆 Features](#-features)
-  - [📋 Contents](#-contents)
-  - [🖼️ Gallery](#️-gallery)
-  - [📄 Scene Format](#-scene-format)
-    - [Scene Definition Structure](#scene-definition-structure)
-  - [🎨 Materials System](#-materials-system)
-  - [🚀 Building and Running](#-building-and-running)
-    - [Requirements](#requirements)
-    - [Building](#building)
-    - [Running](#running)
-  - [💻 Technologies](#-technologies)
-    - [Core Technologies](#core-technologies)
-    - [Key Libraries](#key-libraries)
-  - [🏛️ Architecture](#️-architecture)
-    - [Scene Management](#scene-management)
-    - [Acceleration Structure](#acceleration-structure)
-    - [Rendering Pipeline](#rendering-pipeline)
-  - [⚡ Performance](#-performance)
-  - [🔮 Future Work](#-future-work)
-  - [📚 References](#-references)
+- [🔆 Features](#-features)
+- [📋 Contents](#-contents)
+- [🖼️ Gallery](#️-gallery)
+- [📄 Scene Format](#-scene-format)
+- [🎨 Materials System](#-materials-system)
+- [🚀 Building and Running](#-building-and-running)
+- [💻 Technologies](#-technologies)
+- [🏢 Architecture](#-architecture)
+- [🔥 Performance](#-performance)
+- [🔮 Future Work](#-future-work)
+- [📚 References](#-references)
 
 ## 🖼️ Gallery
 
@@ -173,7 +164,7 @@ cargo run --release -- path/to/your/scene.yaml
 - **glam**: Fast linear algebra library
 - **serde**: Serialization/deserialization for scene loading
 
-## 🏛️ Architecture
+## 🏢 Architecture
 
 The tracer is built on a hybrid CPU/GPU architecture:
 
@@ -211,7 +202,7 @@ The tracer employs a progressive rendering approach:
 5. Recursive path tracing for indirect illumination
 6. Progressive refinement for noise reduction
 
-## ⚡ Performance
+## 🔥 Performance
 
 The Ray Tracer achieves high performance through several optimizations:
 
