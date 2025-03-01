@@ -1,8 +1,9 @@
 [package]
 name = "raytracer"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 build = "build.rs"
+rust-version = "1.85.0"
 
 [dependencies]
 anyhow = "1"
