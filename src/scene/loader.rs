@@ -1,6 +1,6 @@
-use std::{fs::File, io::Read, path::{Path, PathBuf}};
+use std::{fs::File, io::Read, path::PathBuf};
 
-use crate::{AVec2, AVec3, Af32, Au32, CameraBufferObject, Material, SceneComponents, Triangle};
+use crate::{AVec2, AVec3, Au32, CameraBufferObject, Material, SceneComponents, Triangle};
 
 use super::Scene;
 

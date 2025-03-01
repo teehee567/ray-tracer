@@ -1,7 +1,7 @@
 use std::ptr;
 use vulkanalia::prelude::v1_0::*;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 
 use crate::AppData;
 
