@@ -42,6 +42,9 @@
 ![roughness](images/materials/complete/roughness.jpg)
 *Roughness from 0..1*
 
+![roughness](images/materials/complete/metallic.jpg)
+*metallic from 0..1*
+
 ## 📄 Scene Format
 
 ```yaml
