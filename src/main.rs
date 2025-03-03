@@ -1,4 +1,4 @@
-
+#![allow(warnings)]
 #![allow(
     dead_code,
     unused_variables,
@@ -124,8 +124,8 @@ fn main() -> Result<()> {
     // let scene = Scene::from_gltf("./Interior/room.gltf")?;
     // let scene = Scene::from_gltf("./glTF/DamagedHelmet.gltf")?;
     // let scene = Scene::from_new("./scenes/lego_bulldozer.yaml")?;
-    // let scene = Scene::from_new("./scenes/test_scene.yaml")?;
-    let scene = Scene::from_new("./scenes/coffee_machine.yaml")?;
+    let scene = Scene::from_new("./scenes/nice/test_scene.yaml")?;
+    // let scene = Scene::from_new("./scenes/coffee_machine.yaml")?;
 
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
@@ -347,7 +347,7 @@ impl App {
     /// Renders a frame for our Vulkan app.
     unsafe fn render(&mut self, window: &Window) -> Result<()> {
         self.fps_counter.update();
-        // self.fps_counter.print();
+        self.fps_counter.print();
 
         self.device
             .wait_for_fences(&[self.data.compute_in_flight_fences], true, u64::MAX)?;
@@ -774,6 +774,6 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
 
     println!("Saved Buffer");
 
-    denoised_img.save("images/materials/metallic_00.png")?;
+    denoised_img.save("images/materials/raw/metallic/metallic_00.png")?;
     Ok(())
 }
