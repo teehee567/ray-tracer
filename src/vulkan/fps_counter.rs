@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::time::Instant;
+use std::io::Write;
 
 #[derive(Clone, Debug)]
 pub struct FPSCounter {
@@ -40,7 +41,13 @@ impl FPSCounter {
     }
 
     pub fn print(&self) {
-        println!("FPS: {:.2}", self.get_fps());
+        // update in place
+        if cfg!(windows) {
+            print!("\rFPS: {:.2}", self.get_fps());
+        } else {
+            print!("\r\x1B[KFPS: {:.2}", self.get_fps());
+        }
+        
+        std::io::stdout().flush().unwrap();
     }
-
 }

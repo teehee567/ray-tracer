@@ -39,7 +39,6 @@ fn align_up(value: u64) -> u64 {
     ((value + 15) / 16) * 16
 }
 
-#[no_mangle]
 pub unsafe fn create_descriptor_sets(
     device: &Device,
     data: &mut AppData,
