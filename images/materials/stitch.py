@@ -38,11 +38,10 @@ if __name__ == "__main__":
         print("Or manually edit the script to specify the image paths.")
         
         image_paths = [
-            "raw/roughness/roughness_00.png",
-            "raw/roughness/roughness_02.png",
-            "raw/roughness/roughness_04.png",
-            "raw/roughness/roughness_06.png",
-            "raw/roughness/roughness_08.png",
-            "raw/roughness/roughness_10.png",
+            "raw/metallic/metallic_000.png",
+            "raw/metallic/metallic_025.png",
+            "raw/metallic/metallic_050.png",
+            "raw/metallic/metallic_075.png",
+            "raw/metallic/metallic_100.png",
         ]
         stitch_images_horizontally(image_paths, "my_stitched_panorama.jpg")

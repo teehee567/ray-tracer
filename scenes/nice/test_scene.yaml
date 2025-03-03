@@ -1,6 +1,6 @@
 camera:
   resolution: [900, 900]
-  focal_length: 2.1
+  focal_length: 2.6
   focus_distance: 1
   aperture_radius: 0
   location: [8, 25, 30]
@@ -84,7 +84,7 @@ materials:
     base_colour: [25, 51, 247]
     specular_tint: 0.
     roughness: 0.0
-    metallic: 0.0
+    metallic: 1.
     subsurface: 0.0
     anisotropic: 0.0
     sheen: 0.0
