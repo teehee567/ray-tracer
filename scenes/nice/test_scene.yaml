@@ -91,7 +91,7 @@ materials:
     sheen_tint: 0.0
     clearcoat: 0.0
     clearcoat_roughness: 0.0
-    spec_trans: 0.25
+    spec_trans: 0.
     ior: 1.5
   OBJ_Subsurface_Bar:
     base_colour: [255, 255, 255]

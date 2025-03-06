@@ -774,7 +774,7 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
 
     println!("Saved Buffer");
 
-    denoised_img.save("images/materials/raw/spec_trans/spec_trans_025.png")?;
+    denoised_img.save("images/materials/raw/spec_trans/spec_trans_100.png")?;
     panic!();
     Ok(())
 }

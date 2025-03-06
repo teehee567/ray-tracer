@@ -166,7 +166,7 @@ cargo run --release -- path/to/your/scene.yaml
 - **GLSL**: Shader implementation of the core ray tracing algorithm
 
 ### Key Libraries
-- **ash**: Safe Rust bindings to Vulkan
+- **vulkanalia**: Rust bindings to Vulkan
 - **glam**: Fast linear algebra library
 - **serde**: Serialization/deserialization for scene loading
 
