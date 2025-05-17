@@ -2,7 +2,7 @@
 
 > **A GPU-accelerated ray tracing engine implementing the Disney Principled BSDF, built with Rust and Vulkan**
 
-## 🔆 Features
+## Features
 
 - **Physically-based rendering** using path tracing
 - **Disney Principled BSDF** for realistic material rendering
@@ -13,21 +13,21 @@
 - **Efficient scene loading** from YAML configuration
 - **AI Denoising** from Intel Open Ai Denoising
 
-## 📋 Contents
+## Contents
 
-- [🔆 Features](#-features)
-- [📋 Contents](#-contents)
-- [🖼️ Gallery](#️-gallery)
-- [📄 Scene Format](#-scene-format)
-- [🎨 Materials System](#-materials-system)
-- [🚀 Building and Running](#-building-and-running)
-- [💻 Technologies](#-technologies)
-- [🏢 Architecture](#-architecture)
-- [🔥 Performance](#-performance)
-- [🔮 Future Work](#-future-work)
-- [📚 References](#-references)
+- [Features](#-features)
+- [Contents](#-contents)
+- [Gallery](#️-gallery)
+- [Scene Format](#-scene-format)
+- [Materials System](#-materials-system)
+- [Building and Running](#-building-and-running)
+- [Technologies](#-technologies)
+- [Architecture](#-architecture)
+- [Performance](#-performance)
+- [Future Work](#-future-work)
+- [References](#-references)
 
-## 🖼️ Gallery
+## Gallery
 
 ![Bulldozer](images/bulldozer.png)
 
@@ -48,7 +48,7 @@
 ![ior](images/materials/complete/ior.jpg)
 *ior from 1..3*
 
-## 📄 Scene Format
+## Scene Format
 
 ```yaml
 camera:
@@ -108,7 +108,7 @@ surfaces:
 | `materials` | Named material definitions using the Disney BSDF parameters |
 | `surfaces` | Geometry definitions, either from OBJ files or inline meshes |
 
-## 🎨 Materials System
+## Materials System
 
 Implements the full Disney Principled BSDF with these parameters:
 
@@ -128,7 +128,7 @@ Implements the full Disney Principled BSDF with these parameters:
 | `spec_trans` | Specular transmission | `0.0` |
 | `ior` | Index of refraction | `1.45` |
 
-## 🚀 Building and Running
+## Building and Running
 
 ### Requirements
 
@@ -158,7 +158,7 @@ cargo run --release -- scenes/default_scene.yaml
 cargo run --release -- path/to/your/scene.yaml
 ```
 
-## 💻 Technologies
+## Technologies
 
 ### Core Technologies
 - **Rust**: Memory safety and performance for the CPU side
@@ -170,7 +170,7 @@ cargo run --release -- path/to/your/scene.yaml
 - **glam**: Fast linear algebra library
 - **serde**: Serialization/deserialization for scene loading
 
-## 🏢 Architecture
+## Architecture
 
 The tracer is built on a hybrid CPU/GPU architecture:
 
@@ -208,7 +208,7 @@ The tracer employs a progressive rendering approach:
 5. Recursive path tracing for indirect illumination
 6. Progressive refinement for noise reduction
 
-## 🔥 Performance
+## Performance
 
 The Ray Tracer achieves high performance through several optimizations:
 
@@ -219,13 +219,13 @@ Typical performance on modern hardware (RTX 3080):
 - **1080p**: 5-10 samples per second (full path tracing)
 - **720p**: 10-20 samples per second
 
-## 🔮 Future Work
+## Future Work
 
 - **Volumetric rendering**: Add support for participating media
 - **Bidirectional path tracing**: Improve handling of difficult light paths
 - **Interactive editing**: Real-time material and scene adjustments
 
-## 📚 References
+## References
 
 1. Disney Principled BSDF: [Physically-Based Shading at Disney](https://disney-animation.s3.amazonaws.com/library/s2012_pbs_disney_brdf_notes_v2.pdf)
 2. Path Tracing: [Physically Based Rendering: From Theory To Implementation](https://www.pbr-book.org/)
