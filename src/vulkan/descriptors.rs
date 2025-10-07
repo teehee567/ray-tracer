@@ -247,7 +247,7 @@ pub unsafe fn create_compute_descriptor_set_layout(
     let texture_binding = vk::DescriptorSetLayoutBinding::builder()
         .binding(6)
         .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(data.scene.components.textures.len() as u32) // Array of textures
+        .descriptor_count(data.textures.len() as u32) // Array of textures
         .stage_flags(vk::ShaderStageFlags::COMPUTE);
 
     let skybox_binding = vk::DescriptorSetLayoutBinding::builder()

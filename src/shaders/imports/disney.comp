@@ -590,7 +590,8 @@ vec3 DirectLight(in Ray r, in HitRecord rec, inout uint mesh_tests)
         if (dot(lightSampleRec.direction, lightSampleRec.normal) < 0.0)
         {
             Ray shadowRay = Ray(surfacePos, lightSampleRec.direction, 0.);
-            bool inShadow = hit_meshes(shadowRay, mesh_tests, true).did_hit;//AnyHit(shadowRay, lightSampleRec.dist - EPS);
+            HitRecord shadowHit = hit_meshes(shadowRay, mesh_tests, true);
+            bool inShadow = shadowHit.did_hit && shadowHit.hit_dist < lightSampleRec.dist - EPS;
 
             if (!inShadow) {
                 bsdfSampleRec.f = DisneyEval(rec, -r.direction, rec.ffnormal, lightSampleRec.direction, bsdfSampleRec.pdf);
