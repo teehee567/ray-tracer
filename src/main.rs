@@ -77,6 +77,7 @@ macro_rules! print_size {
             "Size of {}: {} bytes",
             stringify!($t),
             std::mem::size_of::<$t>()
+
         );
     };
 }
@@ -279,8 +280,6 @@ impl App {
         create_swapchain(window, &instance, &device, &mut data)?;
         create_swapchain_image_views(&device, &mut data)?;
         create_render_pass(&instance, &device, &mut data)?;
-        create_compute_descriptor_set_layout(&device, &mut data)?;
-        create_compute_pipeline(&device, &mut data)?;
         // create_framebuffers(&device, &mut data)?;
         create_command_pool(&instance, &device, &mut data)?;
         // create_vertex_buffer(&instance, &device, &mut data)?;
@@ -309,6 +308,19 @@ impl App {
             data.textures.push(texture);
         }
 
+        if data.textures.is_empty() {
+            let default_pixels = [255u8, 255, 255, 255];
+            let texture = create_texture_image(
+                &instance,
+                &device,
+                &data,
+                &default_pixels,
+                1,
+                1,
+            )?;
+            data.textures.push(texture);
+        }
+
         let skybox_data = &data.scene.components.skybox;
         data.skybox_texture =
             create_cubemap_texture(
@@ -320,6 +332,8 @@ impl App {
                 skybox_data.height,
             )?;
 
+        create_compute_descriptor_set_layout(&device, &mut data)?;
+        create_compute_pipeline(&device, &mut data)?;
         create_descriptor_pool(&device, &mut data)?;
         create_sampler(&device, &mut data)?;
         // create_descriptor_sets(&device, &mut data)?;
@@ -737,34 +751,34 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
         }
     }
 
-    // Apply denoising
-    let mut filter_output = vec![0.0f32; input_img.len()];
-    let odin_device = oidn::Device::new();
-    let mut filter = oidn::RayTracing::new(&odin_device);
-    
-    filter
-        .srgb(true)
-        .image_dimensions(width as usize, height as usize);
-    
-    filter
-        .filter(&input_img[..], &mut filter_output[..])
-        .map_err(|e| anyhow!("Denoising error: {:?}", e))?;
-
-    if let Err(e) = odin_device.get_error() {
-        println!("Warning: Denoising error: {}", e.1);
-    }
-
-    // Convert back to u8 RGB image
-    let mut denoised_img = ImageBuffer::new(width, height);
-    for y in 0..height {
-        for x in 0..width {
-            let idx = 3 * ((y * width + x) as usize);
-            let r = (filter_output[idx].clamp(0.0, 1.0) * 255.0) as u8;
-            let g = (filter_output[idx + 1].clamp(0.0, 1.0) * 255.0) as u8;
-            let b = (filter_output[idx + 2].clamp(0.0, 1.0) * 255.0) as u8;
-            denoised_img.put_pixel(x, y, image::Rgb([r, g, b]));
-        }
-    }
+    // // Apply denoising
+    // let mut filter_output = vec![0.0f32; input_img.len()];
+    // let odin_device = oidn::Device::new();
+    // let mut filter = oidn::RayTracing::new(&odin_device);
+    // 
+    // filter
+    //     .srgb(true)
+    //     .image_dimensions(width as usize, height as usize);
+    // 
+    // filter
+    //     .filter(&input_img[..], &mut filter_output[..])
+    //     .map_err(|e| anyhow!("Denoising error: {:?}", e))?;
+    //
+    // if let Err(e) = odin_device.get_error() {
+    //     println!("Warning: Denoising error: {}", e.1);
+    // }
+    //
+    // // Convert back to u8 RGB image
+    // let mut denoised_img = ImageBuffer::new(width, height);
+    // for y in 0..height {
+    //     for x in 0..width {
+    //         let idx = 3 * ((y * width + x) as usize);
+    //         let r = (filter_output[idx].clamp(0.0, 1.0) * 255.0) as u8;
+    //         let g = (filter_output[idx + 1].clamp(0.0, 1.0) * 255.0) as u8;
+    //         let b = (filter_output[idx + 2].clamp(0.0, 1.0) * 255.0) as u8;
+    //         denoised_img.put_pixel(x, y, image::Rgb([r, g, b]));
+    //     }
+    // }
 
     device.unmap_memory(staging_memory);
 
@@ -775,7 +789,7 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
 
     println!("Saved Buffer");
 
-    denoised_img.save("images/materials/raw/spec_trans/spec_trans_100.png")?;
+    img.save("images/materials/raw/spec_trans/spec_trans_100.png")?;
     panic!();
     Ok(())
 }
