@@ -7,23 +7,28 @@
     clippy::unnecessary_wraps
 )]
 
+use std::collections::VecDeque;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
 use std::time::Instant;
+use std::thread;
+use std::time::Duration;
 
 use anyhow::{anyhow, Result};
+use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
 use glam::UVec2;
 use image::ImageBuffer;
-use log::info;
+use log::{error, info};
 use scene::Scene;
 use vulkan::accumulate_image::{create_image, transition_image_layout};
 use vulkan::buffers::{create_shader_buffers, create_uniform_buffer};
-use vulkan::command_buffers::{create_command_buffer, run_command_buffer};
+use vulkan::command_buffers::{create_command_buffer, record_compute_commands, record_present_commands};
 use vulkan::command_pool::create_command_pool;
 use vulkan::descriptors::{
     create_compute_descriptor_set_layout, create_descriptor_pool, create_descriptor_sets,
 };
 use vulkan::fps_counter::FPSCounter;
+use vulkan::framebuffer::{create_framebuffer_images, transition_framebuffer_images};
 use vulkan::instance::create_instance;
 use vulkan::logical_device::create_logical_device;
 use vulkan::physical_device::{pick_physical_device, SuitabilityError};
@@ -39,7 +44,7 @@ use vulkanalia::window as vk_window;
 use vulkanalia::Version;
 use winit::dpi::LogicalSize;
 use winit::event::{Event, WindowEvent};
-use winit::event_loop::EventLoop;
+use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
 
 use vulkanalia::vk::ExtDebugUtilsExtension;
@@ -49,6 +54,7 @@ use vulkanalia::vk::KhrSwapchainExtension;
 mod scene;
 mod types;
 mod vulkan;
+mod ui;
 pub use types::*;
 mod accelerators;
 
@@ -70,6 +76,7 @@ const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[
 /// The Vulkan SDK version that started requiring the portability subset extension for macOS.
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 const TILE_SIZE: u32 = 8;
+const OFFSCREEN_FRAME_COUNT: usize = 3;
 const TO_SAVE: usize = 100;
 macro_rules! print_size {
     ($t:ty) => {
@@ -161,32 +168,48 @@ fn main() -> Result<()> {
 
     }
 
+    let gui_shared = ui::create_shared_state();
+    let mut gui = ui::GuiFrontend::new(&window, gui_shared.clone());
+    let mut render_controller = RenderController::spawn(app, gui_shared)?;
 
     let mut minimized = false;
     event_loop.run(move |event, elwt| {
         match event {
             // Request a redraw when all events were processed.
-            Event::AboutToWait => window.request_redraw(),
-            Event::WindowEvent { event, .. } => match event {
-                // Render a frame if our Vulkan app is not being destroyed.
-                WindowEvent::RedrawRequested if !elwt.exiting() && !minimized => {
-                    unsafe { app.render(&window) }.unwrap();
-                },
-                // Mark the window as having been resized.
-                WindowEvent::Resized(size) => {
-                    if size.width == 0 || size.height == 0 {
-                        minimized = true;
-                    } else {
-                        minimized = false;
-                        app.resized = true;
+            Event::NewEvents(_) => {
+                elwt.set_control_flow(ControlFlow::Poll);
+            }
+            Event::AboutToWait => {
+                if !minimized {
+                    window.request_redraw();
+                }
+            }
+            Event::WindowEvent { event, .. } => {
+                gui.handle_event(&window, &event);
+
+                match event {
+                    WindowEvent::RedrawRequested => {
+                        gui.run_frame(&window);
+                        render_controller.present();
                     }
+                    WindowEvent::Resized(size) => {
+                        if size.width == 0 || size.height == 0 {
+                            if !minimized {
+                                minimized = true;
+                                render_controller.pause();
+                            }
+                        } else {
+                            minimized = false;
+                            render_controller.resize(size.width, size.height);
+                            render_controller.resume();
+                        }
+                    }
+                    WindowEvent::CloseRequested => {
+                        render_controller.shutdown();
+                        elwt.exit();
+                    }
+                    _ => {}
                 }
-                // Destroy our Vulkan app.
-                WindowEvent::CloseRequested => {
-                    elwt.exit();
-                    unsafe { app.destroy(); }
-                }
-                _ => {}
             }
             _ => {}
         }
@@ -213,9 +236,9 @@ struct AppData {
     // there is one of these per concurrenlty rendered image
     compute_descriptor_sets: Vec<vk::DescriptorSet>,
     compute_command_buffer: vk::CommandBuffer,
+    present_command_buffer: vk::CommandBuffer,
 
     // framebuffers: Vec<vk::Framebuffer>,
-    compute_in_flight_fences: vk::Fence,
     image_available_semaphores: vk::Semaphore,
     compute_finished_semaphores: vk::Semaphore,
 
@@ -250,6 +273,190 @@ struct AppData {
     texture_sampler: vk::Sampler,
     skybox_texture: Texture,
     skybox_sampler: vk::Sampler,
+
+    framebuffer_images: Vec<vk::Image>,
+    framebuffer_image_views: Vec<vk::ImageView>,
+    framebuffer_memories: Vec<vk::DeviceMemory>,
+}
+
+#[derive(Clone, Debug)]
+struct GuiCopyState {
+    panel_width: u32,
+    render_extent: UVec2,
+    last_generation: Option<u64>,
+    staging: Option<GuiStaging>,
+}
+
+#[derive(Clone, Debug)]
+struct GuiStaging {
+    buffer: vk::Buffer,
+    memory: vk::DeviceMemory,
+    capacity: vk::DeviceSize,
+    width: u32,
+    height: u32,
+}
+
+impl GuiCopyState {
+    fn new(initial_extent: UVec2) -> Self {
+        Self {
+            panel_width: 0,
+            render_extent: initial_extent,
+            last_generation: None,
+            staging: None,
+        }
+    }
+
+    unsafe fn update(
+        &mut self,
+        instance: &Instance,
+        device: &Device,
+        data: &AppData,
+        frame: &ui::GuiFrame,
+    ) -> Result<()> {
+        if self.last_generation == Some(frame.generation) {
+            return Ok(());
+        }
+
+        let swap_width = data.swapchain_extent.width;
+        let swap_height = data.swapchain_extent.height;
+
+        let copy_width = frame.width.min(swap_width);
+        let copy_height = frame.height.min(swap_height);
+
+        self.panel_width = copy_width;
+        self.render_extent = UVec2::new(swap_width.saturating_sub(copy_width), swap_height);
+
+        if copy_width == 0 || copy_height == 0 {
+            self.last_generation = Some(frame.generation);
+            return Ok(());
+        }
+
+        let bytes_per_row = copy_width as usize * 4;
+        let required = (bytes_per_row * copy_height as usize) as vk::DeviceSize;
+
+        self.ensure_capacity(instance, device, data, required)?;
+
+        if let Some(staging) = &mut self.staging {
+            let ptr = device.map_memory(staging.memory, 0, required, vk::MemoryMapFlags::empty())?
+                as *mut u8;
+
+            let src = frame.pixels.as_ref();
+            let src_width = frame.width as usize;
+            let src_stride = src_width * 4;
+
+            for row in 0..copy_height as usize {
+                let src_start = row * src_stride;
+                let dst_start = row * bytes_per_row;
+                let src_slice = &src[src_start..src_start + bytes_per_row];
+                std::ptr::copy_nonoverlapping(
+                    src_slice.as_ptr(),
+                    ptr.add(dst_start),
+                    bytes_per_row,
+                );
+            }
+
+            device.unmap_memory(staging.memory);
+            staging.width = copy_width;
+            staging.height = copy_height;
+        }
+
+        self.last_generation = Some(frame.generation);
+        Ok(())
+    }
+
+    fn copy_info(&self) -> Option<GuiCopyInfo> {
+        self.staging.as_ref().and_then(|staging| {
+            if self.panel_width == 0 || staging.width == 0 || staging.height == 0 {
+                None
+            } else {
+                Some(GuiCopyInfo {
+                    buffer: staging.buffer,
+                    width: staging.width,
+                    height: staging.height,
+                })
+            }
+        })
+    }
+
+    fn render_extent(&self) -> UVec2 {
+        self.render_extent
+    }
+
+    fn panel_width(&self) -> u32 {
+        self.panel_width
+    }
+
+    fn handle_resize(&mut self, width: u32, height: u32) {
+        let clamped = self.panel_width.min(width);
+        self.panel_width = clamped;
+        self.render_extent = UVec2::new(width.saturating_sub(clamped), height);
+        if let Some(staging) = &mut self.staging {
+            staging.width = staging.width.min(clamped);
+            staging.height = staging.height.min(height);
+        }
+    }
+
+    unsafe fn destroy(&mut self, device: &Device) {
+        if let Some(staging) = self.staging.take() {
+            device.destroy_buffer(staging.buffer, None);
+            device.free_memory(staging.memory, None);
+        }
+    }
+
+    unsafe fn ensure_capacity(
+        &mut self,
+        instance: &Instance,
+        device: &Device,
+        data: &AppData,
+        required: vk::DeviceSize,
+    ) -> Result<()> {
+        if let Some(staging) = &self.staging {
+            if staging.capacity >= required {
+                return Ok(());
+            }
+        }
+
+        if let Some(existing) = self.staging.take() {
+            device.destroy_buffer(existing.buffer, None);
+            device.free_memory(existing.memory, None);
+        }
+
+        if required == 0 {
+            return Ok(());
+        }
+
+        let buffer_info = vk::BufferCreateInfo::builder()
+            .size(required)
+            .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let buffer = device.create_buffer(&buffer_info, None)?;
+        let requirements = device.get_buffer_memory_requirements(buffer);
+        let memory_type = get_memory_type_index(
+            instance,
+            data,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            requirements,
+        )?;
+
+        let allocation_size = requirements.size.max(required);
+        let alloc_info = vk::MemoryAllocateInfo::builder()
+            .allocation_size(allocation_size)
+            .memory_type_index(memory_type);
+
+        let memory = device.allocate_memory(&alloc_info, None)?;
+        device.bind_buffer_memory(buffer, memory, 0)?;
+
+        self.staging = Some(GuiStaging {
+            buffer,
+            memory,
+            capacity: allocation_size,
+            width: 0,
+            height: 0,
+        });
+
+        Ok(())
+    }
 }
 
 /// Our Vulkan app.
@@ -261,8 +468,9 @@ struct App {
     device: Device,
     frame: usize,
     resized: bool,
-    start: Instant,
     fps_counter: FPSCounter,
+    gui_copy: GuiCopyState,
+    frame_fences: Vec<vk::Fence>,
 }
 
 impl App {
@@ -282,6 +490,8 @@ impl App {
         create_render_pass(&instance, &device, &mut data)?;
         // create_framebuffers(&device, &mut data)?;
         create_command_pool(&instance, &device, &mut data)?;
+        create_framebuffer_images(&instance, &device, &mut data, OFFSCREEN_FRAME_COUNT)?;
+        transition_framebuffer_images(&device, &mut data)?;
         // create_vertex_buffer(&instance, &device, &mut data)?;
         create_uniform_buffer(&instance, &device, &mut data)?;
         create_shader_buffers(
@@ -346,7 +556,14 @@ impl App {
         )?;
         create_command_buffer(&device, &mut data)?;
         create_sync_objects(&device, &mut data)?;
+        let mut frame_fences = Vec::with_capacity(OFFSCREEN_FRAME_COUNT);
+        for _ in 0..OFFSCREEN_FRAME_COUNT {
+            let fence_info = vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
+            frame_fences.push(device.create_fence(&fence_info, None)?);
+        }
         info!("Finished initialisation of Vulkan Resources");
+        let swapchain_width = data.swapchain_extent.width;
+        let swapchain_height = data.swapchain_extent.height;
         Ok(Self {
             entry,
             instance,
@@ -354,18 +571,67 @@ impl App {
             device,
             frame: 0,
             resized: false,
-            start: Instant::now(),
             fps_counter: FPSCounter::new(15),
+            gui_copy: GuiCopyState::new(UVec2::new(
+                swapchain_width,
+                swapchain_height,
+            )),
+            frame_fences,
         })
     }
 
     /// Renders a frame for our Vulkan app.
-    unsafe fn render(&mut self, window: &Window) -> Result<()> {
-        self.fps_counter.update();
-        self.fps_counter.print();
+    unsafe fn dispatch_compute(&mut self, frame_index: usize) -> Result<()> {
+        self.device.reset_command_buffer(
+            self.data.compute_command_buffer,
+            vk::CommandBufferResetFlags::empty(),
+        )?;
+
+        self.update_uniform_buffer()?;
+        let render_extent = self.gui_copy.render_extent();
+        record_compute_commands(&self.device, &mut self.data, frame_index, render_extent)?;
 
         self.device
-            .wait_for_fences(&[self.data.compute_in_flight_fences], true, u64::MAX)?;
+            .reset_fences(&[self.frame_fences[frame_index]])?;
+
+        let command_buffers = &[self.data.compute_command_buffer];
+        let submit_info = vk::SubmitInfo::builder().command_buffers(command_buffers);
+
+        self.device.queue_submit(
+            self.data.compute_queue,
+            &[submit_info],
+            self.frame_fences[frame_index],
+        )?;
+
+        self.frame += 1;
+
+        if self.frame == TO_SAVE {
+            save_frame(
+                &self.instance,
+                &self.device,
+                &mut self.data,
+                self.frame as u32,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    unsafe fn present_frame(
+        &mut self,
+        frame_index: usize,
+        gui_frame: Option<ui::GuiFrame>,
+    ) -> Result<()> {
+        if let Some(frame) = gui_frame {
+            self.gui_copy
+                .update(&self.instance, &self.device, &self.data, &frame)?;
+        }
+
+        let render_extent = self.gui_copy.render_extent();
+        let panel_width = self.gui_copy.panel_width();
+
+        self.device
+            .wait_for_fences(&[self.frame_fences[frame_index]], true, u64::MAX)?;
 
         let result = self.device.acquire_next_image_khr(
             self.data.swapchain,
@@ -388,36 +654,37 @@ impl App {
         // self.data.images_in_flight[image_index] = in_flight_fence;
 
         self.device.reset_command_buffer(
-            self.data.compute_command_buffer,
+            self.data.present_command_buffer,
             vk::CommandBufferResetFlags::empty(),
         )?;
 
-        self.update_uniform_buffer(image_index)?;
-        run_command_buffer(&self.device, &mut self.data, image_index)?;
+        let gui_copy = self.gui_copy.copy_info();
+        record_present_commands(
+            &self.device,
+            &mut self.data,
+            image_index,
+            frame_index,
+            panel_width,
+            render_extent,
+            gui_copy,
+        )?;
+
+        let wait_semaphores = &[self.data.image_available_semaphores];
+        let command_buffers = &[self.data.present_command_buffer];
+        let signal_semaphores = &[self.data.compute_finished_semaphores];
+        let submit_info = vk::SubmitInfo::builder()
+            .wait_semaphores(wait_semaphores)
+            .wait_dst_stage_mask(&[vk::PipelineStageFlags::TRANSFER])
+            .command_buffers(command_buffers)
+            .signal_semaphores(signal_semaphores);
 
         self.device
-            .reset_fences(&[self.data.compute_in_flight_fences])?;
-
-        let image_semaphores = &[self.data.image_available_semaphores];
-        let compute_command_buffer = &[self.data.compute_command_buffer];
-        let finish_semaphores = &[self.data.compute_finished_semaphores];
-        let submit_info = vk::SubmitInfo::builder()
-            .wait_semaphores(image_semaphores)
-            .wait_dst_stage_mask(&[vk::PipelineStageFlags::COMPUTE_SHADER])
-            .command_buffers(compute_command_buffer)
-            .signal_semaphores(finish_semaphores);
-
-        self.device.queue_submit(
-            self.data.compute_queue,
-            &[submit_info],
-            self.data.compute_in_flight_fences,
-        )?;
+            .queue_submit(self.data.present_queue, &[submit_info], vk::Fence::null())?;
 
         let swapchains = &[self.data.swapchain];
         let image_indices = &[image_index as u32];
-        let compute_finished = &[self.data.compute_finished_semaphores];
         let present_info = vk::PresentInfoKHR::builder()
-            .wait_semaphores(compute_finished)
+            .wait_semaphores(signal_semaphores)
             .swapchains(swapchains)
             .image_indices(image_indices);
 
@@ -434,25 +701,17 @@ impl App {
         }
 
 
-        self.frame += 1;
-
-        if self.frame == TO_SAVE {
-            save_frame(&self.instance, &self.device, &mut self.data, self.frame as u32)?;
-        }
-
-
         Ok(())
     }
 
     /// Updates the uniform buffer object for our Vulkan app.
-    unsafe fn update_uniform_buffer(&self, image_index: usize) -> Result<()> {
+    unsafe fn update_uniform_buffer(&self) -> Result<()> {
         // MVP
 
         let mut ubo = self.data.scene.get_camera_controls();
-        ubo.resolution = AUVec2(UVec2::new(
-            self.data.swapchain_extent.width,
-            self.data.swapchain_extent.height,
-        ));
+        let render_extent = self.gui_copy.render_extent();
+        let panel_width = self.gui_copy.panel_width();
+        ubo.resolution = AUVec2(render_extent);
         ubo.time = Au32(self.frame as u32);
 
         let memory = self.device.map_memory(
@@ -486,19 +745,51 @@ impl App {
     //     Ok(())
     // }
 
+    fn handle_resize(&mut self, width: u32, height: u32) {
+        if width == 0 || height == 0 {
+            return;
+        }
+
+        self.data.swapchain_extent.width = width;
+        self.data.swapchain_extent.height = height;
+        self.gui_copy.handle_resize(width, height);
+        self.resized = true;
+    }
+
     /// Destroys our Vulkan app.
     #[rustfmt::skip]
     unsafe fn destroy(&mut self) {
         self.device.device_wait_idle().unwrap();
 
         self.destroy_swapchain();
+        self.gui_copy.destroy(&self.device);
 
         // self.data.in_flight_fences.iter().for_each(|f| self.device.destroy_fence(*f, None));
         // self.data.render_finished_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
         // self.data.image_available_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
         // self.device.free_memory(self.data.shader_buffer_memory, None);
         // self.device.destroy_buffer(self.data.shader_buffer, None);
+        self.device.free_command_buffers(
+            self.data.command_pool,
+            &[self.data.compute_command_buffer, self.data.present_command_buffer],
+        );
         self.device.destroy_command_pool(self.data.command_pool, None);
+        for &view in &self.data.framebuffer_image_views {
+            self.device.destroy_image_view(view, None);
+        }
+        for &image in &self.data.framebuffer_images {
+            self.device.destroy_image(image, None);
+        }
+        for &memory in &self.data.framebuffer_memories {
+            self.device.free_memory(memory, None);
+        }
+        for &fence in &self.frame_fences {
+            self.device.destroy_fence(fence, None);
+        }
+        self.device
+            .destroy_semaphore(self.data.image_available_semaphores, None);
+        self.device
+            .destroy_semaphore(self.data.compute_finished_semaphores, None);
         self.device.destroy_descriptor_set_layout(self.data.descriptor_set_layout, None);
         self.device.destroy_device(None);
         self.instance.destroy_surface_khr(self.data.surface, None);
@@ -523,6 +814,208 @@ impl App {
         self.device.destroy_render_pass(self.data.render_pass, None);
         self.data.swapchain_image_views.iter().for_each(|v| self.device.destroy_image_view(*v, None));
         self.device.destroy_swapchain_khr(self.data.swapchain, None);
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct RenderMetrics {
+    pub fps: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct GuiCopyInfo {
+    pub buffer: vk::Buffer,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Clone, Debug)]
+pub enum RenderCommand {
+    Pause,
+    Resume,
+    Resize { width: u32, height: u32 },
+    Present,
+    Shutdown,
+}
+
+pub struct RenderController {
+    command_tx: Sender<RenderCommand>,
+    metrics_rx: Receiver<RenderMetrics>,
+    handle: Option<thread::JoinHandle<()>>,
+}
+
+impl RenderController {
+    fn spawn(app: App, gui_shared: ui::GuiShared) -> Result<Self> {
+        let (command_tx, command_rx) = bounded(16);
+        let (metrics_tx, metrics_rx) = bounded(32);
+
+        let render_gui_shared = gui_shared.clone();
+        let handle = thread::Builder::new()
+            .name("render-thread".into())
+            .spawn(move || render_loop(app, render_gui_shared, command_rx, metrics_tx))
+            .map_err(|err| anyhow!("failed to spawn render thread: {err}"))?;
+
+        Ok(Self {
+            command_tx,
+            metrics_rx,
+            handle: Some(handle),
+        })
+    }
+
+    pub fn pause(&self) {
+        let _ = self.command_tx.try_send(RenderCommand::Pause);
+    }
+
+    pub fn resume(&self) {
+        let _ = self.command_tx.try_send(RenderCommand::Resume);
+    }
+
+    pub fn resize(&self, width: u32, height: u32) {
+        let _ = self
+            .command_tx
+            .try_send(RenderCommand::Resize { width, height });
+    }
+
+    pub fn present(&self) {
+        let _ = self.command_tx.try_send(RenderCommand::Present);
+    }
+
+    pub fn shutdown(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            let _ = self.command_tx.send(RenderCommand::Shutdown);
+            let _ = handle.join();
+        }
+    }
+
+    pub fn metrics_receiver(&self) -> Receiver<RenderMetrics> {
+        self.metrics_rx.clone()
+    }
+
+    pub fn command_sender(&self) -> Sender<RenderCommand> {
+        self.command_tx.clone()
+    }
+}
+
+impl Drop for RenderController {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
+fn render_loop(
+    mut app: App,
+    gui_shared: ui::GuiShared,
+    command_rx: Receiver<RenderCommand>,
+    metrics_tx: Sender<RenderMetrics>,
+) {
+    let mut paused = false;
+    let mut running = true;
+    let mut available: VecDeque<usize> = (0..OFFSCREEN_FRAME_COUNT).collect();
+    let mut in_flight: Vec<usize> = Vec::with_capacity(OFFSCREEN_FRAME_COUNT);
+    let mut ready: VecDeque<usize> = VecDeque::with_capacity(OFFSCREEN_FRAME_COUNT);
+    let mut current_frame: Option<usize> = None;
+
+    while running {
+        let mut present_requested = false;
+        let mut pending_resize: Option<(u32, u32)> = None;
+
+        loop {
+            match command_rx.try_recv() {
+                Ok(command) => match command {
+                    RenderCommand::Pause => paused = true,
+                    RenderCommand::Resume => paused = false,
+                    RenderCommand::Resize { width, height } => {
+                        pending_resize = Some((width, height));
+                    }
+                    RenderCommand::Present => present_requested = true,
+                    RenderCommand::Shutdown => {
+                        running = false;
+                        break;
+                    }
+                },
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    running = false;
+                    break;
+                }
+            }
+        }
+
+        if !running {
+            break;
+        }
+
+        if let Some((width, height)) = pending_resize {
+            app.handle_resize(width, height);
+        }
+
+        // Promote completed frames to ready queue
+        let mut completed = Vec::new();
+        in_flight.retain(|index| {
+            match unsafe { app.device.get_fence_status(app.frame_fences[*index]) } {
+                Ok(_) => {
+                    completed.push(*index);
+                    false
+                }
+                Ok(_) => true,
+                Err(err) => {
+                    error!("fence status error: {err:?}");
+                    true
+                }
+            }
+        });
+
+        for index in completed {
+            ready.push_back(index);
+            let fps = app.fps_counter.tick();
+            let _ = metrics_tx.try_send(RenderMetrics { fps });
+        }
+
+        if present_requested {
+            let gui_frame = gui_shared.read().ok().and_then(|state| state.latest());
+            if let Some(new_frame) = ready.pop_back() {
+                // Release older ready frames back to available; keep most recent only.
+                while let Some(stale) = ready.pop_front() {
+                    available.push_back(stale);
+                }
+
+                if let Err(err) = unsafe { app.present_frame(new_frame, gui_frame.clone()) } {
+                    error!("present error: {err:?}");
+                    available.push_back(new_frame);
+                } else {
+                    if let Some(previous) = current_frame.replace(new_frame) {
+                        available.push_back(previous);
+                    }
+                }
+            } else if let Some(current) = current_frame {
+                if let Err(err) = unsafe { app.present_frame(current, gui_frame) } {
+                    error!("present error: {err:?}");
+                }
+            }
+        }
+
+        if !paused {
+            if let Some(index) = available.pop_front() {
+                match unsafe { app.dispatch_compute(index) } {
+                    Ok(()) => in_flight.push(index),
+                    Err(err) => {
+                        error!("dispatch error: {err:?}");
+                        available.push_front(index);
+                        thread::sleep(Duration::from_millis(16));
+                    }
+                }
+            }
+        } else {
+            thread::sleep(Duration::from_millis(5));
+        }
+
+        if available.is_empty() {
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    unsafe {
+        app.destroy();
     }
 }
 

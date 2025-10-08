@@ -25,6 +25,11 @@ impl FPSCounter {
         }
     }
 
+    pub fn tick(&mut self) -> f64 {
+        self.update();
+        self.get_fps()
+    }
+
     pub fn get_fps(&self) -> f64 {
         if self.frame_times.len() < 2 {
             return 0.0;
