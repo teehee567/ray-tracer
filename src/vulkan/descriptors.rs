@@ -5,7 +5,7 @@ use crate::{AppData, CameraBufferObject};
 use anyhow::Result;
 
 pub unsafe fn create_descriptor_pool(device: &Device, data: &mut AppData) -> Result<()> {
-    let max_sets = data.swapchain_image_views.len() as u32;
+    let max_sets = data.framebuffer_image_views.len() as u32;
     let ubo_size = vk::DescriptorPoolSize::builder()
         .type_(vk::DescriptorType::UNIFORM_BUFFER)
         .descriptor_count(max_sets)
@@ -48,7 +48,7 @@ pub unsafe fn create_descriptor_sets(
 ) -> Result<()> {
     // Allocate
 
-    let layouts = vec![data.descriptor_set_layout; data.swapchain_image_views.len()];
+    let layouts = vec![data.descriptor_set_layout; data.framebuffer_image_views.len()];
     debug!("Layouts: {:?}", layouts.len());
     let info = vk::DescriptorSetAllocateInfo::builder()
         .descriptor_pool(data.descriptor_pool)
@@ -58,7 +58,7 @@ pub unsafe fn create_descriptor_sets(
     data.compute_descriptor_sets = device.allocate_descriptor_sets(&info)?;
     info!("Allocated Descriptor sets");
 
-    for (i, &swapchain_image_view) in data.swapchain_image_views.iter().enumerate() {
+    for (i, framebuffer_view) in data.framebuffer_image_views.iter().enumerate() {
         debug!("Started Update Descriptor Sets");
         let uniform_buffer_info = vk::DescriptorBufferInfo::builder()
             .buffer(data.uniform_buffer)
@@ -87,12 +87,6 @@ pub unsafe fn create_descriptor_sets(
         let accumulator_image_info = vk::DescriptorImageInfo::builder()
             .sampler(data.sampler)
             .image_view(data.accumulator_view)
-            .image_layout(vk::ImageLayout::GENERAL)
-            .build();
-
-        let swapchain_image_info = vk::DescriptorImageInfo::builder()
-            .sampler(data.sampler)
-            .image_view(data.swapchain_image_views[i])
             .image_layout(vk::ImageLayout::GENERAL)
             .build();
 
@@ -159,13 +153,19 @@ pub unsafe fn create_descriptor_sets(
             .image_info(&accumulator_image_array)
             .build();
 
-        let swapchain_image_array = [swapchain_image_info];
-        let write_swapchain = vk::WriteDescriptorSet::builder()
+        let framebuffer_image_info = vk::DescriptorImageInfo::builder()
+            .sampler(data.sampler)
+            .image_view(*framebuffer_view)
+            .image_layout(vk::ImageLayout::GENERAL)
+            .build();
+
+        let framebuffer_image_array = [framebuffer_image_info];
+        let write_framebuffer = vk::WriteDescriptorSet::builder()
             .dst_set(data.compute_descriptor_sets[i])
             .dst_binding(5)
             .dst_array_element(0)
             .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
-            .image_info(&swapchain_image_array)
+            .image_info(&framebuffer_image_array)
             .build();
 
         let texture_write = vk::WriteDescriptorSet::builder()
@@ -185,14 +185,13 @@ pub unsafe fn create_descriptor_sets(
             .image_info(skybox_write_slice)
             .build();
 
-
         let descriptor_writes = &[
             write_uniform,
             bvh_shader,
             material_shader,
             triangle_shader,
             write_accumulator,
-            write_swapchain,
+            write_framebuffer,
             texture_write,
             skybox_write,
         ];
