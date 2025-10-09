@@ -1,19 +1,26 @@
 use log::info;
 use vulkanalia::prelude::v1_0::*;
 
-use crate::{AppData, GuiCopyInfo, TILE_SIZE};
-use anyhow::Result;
+use crate::{AppData, GuiCopyInfo, OFFSCREEN_FRAME_COUNT, TILE_SIZE};
+use anyhow::{Result, anyhow};
 use glam::UVec2;
 
 pub unsafe fn create_command_buffer(device: &Device, data: &mut AppData) -> Result<()> {
+    let command_buffer_count = (OFFSCREEN_FRAME_COUNT + 1) as u32;
     let allocate_info = vk::CommandBufferAllocateInfo::builder()
         .command_pool(data.command_pool)
         .level(vk::CommandBufferLevel::PRIMARY)
-        .command_buffer_count(2);
+        .command_buffer_count(command_buffer_count);
 
     let buffers = device.allocate_command_buffers(&allocate_info)?;
-    data.compute_command_buffer = buffers[0];
-    data.present_command_buffer = buffers[1];
+    if buffers.len() < OFFSCREEN_FRAME_COUNT + 1 {
+        return Err(anyhow!(
+            "failed to allocate compute/present command buffers"
+        ));
+    }
+
+    data.compute_command_buffers = buffers[..OFFSCREEN_FRAME_COUNT].to_vec();
+    data.present_command_buffer = buffers[OFFSCREEN_FRAME_COUNT];
     info!("Created command buffers for: {:?}", data.command_pool);
 
     Ok(())
@@ -22,10 +29,10 @@ pub unsafe fn create_command_buffer(device: &Device, data: &mut AppData) -> Resu
 pub unsafe fn record_compute_commands(
     device: &Device,
     data: &mut AppData,
+    command_buffer: vk::CommandBuffer,
     frame_index: usize,
     render_extent: UVec2,
 ) -> Result<()> {
-    let command_buffer = data.compute_command_buffer;
     let info = vk::CommandBufferBeginInfo::builder();
 
     device.begin_command_buffer(command_buffer, &info)?;
@@ -87,8 +94,39 @@ pub unsafe fn record_present_commands(
         .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
         .build();
 
+    device.cmd_pipeline_barrier(
+        command_buffer,
+        vk::PipelineStageFlags::COMPUTE_SHADER,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::DependencyFlags::empty(),
+        &[] as &[vk::MemoryBarrier],
+        &[] as &[vk::BufferMemoryBarrier],
+        &[framebuffer_barrier],
+    );
+
+    let current_layout = data
+        .swapchain_image_layouts
+        .get(swapchain_index)
+        .copied()
+        .unwrap_or(vk::ImageLayout::UNDEFINED);
+
+    let (swap_src_stage, swap_src_access) = match current_layout {
+        vk::ImageLayout::UNDEFINED => (
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+            vk::AccessFlags::empty(),
+        ),
+        vk::ImageLayout::PRESENT_SRC_KHR => (
+            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+            vk::AccessFlags::MEMORY_READ,
+        ),
+        _ => (
+            vk::PipelineStageFlags::ALL_COMMANDS,
+            vk::AccessFlags::empty(),
+        ),
+    };
+
     let swapchain_barrier = vk::ImageMemoryBarrier::builder()
-        .old_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+        .old_layout(current_layout)
         .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
         .image(data.swapchain_images[swapchain_index])
         .subresource_range(
@@ -102,18 +140,18 @@ pub unsafe fn record_present_commands(
         )
         .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
         .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .src_access_mask(vk::AccessFlags::empty())
-        .dst_access_mask(vk::AccessFlags::SHADER_WRITE)
+        .src_access_mask(swap_src_access)
+        .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)
         .build();
 
     device.cmd_pipeline_barrier(
         command_buffer,
-        vk::PipelineStageFlags::COMPUTE_SHADER,
+        swap_src_stage,
         vk::PipelineStageFlags::TRANSFER,
         vk::DependencyFlags::empty(),
         &[] as &[vk::MemoryBarrier],
         &[] as &[vk::BufferMemoryBarrier],
-        &[framebuffer_barrier, swapchain_barrier],
+        &[swapchain_barrier],
     );
 
     let clear_value = vk::ClearColorValue {
@@ -152,11 +190,7 @@ pub unsafe fn record_present_commands(
                     .layer_count(1)
                     .build(),
             )
-            .src_offset(vk::Offset3D {
-                x: panel_width as i32,
-                y: 0,
-                z: 0,
-            })
+            .src_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
             .dst_offset(vk::Offset3D {
                 x: panel_width as i32,
                 y: 0,
@@ -269,7 +303,11 @@ pub unsafe fn record_present_commands(
         &[present_barrier],
     );
 
+    if let Some(layout) = data.swapchain_image_layouts.get_mut(swapchain_index) {
+        *layout = vk::ImageLayout::PRESENT_SRC_KHR;
+    }
+
     device.end_command_buffer(command_buffer)?;
-    
+
     Ok(())
 }

@@ -10,11 +10,11 @@
 use std::collections::VecDeque;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
-use std::time::Instant;
 use std::thread;
 use std::time::Duration;
+use std::time::Instant;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
 use glam::UVec2;
 use image::ImageBuffer;
@@ -22,7 +22,9 @@ use log::{error, info};
 use scene::Scene;
 use vulkan::accumulate_image::{create_image, transition_image_layout};
 use vulkan::buffers::{create_shader_buffers, create_uniform_buffer};
-use vulkan::command_buffers::{create_command_buffer, record_compute_commands, record_present_commands};
+use vulkan::command_buffers::{
+    create_command_buffer, record_compute_commands, record_present_commands,
+};
 use vulkan::command_pool::create_command_pool;
 use vulkan::descriptors::{
     create_compute_descriptor_set_layout, create_descriptor_pool, create_descriptor_sets,
@@ -31,18 +33,21 @@ use vulkan::fps_counter::FPSCounter;
 use vulkan::framebuffer::{create_framebuffer_images, transition_framebuffer_images};
 use vulkan::instance::create_instance;
 use vulkan::logical_device::create_logical_device;
-use vulkan::physical_device::{pick_physical_device, SuitabilityError};
+use vulkan::physical_device::{SuitabilityError, pick_physical_device};
 use vulkan::pipeline::{create_compute_pipeline, create_render_pass};
 use vulkan::sampler::create_sampler;
 use vulkan::swapchain::{create_swapchain, create_swapchain_image_views};
 use vulkan::sync_objects::create_sync_objects;
-use vulkan::texture::{create_cubemap_sampler, create_cubemap_texture, create_texture_image, create_texture_sampler, Texture};
+use vulkan::texture::{
+    Texture, create_cubemap_sampler, create_cubemap_texture, create_texture_image,
+    create_texture_sampler,
+};
 use vulkan::utils::get_memory_type_index;
-use vulkanalia::loader::{LibloadingLoader, LIBRARY};
+use vulkanalia::Version;
+use vulkanalia::loader::{LIBRARY, LibloadingLoader};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::window as vk_window;
-use vulkanalia::Version;
-use winit::dpi::LogicalSize;
+use winit::dpi::PhysicalSize;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
@@ -53,8 +58,8 @@ use vulkanalia::vk::KhrSwapchainExtension;
 
 mod scene;
 mod types;
-mod vulkan;
 mod ui;
+mod vulkan;
 pub use types::*;
 mod accelerators;
 
@@ -84,28 +89,31 @@ macro_rules! print_size {
             "Size of {}: {} bytes",
             stringify!($t),
             std::mem::size_of::<$t>()
-
         );
     };
 }
 
 fn assert_vecs_equal<T: std::fmt::Debug + PartialEq>(v1: &[T], v2: &[T], context: usize) {
     if v1.len() != v2.len() {
-        panic!("Vectors have different lengths: {} vs {}", v1.len(), v2.len());
+        panic!(
+            "Vectors have different lengths: {} vs {}",
+            v1.len(),
+            v2.len()
+        );
     }
 
     for (i, (a, b)) in v1.iter().zip(v2.iter()).enumerate() {
         if a != b {
             let start = i.saturating_sub(context);
             let end = (i + context + 1).min(v1.len());
-            
+
             println!("Vectors differ at index {}:", i);
             println!("Vector 1 context: {:?}", &v1[start..end]);
             println!("Vector 2 context: {:?}", &v2[start..end]);
             println!("Specific difference: {:?} != {:?}", a, b);
             dbg!(a);
             dbg!(b);
-            
+
             panic!("Vector mismatch at index {}", i);
         }
     }
@@ -134,17 +142,24 @@ fn main() -> Result<()> {
     // let scene = Scene::from_gltf("./glTF/DamagedHelmet.gltf")?;
     // let scene = Scene::from_new("./scenes/lego_bulldozer.yaml")?;
     let scene = Scene::from_new("./scenes/nice/test_scene.yaml")?;
+    let render_resolution = scene.get_camera_controls().resolution.0;
     // let scene = Scene::from_new("./scenes/coffee_machine.yaml")?;
 
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
         .with_title("Vulkan Tutorial (Rust)")
-        .with_inner_size(LogicalSize::new(
-            scene.get_camera_controls().resolution.0.x,
-            scene.get_camera_controls().resolution.0.y,
-
+        .with_inner_size(PhysicalSize::new(
+            render_resolution.x,
+            render_resolution.y,
         ))
         .build(&event_loop)?;
+
+    let scale_factor = window.scale_factor() as f32;
+    let panel_width_px = ui::panel_width_pixels(scale_factor);
+    if panel_width_px > 0 {
+        let total_width = render_resolution.x + panel_width_px;
+        let _ = window.request_inner_size(PhysicalSize::new(total_width, render_resolution.y));
+    }
 
     // App
 
@@ -169,8 +184,9 @@ fn main() -> Result<()> {
     }
 
     let gui_shared = ui::create_shared_state();
-    let mut gui = ui::GuiFrontend::new(&window, gui_shared.clone());
-    let mut render_controller = RenderController::spawn(app, gui_shared)?;
+    let mut render_controller = RenderController::spawn(app, gui_shared.clone())?;
+    let metrics_rx = render_controller.metrics_receiver();
+    let mut gui = ui::GuiFrontend::new(&window, gui_shared.clone(), metrics_rx);
 
     let mut minimized = false;
     event_loop.run(move |event, elwt| {
@@ -227,15 +243,16 @@ struct AppData {
     swapchain: vk::SwapchainKHR,
     swapchain_extent: vk::Extent2D,
     swapchain_images: Vec<vk::Image>,
+    swapchain_image_layouts: Vec<vk::ImageLayout>,
     render_pass: vk::RenderPass,
     present_queue: vk::Queue,
     compute_queue: vk::Queue,
     compute_pipeline: vk::Pipeline,
     compute_pipeline_layout: vk::PipelineLayout,
 
-    // there is one of these per concurrenlty rendered image
+    // there is one of these per concurrently rendered image
     compute_descriptor_sets: Vec<vk::DescriptorSet>,
-    compute_command_buffer: vk::CommandBuffer,
+    compute_command_buffers: Vec<vk::CommandBuffer>,
     present_command_buffer: vk::CommandBuffer,
 
     // framebuffers: Vec<vk::Framebuffer>,
@@ -283,6 +300,7 @@ struct AppData {
 struct GuiCopyState {
     panel_width: u32,
     render_extent: UVec2,
+    base_extent: UVec2,
     last_generation: Option<u64>,
     staging: Option<GuiStaging>,
 }
@@ -297,10 +315,13 @@ struct GuiStaging {
 }
 
 impl GuiCopyState {
-    fn new(initial_extent: UVec2) -> Self {
+    fn new(initial_extent: UVec2, base_extent: UVec2) -> Self {
+        let clamped_width = base_extent.x.min(initial_extent.x);
+        let clamped_height = base_extent.y.min(initial_extent.y);
         Self {
             panel_width: 0,
-            render_extent: initial_extent,
+            render_extent: UVec2::new(clamped_width, clamped_height),
+            base_extent,
             last_generation: None,
             staging: None,
         }
@@ -320,13 +341,18 @@ impl GuiCopyState {
         let swap_width = data.swapchain_extent.width;
         let swap_height = data.swapchain_extent.height;
 
-        let copy_width = frame.width.min(swap_width);
+        let max_panel_width = swap_width.saturating_sub(self.base_extent.x);
+        let copy_width = frame.width.min(swap_width).min(max_panel_width);
         let copy_height = frame.height.min(swap_height);
 
         self.panel_width = copy_width;
-        self.render_extent = UVec2::new(swap_width.saturating_sub(copy_width), swap_height);
+        self.update_render_extent(swap_width, swap_height);
 
         if copy_width == 0 || copy_height == 0 {
+            if let Some(staging) = &mut self.staging {
+                staging.width = 0;
+                staging.height = 0;
+            }
             self.last_generation = Some(frame.generation);
             return Ok(());
         }
@@ -387,9 +413,10 @@ impl GuiCopyState {
     }
 
     fn handle_resize(&mut self, width: u32, height: u32) {
-        let clamped = self.panel_width.min(width);
+        let max_panel_width = width.saturating_sub(self.base_extent.x);
+        let clamped = self.panel_width.min(width).min(max_panel_width);
         self.panel_width = clamped;
-        self.render_extent = UVec2::new(width.saturating_sub(clamped), height);
+        self.update_render_extent(width, height);
         if let Some(staging) = &mut self.staging {
             staging.width = staging.width.min(clamped);
             staging.height = staging.height.min(height);
@@ -457,6 +484,13 @@ impl GuiCopyState {
 
         Ok(())
     }
+
+    fn update_render_extent(&mut self, swap_width: u32, swap_height: u32) {
+        let available_width = swap_width.saturating_sub(self.panel_width);
+        let width = self.base_extent.x.min(available_width);
+        let height = self.base_extent.y.min(swap_height);
+        self.render_extent = UVec2::new(width, height);
+    }
 }
 
 /// Our Vulkan app.
@@ -471,6 +505,7 @@ struct App {
     fps_counter: FPSCounter,
     gui_copy: GuiCopyState,
     frame_fences: Vec<vk::Fence>,
+    present_fence: vk::Fence,
 }
 
 impl App {
@@ -520,27 +555,19 @@ impl App {
 
         if data.textures.is_empty() {
             let default_pixels = [255u8, 255, 255, 255];
-            let texture = create_texture_image(
-                &instance,
-                &device,
-                &data,
-                &default_pixels,
-                1,
-                1,
-            )?;
+            let texture = create_texture_image(&instance, &device, &data, &default_pixels, 1, 1)?;
             data.textures.push(texture);
         }
 
         let skybox_data = &data.scene.components.skybox;
-        data.skybox_texture =
-            create_cubemap_texture(
-                &instance,
-                &device,
-                &data,
-                &skybox_data.pixels,
-                skybox_data.width,
-                skybox_data.height,
-            )?;
+        data.skybox_texture = create_cubemap_texture(
+            &instance,
+            &device,
+            &data,
+            &skybox_data.pixels,
+            skybox_data.width,
+            skybox_data.height,
+        )?;
 
         create_compute_descriptor_set_layout(&device, &mut data)?;
         create_compute_pipeline(&device, &mut data)?;
@@ -561,9 +588,13 @@ impl App {
             let fence_info = vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
             frame_fences.push(device.create_fence(&fence_info, None)?);
         }
+        let present_fence_info =
+            vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
+        let present_fence = device.create_fence(&present_fence_info, None)?;
         info!("Finished initialisation of Vulkan Resources");
         let swapchain_width = data.swapchain_extent.width;
         let swapchain_height = data.swapchain_extent.height;
+        let render_resolution = data.scene.get_camera_controls().resolution.0;
         Ok(Self {
             entry,
             instance,
@@ -572,29 +603,36 @@ impl App {
             frame: 0,
             resized: false,
             fps_counter: FPSCounter::new(15),
-            gui_copy: GuiCopyState::new(UVec2::new(
-                swapchain_width,
-                swapchain_height,
-            )),
+            gui_copy: GuiCopyState::new(
+                UVec2::new(swapchain_width, swapchain_height),
+                render_resolution,
+            ),
             frame_fences,
+            present_fence,
         })
     }
 
     /// Renders a frame for our Vulkan app.
     unsafe fn dispatch_compute(&mut self, frame_index: usize) -> Result<()> {
-        self.device.reset_command_buffer(
-            self.data.compute_command_buffer,
-            vk::CommandBufferResetFlags::empty(),
-        )?;
+        let command_buffer = self.data.compute_command_buffers[frame_index];
+
+        self.device
+            .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())?;
 
         self.update_uniform_buffer()?;
         let render_extent = self.gui_copy.render_extent();
-        record_compute_commands(&self.device, &mut self.data, frame_index, render_extent)?;
+        record_compute_commands(
+            &self.device,
+            &mut self.data,
+            command_buffer,
+            frame_index,
+            render_extent,
+        )?;
 
         self.device
             .reset_fences(&[self.frame_fences[frame_index]])?;
 
-        let command_buffers = &[self.data.compute_command_buffer];
+        let command_buffers = &[command_buffer];
         let submit_info = vk::SubmitInfo::builder().command_buffers(command_buffers);
 
         self.device.queue_submit(
@@ -632,6 +670,10 @@ impl App {
 
         self.device
             .wait_for_fences(&[self.frame_fences[frame_index]], true, u64::MAX)?;
+
+        self.device
+            .wait_for_fences(&[self.present_fence], true, u64::MAX)?;
+        self.device.reset_fences(&[self.present_fence])?;
 
         let result = self.device.acquire_next_image_khr(
             self.data.swapchain,
@@ -679,7 +721,7 @@ impl App {
             .signal_semaphores(signal_semaphores);
 
         self.device
-            .queue_submit(self.data.present_queue, &[submit_info], vk::Fence::null())?;
+            .queue_submit(self.data.present_queue, &[submit_info], self.present_fence)?;
 
         let swapchains = &[self.data.swapchain];
         let image_indices = &[image_index as u32];
@@ -699,7 +741,6 @@ impl App {
         } else if let Err(e) = result {
             return Err(anyhow!(e));
         }
-
 
         Ok(())
     }
@@ -769,10 +810,10 @@ impl App {
         // self.data.image_available_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
         // self.device.free_memory(self.data.shader_buffer_memory, None);
         // self.device.destroy_buffer(self.data.shader_buffer, None);
-        self.device.free_command_buffers(
-            self.data.command_pool,
-            &[self.data.compute_command_buffer, self.data.present_command_buffer],
-        );
+        let mut all_command_buffers = self.data.compute_command_buffers.clone();
+        all_command_buffers.push(self.data.present_command_buffer);
+        self.device
+            .free_command_buffers(self.data.command_pool, &all_command_buffers);
         self.device.destroy_command_pool(self.data.command_pool, None);
         for &view in &self.data.framebuffer_image_views {
             self.device.destroy_image_view(view, None);
@@ -786,6 +827,7 @@ impl App {
         for &fence in &self.frame_fences {
             self.device.destroy_fence(fence, None);
         }
+        self.device.destroy_fence(self.present_fence, None);
         self.device
             .destroy_semaphore(self.data.image_available_semaphores, None);
         self.device
@@ -814,6 +856,7 @@ impl App {
         self.device.destroy_render_pass(self.data.render_pass, None);
         self.data.swapchain_image_views.iter().for_each(|v| self.device.destroy_image_view(*v, None));
         self.device.destroy_swapchain_khr(self.data.swapchain, None);
+        self.data.swapchain_image_layouts.clear();
     }
 }
 
@@ -1087,7 +1130,12 @@ impl SwapchainSupport {
     }
 }
 
-unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, frame: u32) -> Result<()> {
+unsafe fn save_frame(
+    instance: &Instance,
+    device: &Device,
+    data: &mut AppData,
+    frame: u32,
+) -> Result<()> {
     let size = (data.swapchain_extent.width * data.swapchain_extent.height * 4) as u64;
 
     // Create staging buffer
@@ -1123,13 +1171,34 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
     let command_buffer = device.allocate_command_buffers(&alloc_info)?[0];
 
     // Record copy command
-    let begin_info = vk::CommandBufferBeginInfo::builder()
-        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+    let begin_info =
+        vk::CommandBufferBeginInfo::builder().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
     device.begin_command_buffer(command_buffer, &begin_info)?;
 
+    let current_layout = data
+        .swapchain_image_layouts
+        .get(0)
+        .copied()
+        .unwrap_or(vk::ImageLayout::UNDEFINED);
+
+    let (src_stage, src_access) = match current_layout {
+        vk::ImageLayout::UNDEFINED => (
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+            vk::AccessFlags::empty(),
+        ),
+        vk::ImageLayout::PRESENT_SRC_KHR => (
+            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+            vk::AccessFlags::MEMORY_READ,
+        ),
+        _ => (
+            vk::PipelineStageFlags::ALL_COMMANDS,
+            vk::AccessFlags::empty(),
+        ),
+    };
+
     let barrier = vk::ImageMemoryBarrier::builder()
-        .old_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+        .old_layout(current_layout)
         .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
         .image(data.swapchain_images[0]) // Use the first swapchain image, or the current one
         .subresource_range(vk::ImageSubresourceRange {
@@ -1139,12 +1208,12 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
             base_array_layer: 0,
             layer_count: 1,
         })
-        .src_access_mask(vk::AccessFlags::MEMORY_READ)
+        .src_access_mask(src_access)
         .dst_access_mask(vk::AccessFlags::TRANSFER_READ);
 
     device.cmd_pipeline_barrier(
         command_buffer,
-        vk::PipelineStageFlags::TRANSFER,
+        src_stage,
         vk::PipelineStageFlags::TRANSFER,
         vk::DependencyFlags::empty(),
         &[] as &[vk::MemoryBarrier],
@@ -1197,22 +1266,22 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
         &[barrier],
     );
 
+    if let Some(layout) = data.swapchain_image_layouts.get_mut(0) {
+        *layout = vk::ImageLayout::PRESENT_SRC_KHR;
+    }
+
     device.end_command_buffer(command_buffer)?;
 
     // Submit and wait
-    let submit_info = vk::SubmitInfo::builder()
-        .command_buffers(std::slice::from_ref(&command_buffer));
+    let submit_info =
+        vk::SubmitInfo::builder().command_buffers(std::slice::from_ref(&command_buffer));
 
     device.queue_submit(data.compute_queue, &[submit_info], vk::Fence::null())?;
     device.queue_wait_idle(data.compute_queue)?;
 
     // Map memory and save to file
-    let data_ptr = device.map_memory(
-        staging_memory,
-        0,
-        size,
-        vk::MemoryMapFlags::empty(),
-    )? as *const u8;
+    let data_ptr =
+        device.map_memory(staging_memory, 0, size, vk::MemoryMapFlags::empty())? as *const u8;
 
     let buffer = std::slice::from_raw_parts(data_ptr, size as usize);
 
@@ -1248,11 +1317,11 @@ unsafe fn save_frame(instance: &Instance, device: &Device, data: &mut AppData, f
     // let mut filter_output = vec![0.0f32; input_img.len()];
     // let odin_device = oidn::Device::new();
     // let mut filter = oidn::RayTracing::new(&odin_device);
-    // 
+    //
     // filter
     //     .srgb(true)
     //     .image_dimensions(width as usize, height as usize);
-    // 
+    //
     // filter
     //     .filter(&input_img[..], &mut filter_output[..])
     //     .map_err(|e| anyhow!("Denoising error: {:?}", e))?;
