@@ -3,10 +3,10 @@ pub use textures::*;
 mod skybox;
 pub use skybox::*;
 
+use crate::AppData;
 use anyhow::{Result, anyhow};
 use vulkanalia::Device;
 use vulkanalia::prelude::v1_0::*;
-use crate::AppData;
 
 unsafe fn transition_texture_layout(
     device: &Device,
@@ -15,25 +15,26 @@ unsafe fn transition_texture_layout(
     format: vk::Format,
     old_layout: vk::ImageLayout,
     new_layout: vk::ImageLayout,
-    layers: u32
+    layers: u32,
 ) -> Result<()> {
     let command_buffer = begin_single_time_commands(device, data)?;
 
-    let (src_access_mask, dst_access_mask, src_stage_mask, dst_stage_mask) = match (old_layout, new_layout) {
-        (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
-            vk::AccessFlags::empty(),
-            vk::AccessFlags::TRANSFER_WRITE,
-            vk::PipelineStageFlags::TOP_OF_PIPE,
-            vk::PipelineStageFlags::TRANSFER,
-        ),
-        (vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL) => (
-            vk::AccessFlags::TRANSFER_WRITE,
-            vk::AccessFlags::SHADER_READ,
-            vk::PipelineStageFlags::TRANSFER,
-            vk::PipelineStageFlags::COMPUTE_SHADER,
-        ),
-        _ => return Err(anyhow!("Unsupported image layout transition!")),
-    };
+    let (src_access_mask, dst_access_mask, src_stage_mask, dst_stage_mask) =
+        match (old_layout, new_layout) {
+            (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
+                vk::AccessFlags::empty(),
+                vk::AccessFlags::TRANSFER_WRITE,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                vk::PipelineStageFlags::TRANSFER,
+            ),
+            (vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL) => (
+                vk::AccessFlags::TRANSFER_WRITE,
+                vk::AccessFlags::SHADER_READ,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+            ),
+            _ => return Err(anyhow!("Unsupported image layout transition!")),
+        };
 
     let barrier = vk::ImageMemoryBarrier::builder()
         .old_layout(old_layout)
@@ -67,10 +68,7 @@ unsafe fn transition_texture_layout(
     Ok(())
 }
 
-unsafe fn begin_single_time_commands(
-    device: &Device,
-    data: &AppData,
-) -> Result<vk::CommandBuffer> {
+unsafe fn begin_single_time_commands(device: &Device, data: &AppData) -> Result<vk::CommandBuffer> {
     let info = vk::CommandBufferAllocateInfo::builder()
         .level(vk::CommandBufferLevel::PRIMARY)
         .command_pool(data.command_pool)
@@ -78,8 +76,8 @@ unsafe fn begin_single_time_commands(
 
     let command_buffer = device.allocate_command_buffers(&info)?[0];
 
-    let info = vk::CommandBufferBeginInfo::builder()
-        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+    let info =
+        vk::CommandBufferBeginInfo::builder().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
     device.begin_command_buffer(command_buffer, &info)?;
 
@@ -94,8 +92,7 @@ unsafe fn end_single_time_commands(
     device.end_command_buffer(command_buffer)?;
 
     let command_buffers = &[command_buffer];
-    let info = vk::SubmitInfo::builder()
-        .command_buffers(command_buffers);
+    let info = vk::SubmitInfo::builder().command_buffers(command_buffers);
 
     device.queue_submit(data.compute_queue, &[info], vk::Fence::null())?;
     device.queue_wait_idle(data.compute_queue)?;
@@ -104,4 +101,3 @@ unsafe fn end_single_time_commands(
 
     Ok(())
 }
-

@@ -3,13 +3,13 @@ use serde_yaml::Value;
 use vulkanalia::vk;
 
 use crate::{
-    AMat4, AUVec2, AVec2, AVec3, Af32, Au32,
-    CameraBufferObject, Material, SceneComponents, Triangle,
+    AMat4, AUVec2, AVec2, AVec3, Af32, Au32, CameraBufferObject, Material, SceneComponents,
+    Triangle,
 };
 
 const CONFIG_VERSION: &str = "0.2";
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use super::{Scene, TextureData, TextureFormat};
 
@@ -114,7 +114,7 @@ fn camera_mclaren() -> CameraBufferObject {
     };
     let resolution = UVec2::new(1920, 1080);
     let rotation = Vec3::new(-2.5, 210., -0.);
-    
+
     let look_at = Vec3::new(0.0, 0.0, 0.0);
     ubo.rotation = AMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
 
@@ -372,12 +372,10 @@ impl Scene {
             .map(|tex| tex.texture().source().index() as u32)
             .unwrap_or(u32::MAX);
 
-        let clearcoat = pbr
-            .extensions()
-            .and_then(|ext| {
-                ext.get("KHR_materials_clearcoat")
-                    .and_then(|json| json.as_object())
-            });
+        let clearcoat = pbr.extensions().and_then(|ext| {
+            ext.get("KHR_materials_clearcoat")
+                .and_then(|json| json.as_object())
+        });
 
         let clearcoat_factor = clearcoat
             .and_then(|c| c.get("clearcoatFactor"))

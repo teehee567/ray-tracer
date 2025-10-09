@@ -4,7 +4,7 @@ use log::info;
 use vulkanalia::{prelude::v1_0::*, vk::InstanceV1_1};
 
 use crate::{
-    AppData, QueueFamilyIndices, DEVICE_EXTENSIONS, PORTABILITY_MACOS_VERSION, VALIDATION_ENABLED,
+    AppData, DEVICE_EXTENSIONS, PORTABILITY_MACOS_VERSION, QueueFamilyIndices, VALIDATION_ENABLED,
     VALIDATION_LAYER,
 };
 use anyhow::Result;

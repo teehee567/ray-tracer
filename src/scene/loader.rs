@@ -25,18 +25,21 @@ impl Scene {
         file.read_to_string(&mut contents)
             .expect("Failed to read scene file");
 
-        let yaml: serde_yaml::Value = serde_yaml::from_str(&contents).expect("Failed to parse YAML");
+        let yaml: serde_yaml::Value =
+            serde_yaml::from_str(&contents).expect("Failed to parse YAML");
 
         let mut scene = SceneComponents::default();
         let mut material_name_to_index = std::collections::HashMap::new();
 
-
         // Load skybox
         if let Some(skybox) = yaml["skybox"].as_sequence() {
-            let skyboxes: Vec<PathBuf> = skybox.iter().map(|skybox_path| {
-                let base_dir = std::path::Path::new(path).parent().unwrap();
-                base_dir.join(skybox_path.as_str().unwrap())
-            }).collect();
+            let skyboxes: Vec<PathBuf> = skybox
+                .iter()
+                .map(|skybox_path| {
+                    let base_dir = std::path::Path::new(path).parent().unwrap();
+                    base_dir.join(skybox_path.as_str().unwrap())
+                })
+                .collect();
             let skybox_array: [PathBuf; 6] = skyboxes.try_into().unwrap();
             scene.skybox = Self::load_cubemap_textures(skybox_array).unwrap();
         }
@@ -45,7 +48,7 @@ impl Scene {
         if let Some(materials) = yaml["materials"].as_mapping() {
             for (name, mat_data) in materials {
                 let name = name.as_str().unwrap();
-                
+
                 let material: Material = serde_yaml::from_value(mat_data.clone())
                     .expect(&format!("Failed to deserialize material '{}'", name));
 
@@ -61,7 +64,9 @@ impl Scene {
                 if let Some(file_path) = surface["file"].as_str() {
                     let base_dir = std::path::Path::new(path).parent().unwrap();
                     let full_path = base_dir.join(file_path);
-                    let material_name = surface["material"].as_str().expect("Material not specified");
+                    let material_name = surface["material"]
+                        .as_str()
+                        .expect("Material not specified");
                     let material_index = material_name_to_index[material_name];
                     let smooth = surface["smooth"].as_bool().unwrap_or(false);
 
@@ -151,7 +156,9 @@ impl Scene {
                         Err(e) => eprintln!("Failed to load OBJ file {}: {:?}", file_path, e),
                     }
                 } else if surface["type"].as_str() == Some("mesh") {
-                    let material_name = surface["material"].as_str().expect("Material not specified");
+                    let material_name = surface["material"]
+                        .as_str()
+                        .expect("Material not specified");
                     let material_index = material_name_to_index[material_name];
 
                     // Load vertices
@@ -176,7 +183,9 @@ impl Scene {
 
                     // Create triangles from indices
                     for triangle_indices in triangles {
-                        let indices = triangle_indices.as_sequence().expect("Invalid triangle format");
+                        let indices = triangle_indices
+                            .as_sequence()
+                            .expect("Invalid triangle format");
                         let i0 = indices[0].as_u64().unwrap() as usize;
                         let i1 = indices[1].as_u64().unwrap() as usize;
                         let i2 = indices[2].as_u64().unwrap() as usize;
@@ -185,7 +194,7 @@ impl Scene {
                         let v0 = vertices[i0];
                         let v1 = vertices[i1];
                         let v2 = vertices[i2];
-                        
+
                         let normal = (v1 - v0).cross(v2 - v0).normalize();
 
                         let triangle = Triangle {
@@ -193,36 +202,31 @@ impl Scene {
                             is_sphere: Au32(0),
                             vertices: [
                                 AVec3(vertices[i0]),
-                                AVec3(vertices[i1]), 
-                                AVec3(vertices[i2])
+                                AVec3(vertices[i1]),
+                                AVec3(vertices[i2]),
                             ],
-                            normals: [
-                                AVec3(normal),
-                                AVec3(normal),
-                                AVec3(normal)
-                            ],
+                            normals: [AVec3(normal), AVec3(normal), AVec3(normal)],
                             uvs: [
                                 AVec2([0.0, 0.0].into()),
                                 AVec2([0.0, 0.0].into()),
-                                AVec2([0.0, 0.0].into())
+                                AVec2([0.0, 0.0].into()),
                             ],
                         };
 
                         scene.triangles.push(triangle);
                     }
-
                 }
             }
         }
 
         // Load camera
         if let Some(camera) = yaml["camera"].as_mapping() {
-            let camera_data: CameraBufferObject = serde_yaml::from_value(serde_yaml::Value::Mapping(camera.clone()))
-                .expect("Failed to deserialize camera");
+            let camera_data: CameraBufferObject =
+                serde_yaml::from_value(serde_yaml::Value::Mapping(camera.clone()))
+                    .expect("Failed to deserialize camera");
             scene.camera = camera_data;
         }
 
         scene
     }
-
 }

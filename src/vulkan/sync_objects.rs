@@ -1,4 +1,3 @@
-
 use log::info;
 use vulkanalia::prelude::v1_0::*;
 

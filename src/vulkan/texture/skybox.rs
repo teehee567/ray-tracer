@@ -1,14 +1,13 @@
-use vulkanalia::{Device, Instance};
 use vulkanalia::prelude::v1_0::*;
+use vulkanalia::{Device, Instance};
 
 use anyhow::Result;
 
 use crate::AppData;
 
-use super::{begin_single_time_commands, end_single_time_commands, transition_texture_layout};
 use super::Texture;
+use super::{begin_single_time_commands, end_single_time_commands, transition_texture_layout};
 use crate::vulkan::utils::{create_buffer, get_memory_type_index};
-
 
 pub unsafe fn create_cubemap_texture(
     instance: &Instance,
@@ -31,12 +30,7 @@ pub unsafe fn create_cubemap_texture(
     )?;
 
     // Copy pixels to staging buffer
-    let memory = device.map_memory(
-        staging_buffer_memory,
-        0,
-        size,
-        vk::MemoryMapFlags::empty(),
-    )?;
+    let memory = device.map_memory(staging_buffer_memory, 0, size, vk::MemoryMapFlags::empty())?;
     std::ptr::copy_nonoverlapping(pixels.as_ptr(), memory.cast(), pixels.len());
     device.unmap_memory(staging_buffer_memory);
 
@@ -84,17 +78,10 @@ pub unsafe fn create_cubemap_texture(
         vk::Format::R8G8B8A8_SRGB,
         vk::ImageLayout::UNDEFINED,
         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-        6
+        6,
     )?;
 
-    copy_buffer_to_cubemap(
-        device,
-        data,
-        staging_buffer,
-        image,
-        width,
-        height,
-    )?;
+    copy_buffer_to_cubemap(device, data, staging_buffer, image, width, height)?;
 
     transition_texture_layout(
         device,
@@ -103,7 +90,7 @@ pub unsafe fn create_cubemap_texture(
         vk::Format::R8G8B8A8_SRGB,
         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        6
+        6,
     )?;
 
     // Create cubemap image view
@@ -201,4 +188,3 @@ pub unsafe fn create_cubemap_sampler(device: &Device) -> Result<vk::Sampler> {
 
     Ok(device.create_sampler(&sampler_info, None)?)
 }
-

@@ -1,16 +1,21 @@
-
-use std::{collections::HashSet, ffi::{c_void, CStr}};
+use std::{
+    collections::HashSet,
+    ffi::{CStr, c_void},
+};
 
 use log::{debug, error, info, trace, warn};
-use vulkanalia::{prelude::v1_0::*, vk::ExtDebugUtilsExtension};
 use vulkanalia::window as vk_window;
+use vulkanalia::{prelude::v1_0::*, vk::ExtDebugUtilsExtension};
 use winit::window::Window;
 
-
 use crate::{AppData, PORTABILITY_MACOS_VERSION, VALIDATION_ENABLED, VALIDATION_LAYER};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
-pub unsafe fn create_instance(window: &Window, entry: &Entry, data: &mut AppData) -> Result<Instance> {
+pub unsafe fn create_instance(
+    window: &Window,
+    entry: &Entry,
+    data: &mut AppData,
+) -> Result<Instance> {
     // Application Info
 
     let application_info = vk::ApplicationInfo::builder()
@@ -48,7 +53,11 @@ pub unsafe fn create_instance(window: &Window, entry: &Entry, data: &mut AppData
     // Required by Vulkan SDK on macOS since 1.3.216.
     let flags = if cfg!(target_os = "macos") && entry.version()? >= PORTABILITY_MACOS_VERSION {
         info!("Enabling extensions for macOS portability.");
-        extensions.push(vk::KHR_GET_PHYSICAL_DEVICE_PROPERTIES2_EXTENSION.name.as_ptr());
+        extensions.push(
+            vk::KHR_GET_PHYSICAL_DEVICE_PROPERTIES2_EXTENSION
+                .name
+                .as_ptr(),
+        );
         extensions.push(vk::KHR_PORTABILITY_ENUMERATION_EXTENSION.name.as_ptr());
         vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR
     } else {

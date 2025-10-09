@@ -16,7 +16,6 @@ impl AABB {
         AABB { min, max }
     }
 
-
     pub fn grow_bb_mut(&mut self, aabb: &Self) {
         *self = Self::combine(self, aabb)
     }
@@ -32,7 +31,13 @@ impl AABB {
 
     #[inline(always)]
     pub fn grow(&mut self, vertex: Vec3) -> AABB {
-        AABB::combine(self, &AABB {min: vertex, max: vertex})
+        AABB::combine(
+            self,
+            &AABB {
+                min: vertex,
+                max: vertex,
+            },
+        )
     }
 
     #[inline(always)]

@@ -1,7 +1,6 @@
 use glam::{Mat4, UVec2, Vec2, Vec3, Vec4};
 use serde::{Deserialize, Serialize};
 
-
 #[repr(C)]
 #[repr(align(16))]
 #[derive(Copy, Clone, Debug, Default, Serialize, PartialEq)]
@@ -41,7 +40,6 @@ pub struct Au32(pub u32);
 #[repr(align(4))]
 #[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Abool(pub bool);
-
 
 impl<'de> Deserialize<'de> for AVec3 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

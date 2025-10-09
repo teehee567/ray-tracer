@@ -3,7 +3,6 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use super::{AVec3, Af32, Au32};
 
-
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -33,22 +32,22 @@ pub struct Material {
 impl Default for Material {
     fn default() -> Self {
         Self {
-            base_colour: AVec3(Vec3::new(0.8, 0.8, 0.8)),  // Light gray - typical diffuse surface
-            emission: AVec3(Vec3::new(0.0, 0.0, 0.0)),     // Most materials don't emit light
-            metallic: Af32(0.0),                     // Non-metallic by default (dielectric)
-            roughness: Af32(0.5),                    // Medium roughness
-            subsurface: Af32(0.0),                   // No subsurface scattering
-            anisotropic: Af32(0.0),                  // Isotropic by default
-            specular_tint: Af32(0.0),                // No tint to specular
-            sheen: Af32(0.0),                        // No sheen
-            sheen_tint: Af32(0.5),                   // Neutral sheen tint
-            clearcoat: Af32(0.0),                    // No clearcoat
-            clearcoat_roughness: Af32(0.03),         // Smooth clearcoat when enabled
-            spec_trans: Af32(0.0),                   // Opaque
-            ior: Af32(1.45),                         // Common IOR for plastics
+            base_colour: AVec3(Vec3::new(0.8, 0.8, 0.8)), // Light gray - typical diffuse surface
+            emission: AVec3(Vec3::new(0.0, 0.0, 0.0)),    // Most materials don't emit light
+            metallic: Af32(0.0),                          // Non-metallic by default (dielectric)
+            roughness: Af32(0.5),                         // Medium roughness
+            subsurface: Af32(0.0),                        // No subsurface scattering
+            anisotropic: Af32(0.0),                       // Isotropic by default
+            specular_tint: Af32(0.0),                     // No tint to specular
+            sheen: Af32(0.0),                             // No sheen
+            sheen_tint: Af32(0.5),                        // Neutral sheen tint
+            clearcoat: Af32(0.0),                         // No clearcoat
+            clearcoat_roughness: Af32(0.03),              // Smooth clearcoat when enabled
+            spec_trans: Af32(0.0),                        // Opaque
+            ior: Af32(1.45),                              // Common IOR for plastics
 
-            shade_smooth: Au32(1),                   // Smooth shading by default
-            
+            shade_smooth: Au32(1), // Smooth shading by default
+
             base_color_tex: Au32(u32::MAX),
             metallic_roughness_tex: Au32(u32::MAX),
             normal_tex: Au32(u32::MAX),
@@ -63,12 +62,12 @@ where
 {
     let vec: Vec<f32> = Vec::deserialize(deserializer)?;
     let mut color = Vec3::new(vec[0], vec[1], vec[2]);
-    
+
     if color.x > 1.0 || color.y > 1.0 || color.z > 1.0 {
         color.x /= 255.0;
         color.y /= 255.0;
         color.z /= 255.0;
     }
-    
+
     Ok(AVec3(color))
 }

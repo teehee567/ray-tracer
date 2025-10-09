@@ -137,10 +137,7 @@ pub struct BvhBuilder<'a> {
 }
 
 impl<'a> BvhBuilder<'a> {
-    pub fn new(
-        triangles: &'a mut Vec<Triangle>,
-        materials: &'a mut Vec<Material>,
-    ) -> Self {
+    pub fn new(triangles: &'a mut Vec<Triangle>, materials: &'a mut Vec<Material>) -> Self {
         Self {
             bvh_list: Vec::new(),
             triangles,
@@ -148,7 +145,6 @@ impl<'a> BvhBuilder<'a> {
         }
     }
 
- 
     pub fn build_bvh(mut self) -> Vec<BvhNode> {
         let mut indices: Vec<u32> = (0..self.triangles.len() as u32).collect();
         self.bvh_list.push(BvhNode::default());
@@ -287,14 +283,12 @@ impl<'a> BvhBuilder<'a> {
     }
 }
 
-
 fn axis_min(tri: &Triangle, axis: usize) -> f32 {
     tri.vertices
         .iter()
         .map(|v| v.0[axis])
         .fold(f32::INFINITY, |a, b| a.min(b))
 }
-
 
 fn axis_max(tri: &Triangle, axis: usize) -> f32 {
     tri.vertices

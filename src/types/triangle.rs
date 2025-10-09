@@ -4,8 +4,6 @@ use crate::accelerators::{self, Primitive};
 
 use super::{AVec2, AVec3, Au32};
 
-
-
 #[repr(C)]
 #[repr(align(16))]
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
@@ -23,7 +21,8 @@ impl Primitive for Triangle {
     }
 
     fn aabb(&self) -> accelerators::aabb::AABB {
-        accelerators::aabb::AABB::new(self.vertices[0].0, self.vertices[1].0).grow(self.vertices[2].0)
+        accelerators::aabb::AABB::new(self.vertices[0].0, self.vertices[1].0)
+            .grow(self.vertices[2].0)
     }
 }
 
@@ -34,9 +33,21 @@ impl Triangle {
             self.vertices[0].0 - Vec3::splat(radius)
         } else {
             Vec3 {
-                x: self.vertices.iter().map(|v| v.0.x).fold(f32::INFINITY, f32::min),
-                y: self.vertices.iter().map(|v| v.0.y).fold(f32::INFINITY, f32::min),
-                z: self.vertices.iter().map(|v| v.0.z).fold(f32::INFINITY, f32::min),
+                x: self
+                    .vertices
+                    .iter()
+                    .map(|v| v.0.x)
+                    .fold(f32::INFINITY, f32::min),
+                y: self
+                    .vertices
+                    .iter()
+                    .map(|v| v.0.y)
+                    .fold(f32::INFINITY, f32::min),
+                z: self
+                    .vertices
+                    .iter()
+                    .map(|v| v.0.z)
+                    .fold(f32::INFINITY, f32::min),
             }
         }
     }
@@ -47,11 +58,22 @@ impl Triangle {
             self.vertices[0].0 + Vec3::splat(radius)
         } else {
             Vec3 {
-                x: self.vertices.iter().map(|v| v.0.x).fold(f32::NEG_INFINITY, f32::max),
-                y: self.vertices.iter().map(|v| v.0.y).fold(f32::NEG_INFINITY, f32::max),
-                z: self.vertices.iter().map(|v| v.0.z).fold(f32::NEG_INFINITY, f32::max),
+                x: self
+                    .vertices
+                    .iter()
+                    .map(|v| v.0.x)
+                    .fold(f32::NEG_INFINITY, f32::max),
+                y: self
+                    .vertices
+                    .iter()
+                    .map(|v| v.0.y)
+                    .fold(f32::NEG_INFINITY, f32::max),
+                z: self
+                    .vertices
+                    .iter()
+                    .map(|v| v.0.z)
+                    .fold(f32::NEG_INFINITY, f32::max),
             }
         }
     }
 }
-

@@ -1,8 +1,7 @@
-
 use vulkanalia::prelude::v1_0::*;
 
 use crate::AppData;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 pub unsafe fn create_buffer(
     instance: &Instance,
@@ -27,7 +26,12 @@ pub unsafe fn create_buffer(
 
     let memory_info = vk::MemoryAllocateInfo::builder()
         .allocation_size(requirements.size)
-        .memory_type_index(get_memory_type_index(instance, data, properties, requirements)?);
+        .memory_type_index(get_memory_type_index(
+            instance,
+            data,
+            properties,
+            requirements,
+        )?);
 
     let buffer_memory = device.allocate_memory(&memory_info, None)?;
 
@@ -55,8 +59,8 @@ pub unsafe fn copy_buffer(
 
     // Commands
 
-    let info = vk::CommandBufferBeginInfo::builder()
-        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+    let info =
+        vk::CommandBufferBeginInfo::builder().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
     device.begin_command_buffer(command_buffer, &info)?;
 
