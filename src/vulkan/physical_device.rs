@@ -1,12 +1,11 @@
-
 use std::collections::HashSet;
 
 use log::{info, warn};
 use thiserror::Error;
 use vulkanalia::prelude::v1_0::*;
 
-use crate::{AppData, QueueFamilyIndices, SwapchainSupport, DEVICE_EXTENSIONS};
-use anyhow::{anyhow, Result};
+use crate::{AppData, DEVICE_EXTENSIONS, QueueFamilyIndices, SwapchainSupport};
+use anyhow::{Result, anyhow};
 
 #[derive(Debug, Error)]
 #[error("{0}")]
@@ -17,7 +16,10 @@ pub unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) -> R
         let properties = instance.get_physical_device_properties(physical_device);
 
         if let Err(error) = check_physical_device(instance, data, physical_device) {
-            warn!("Skipping physical device (`{}`): {}", properties.device_name, error);
+            warn!(
+                "Skipping physical device (`{}`): {}",
+                properties.device_name, error
+            );
         } else {
             info!("Selected physical device (`{}`).", properties.device_name);
             data.physical_device = physical_device;
@@ -44,7 +46,10 @@ pub unsafe fn check_physical_device(
     Ok(())
 }
 
-pub unsafe fn check_physical_device_extensions(instance: &Instance, physical_device: vk::PhysicalDevice) -> Result<()> {
+pub unsafe fn check_physical_device_extensions(
+    instance: &Instance,
+    physical_device: vk::PhysicalDevice,
+) -> Result<()> {
     let extensions = instance
         .enumerate_device_extension_properties(physical_device, None)?
         .iter()
@@ -53,6 +58,8 @@ pub unsafe fn check_physical_device_extensions(instance: &Instance, physical_dev
     if DEVICE_EXTENSIONS.iter().all(|e| extensions.contains(e)) {
         Ok(())
     } else {
-        Err(anyhow!(SuitabilityError("Missing required device extensions.")))
+        Err(anyhow!(SuitabilityError(
+            "Missing required device extensions."
+        )))
     }
 }

@@ -4,20 +4,17 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::accelerators::bvh::BvhBuilder;
-use crate::{
-    CameraBufferObject, SceneComponents
-};
+use crate::{CameraBufferObject, SceneComponents};
 
 use anyhow::Result;
 
 const CONFIG_VERSION: &str = "0.2";
 
-
 use crate::vulkan::bufferbuilder::BufferBuilder;
-pub mod yaml;
 pub mod gltf;
-pub mod weird;
 pub mod loader;
+pub mod weird;
+pub mod yaml;
 
 #[derive(Clone, Copy, Debug)]
 pub enum TextureFormat {
@@ -28,7 +25,6 @@ pub enum TextureFormat {
     B8G8R8,
     B8G8R8A8,
 }
-
 
 #[derive(Clone, Debug)]
 pub struct TextureData {
@@ -45,12 +41,12 @@ impl Default for TextureData {
             height: 1,
             format: TextureFormat::R8G8B8A8,
             pixels: vec![
-                255, 255, 255, 255,  // Right face (+X)
-                255, 255, 255, 255,  // Left face (-X)
-                255, 255, 255, 255,  // Top face (+Y)
-                255, 255, 255, 255,  // Bottom face (-Y)
-                255, 255, 255, 255,  // Front face (+Z)
-                255, 255, 255, 255,  // Back face (-Z)
+                255, 255, 255, 255, // Right face (+X)
+                255, 255, 255, 255, // Left face (-X)
+                255, 255, 255, 255, // Top face (+Y)
+                255, 255, 255, 255, // Bottom face (-Y)
+                255, 255, 255, 255, // Front face (+Z)
+                255, 255, 255, 255, // Back face (-Z)
             ],
         }
     }
@@ -77,11 +73,13 @@ impl Scene {
         println!("building BVH...");
         let start = Instant::now();
 
-
         // let file = File::create("bvh.bin").unwrap();
         // let writer = BufWriter::new(file);
 
-        let builder = BvhBuilder::new(&mut self.components.triangles, &mut self.components.materials);
+        let builder = BvhBuilder::new(
+            &mut self.components.triangles,
+            &mut self.components.materials,
+        );
         self.components.bvh = builder.build_bvh();
 
         // serialize_into(writer, &self.components.bvh).unwrap();
@@ -161,18 +159,20 @@ impl Scene {
         let mut combined_pixels = Vec::new();
         let mut width = 0;
         let mut height = 0;
-        
+
         for path in paths.iter() {
             let img = image::open(path)?;
             let img_rgba = img.into_rgba8();
-            
+
             if width == 0 {
                 width = img_rgba.width();
                 height = img_rgba.height();
             } else if width != img_rgba.width() || height != img_rgba.height() {
-                return Err(anyhow::anyhow!("All cubemap faces must have the same dimensions"));
+                return Err(anyhow::anyhow!(
+                    "All cubemap faces must have the same dimensions"
+                ));
             }
-            
+
             combined_pixels.extend_from_slice(&img_rgba.into_raw());
         }
 
@@ -183,6 +183,4 @@ impl Scene {
             pixels: combined_pixels,
         })
     }
-
 }
-

@@ -1,4 +1,3 @@
-
 use log::info;
 use vulkanalia::{bytecode::Bytecode, prelude::v1_0::*};
 
@@ -7,8 +6,7 @@ use anyhow::Result;
 
 pub unsafe fn create_compute_pipeline(device: &Device, data: &mut AppData) -> Result<()> {
     let binding = [data.descriptor_set_layout];
-    let pipeline_layout_info = vk::PipelineLayoutCreateInfo::builder()
-        .set_layouts(&binding);
+    let pipeline_layout_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(&binding);
     data.compute_pipeline_layout = device.create_pipeline_layout(&pipeline_layout_info, None)?;
 
     let compute_shader_src = include_bytes!("../../src/shaders/main.comp.spv");
@@ -24,7 +22,9 @@ pub unsafe fn create_compute_pipeline(device: &Device, data: &mut AppData) -> Re
         .layout(data.compute_pipeline_layout)
         .stage(compute_shader_stage_info);
 
-    data.compute_pipeline = device.create_compute_pipelines(vk::PipelineCache::null(), &[pipeline_info], None)?.0[0];
+    data.compute_pipeline = device
+        .create_compute_pipelines(vk::PipelineCache::null(), &[pipeline_info], None)?
+        .0[0];
     info!("Created a Compute Pipeline: {:?}", data.compute_pipeline);
 
     device.destroy_shader_module(compute_shader, None);
@@ -32,7 +32,11 @@ pub unsafe fn create_compute_pipeline(device: &Device, data: &mut AppData) -> Re
     Ok(())
 }
 
-pub unsafe fn create_render_pass(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn create_render_pass(
+    instance: &Instance,
+    device: &Device,
+    data: &mut AppData,
+) -> Result<()> {
     // Attachments
 
     let color_attachment = vk::AttachmentDescription::builder()
@@ -81,7 +85,6 @@ pub unsafe fn create_render_pass(instance: &Instance, device: &Device, data: &mu
 
     Ok(())
 }
-
 
 pub unsafe fn create_shader_module(device: &Device, bytecode: &[u8]) -> Result<vk::ShaderModule> {
     let bytecode = Bytecode::new(bytecode).unwrap();

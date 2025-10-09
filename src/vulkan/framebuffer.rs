@@ -121,8 +121,8 @@ pub unsafe fn transition_framebuffer_images(device: &Device, data: &mut AppData)
             vk::PipelineStageFlags::BOTTOM_OF_PIPE,
             vk::PipelineStageFlags::TOP_OF_PIPE,
             vk::DependencyFlags::empty(),
-        &[] as &[vk::MemoryBarrier],
-        &[] as &[vk::BufferMemoryBarrier],
+            &[] as &[vk::MemoryBarrier],
+            &[] as &[vk::BufferMemoryBarrier],
             &[barrier.build()],
         );
     }

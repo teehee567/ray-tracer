@@ -255,7 +255,6 @@ pub unsafe fn create_compute_descriptor_set_layout(
         .descriptor_count(1)
         .stage_flags(vk::ShaderStageFlags::COMPUTE);
 
-
     let bindings = &[
         ubo_binding,
         bvh_binding,

@@ -1,10 +1,13 @@
 use std::fs::File;
 
-use crate::{AMat4, AUVec2, AVec2, AVec3, Af32, Au32, CameraBufferObject, Material, SceneComponents, Triangle};
+use crate::{
+    AMat4, AUVec2, AVec2, AVec3, Af32, Au32, CameraBufferObject, Material, SceneComponents,
+    Triangle,
+};
 
 use super::Scene;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use glam::{Mat4, UVec2, Vec2, Vec3};
 use serde_yaml::Value;
 
@@ -50,7 +53,8 @@ impl Scene {
             ..Default::default()
         };
 
-        ubo.rotation = AMat4(Mat4::look_at_rh(ubo.location.0, Vec3::from(look_at), Vec3::Y).transpose());
+        ubo.rotation =
+            AMat4(Mat4::look_at_rh(ubo.location.0, Vec3::from(look_at), Vec3::Y).transpose());
 
         let ratio = resolution[0] as f32 / resolution[1] as f32;
         let (u, v) = if ratio > 1.0 {
@@ -119,16 +123,8 @@ impl Scene {
             let mut tri = Triangle {
                 material_index: Au32(material_index),
                 is_sphere: Au32(0),
-                vertices: [
-                    AVec3::default(),
-                    AVec3::default(),
-                    AVec3::default(),
-                ],
-                normals: [
-                    AVec3::default(),
-                    AVec3::default(),
-                    AVec3::default(),
-                ],
+                vertices: [AVec3::default(), AVec3::default(), AVec3::default()],
+                normals: [AVec3::default(), AVec3::default(), AVec3::default()],
                 ..Default::default()
             };
             for j in 0..3 {
@@ -169,16 +165,8 @@ impl Scene {
         let mut tri = Triangle {
             material_index: Au32(material_index),
             is_sphere: Au32(1),
-            vertices: [
-                AVec3::default(),
-                AVec3::default(),
-                AVec3::default(),
-            ],
-            normals: [
-                AVec3::default(),
-                AVec3::default(),
-                AVec3::default(),
-            ],
+            vertices: [AVec3::default(), AVec3::default(), AVec3::default()],
+            normals: [AVec3::default(), AVec3::default(), AVec3::default()],
             ..Default::default()
         };
         tri.vertices[0] = AVec3(Vec3::new(center[0], center[1], center[2]));
@@ -202,10 +190,7 @@ impl Scene {
             .get("emission")
             .and_then(|v| serde_yaml::from_value(v.clone()).ok())
             .unwrap_or(def);
-        let metallic = node
-            .get("metallic")
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0) as f32;
+        let metallic = node.get("metallic").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
         let roughness = node
             .get("roughness")
             .and_then(|v| v.as_f64())

@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
-use std::time::Instant;
 use std::io::Write;
+use std::time::Instant;
 
 #[derive(Clone, Debug)]
 pub struct FPSCounter {
@@ -35,7 +35,11 @@ impl FPSCounter {
             return 0.0;
         }
 
-        let duration = self.frame_times.back().unwrap().duration_since(*self.frame_times.front().unwrap());
+        let duration = self
+            .frame_times
+            .back()
+            .unwrap()
+            .duration_since(*self.frame_times.front().unwrap());
         let frame_count = self.frame_times.len() as f64;
 
         if duration.as_secs_f64() > 0.0 {
@@ -52,7 +56,7 @@ impl FPSCounter {
         } else {
             print!("\r\x1B[KFPS: {:.2}", self.get_fps());
         }
-        
+
         std::io::stdout().flush().unwrap();
     }
 }

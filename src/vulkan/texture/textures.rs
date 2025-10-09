@@ -17,7 +17,6 @@ pub struct Texture {
     pub memory: vk::DeviceMemory,
 }
 
-
 pub unsafe fn create_texture_image(
     instance: &Instance,
     device: &Device,
@@ -39,12 +38,7 @@ pub unsafe fn create_texture_image(
     )?;
 
     // Copy pixels to staging buffer
-    let memory = device.map_memory(
-        staging_buffer_memory,
-        0,
-        size,
-        vk::MemoryMapFlags::empty(),
-    )?;
+    let memory = device.map_memory(staging_buffer_memory, 0, size, vk::MemoryMapFlags::empty())?;
     ptr::copy_nonoverlapping(pixels.as_ptr(), memory.cast(), pixels.len());
     device.unmap_memory(staging_buffer_memory);
 
@@ -91,17 +85,10 @@ pub unsafe fn create_texture_image(
         vk::Format::R8G8B8A8_SRGB,
         vk::ImageLayout::UNDEFINED,
         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-        1
+        1,
     )?;
 
-    copy_buffer_to_image(
-        device,
-        data,
-        staging_buffer,
-        image,
-        width,
-        height,
-    )?;
+    copy_buffer_to_image(device, data, staging_buffer, image, width, height)?;
 
     super::transition_texture_layout(
         device,
@@ -110,7 +97,7 @@ pub unsafe fn create_texture_image(
         vk::Format::R8G8B8A8_SRGB,
         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        1
+        1,
     )?;
 
     // Create image view
@@ -201,5 +188,3 @@ pub unsafe fn create_texture_sampler(device: &Device) -> Result<vk::Sampler> {
 
     Ok(device.create_sampler(&sampler_info, None)?)
 }
-
-

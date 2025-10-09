@@ -1,8 +1,8 @@
 use std::{fs::File, io::Read};
 
 use crate::{
-    AMat4, AUVec2, AVec2, AVec3, Af32, Au32,
-    CameraBufferObject, Material, SceneComponents, Triangle,
+    AMat4, AUVec2, AVec2, AVec3, Af32, Au32, CameraBufferObject, Material, SceneComponents,
+    Triangle,
 };
 
 use super::Scene;
@@ -59,12 +59,12 @@ impl Scene {
                 // Handle reflectance (base_colour)
                 if let Some(refl) = mat_data["reflectance"].as_str() {
                     material.base_colour = AVec3(parse_rgb(refl));
-                } 
+                }
                 if let Some(refl) = mat_data["reflectance"].as_array() {
                     material.base_colour = AVec3(Vec3::new(
                         refl[0].as_f64().unwrap_or(0.0) as f32,
-                        refl[1].as_f64().unwrap_or(0.0) as f32,  
-                        refl[2].as_f64().unwrap_or(0.0) as f32
+                        refl[1].as_f64().unwrap_or(0.0) as f32,
+                        refl[2].as_f64().unwrap_or(0.0) as f32,
                     ));
                 }
                 if let Some(refl) = mat_data["reflectance"].as_f64() {
@@ -161,11 +161,7 @@ impl Scene {
                                     AVec3(verts[indices[1].as_u64().unwrap() as usize]),
                                     AVec3(verts[indices[2].as_u64().unwrap() as usize]),
                                 ],
-                                normals: [
-                                    AVec3(Vec3::ZERO),
-                                    AVec3(Vec3::ZERO),
-                                    AVec3(Vec3::ZERO),
-                                ],
+                                normals: [AVec3(Vec3::ZERO), AVec3(Vec3::ZERO), AVec3(Vec3::ZERO)],
                                 uvs: Default::default(),
                             };
                             scene.triangles.push(triangle);
@@ -260,16 +256,8 @@ impl Scene {
                                     let triangle = Triangle {
                                         material_index: Au32(material_index as u32),
                                         is_sphere: Au32(0),
-                                        vertices: [
-                                            AVec3(v0),
-                                            AVec3(v1),
-                                            AVec3(v2),
-                                        ],
-                                        normals: [
-                                            AVec3(n0),
-                                            AVec3(n1),
-                                            AVec3(n2),
-                                        ],
+                                        vertices: [AVec3(v0), AVec3(v1), AVec3(v2)],
+                                        normals: [AVec3(n0), AVec3(n1), AVec3(n2)],
                                         uvs: [
                                             AVec2(uv0.into()),
                                             AVec2(uv1.into()),

@@ -1,6 +1,6 @@
 use std::{ffi::c_void, mem};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 const INITIAL_SIZE: usize = 16;
 
@@ -35,20 +35,19 @@ impl BufferBuilder {
     pub fn append<T: Copy>(&mut self, value: T) {
         let size = mem::size_of::<T>();
         // SAFETY: The caller must guarantee that T is a POD type.
-        let value_bytes = unsafe {
-            std::slice::from_raw_parts((&value as *const T) as *const u8, size)
-        };
+        let value_bytes =
+            unsafe { std::slice::from_raw_parts((&value as *const T) as *const u8, size) };
         self.buffer.extend_from_slice(value_bytes);
     }
 
     pub fn append_with_size<T: Copy>(&mut self, value: T, size: usize) {
         let type_size = mem::size_of::<T>();
-        let value_bytes = unsafe {
-            std::slice::from_raw_parts((&value as *const T) as *const u8, type_size)
-        };
+        let value_bytes =
+            unsafe { std::slice::from_raw_parts((&value as *const T) as *const u8, type_size) };
         self.buffer.extend_from_slice(value_bytes);
         if size > type_size {
-            self.buffer.resize(self.buffer.len() + (size - type_size), 0);
+            self.buffer
+                .resize(self.buffer.len() + (size - type_size), 0);
         } else if size < type_size {
             let new_len = self.buffer.len() - (type_size - size);
             self.buffer.truncate(new_len);
@@ -61,16 +60,14 @@ impl BufferBuilder {
             return Ok(0);
         }
         if self.buffer.len() % type_size != 0 {
-            return Err(anyhow!("Trying to get offset with regards to type not granular enough"));
+            return Err(anyhow!(
+                "Trying to get offset with regards to type not granular enough"
+            ));
         }
         Ok(self.buffer.len() / type_size)
     }
 
     pub unsafe fn write(&self, output: *mut c_void) {
-        std::ptr::copy_nonoverlapping(
-            self.buffer.as_ptr(),
-            output as *mut u8,
-            self.buffer.len(),
-        );
+        std::ptr::copy_nonoverlapping(self.buffer.as_ptr(), output as *mut u8, self.buffer.len());
     }
 }

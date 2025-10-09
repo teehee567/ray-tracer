@@ -1,10 +1,12 @@
 use std::fmt;
 
 use glam::{Mat4, UVec2, Vec2, Vec3};
-use serde::{de::{self, MapAccess, Visitor}, Deserialize, Deserializer};
+use serde::{
+    Deserialize, Deserializer,
+    de::{self, MapAccess, Visitor},
+};
 
 use super::{AMat4, AUVec2, AVec2, AVec3, Af32, Au32};
-
 
 #[repr(C)]
 #[repr(align(64))]
@@ -42,7 +44,11 @@ impl Default for CameraBufferObject {
         );
 
         let ratio = resolution[0] as f32 / resolution[1] as f32;
-        let (u, v) = if ratio > 1.0 { (ratio, 1.0) } else { (1.0, 1.0 / ratio) };
+        let (u, v) = if ratio > 1.0 {
+            (ratio, 1.0)
+        } else {
+            (1.0, 1.0 / ratio)
+        };
         ubo.view_port_uv = AVec2(Vec2::new(u, v));
         ubo.resolution = AUVec2(resolution);
         ubo
@@ -137,7 +143,8 @@ impl<'de> Deserialize<'de> for CameraBufferObject {
                     }
                 }
 
-                let resolution = resolution.ok_or_else(|| de::Error::missing_field("resolution"))?;
+                let resolution =
+                    resolution.ok_or_else(|| de::Error::missing_field("resolution"))?;
                 let location = location.ok_or_else(|| de::Error::missing_field("location"))?;
                 let look_at = look_at.ok_or_else(|| de::Error::missing_field("look_at"))?;
                 let focal_length = focal_length.unwrap_or(1.0);
