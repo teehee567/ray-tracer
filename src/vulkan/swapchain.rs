@@ -1,19 +1,32 @@
-
 use log::info;
 use vulkanalia::{prelude::v1_0::*, vk::KhrSwapchainExtension};
 use winit::window::Window;
 
-use crate::{vulkan::physical_device::SuitabilityError, AppData, QueueFamilyIndices, SwapchainSupport};
-use anyhow::{anyhow, Result};
+use crate::{
+    AppData, QueueFamilyIndices, SwapchainSupport, vulkan::physical_device::SuitabilityError,
+};
+use anyhow::{Result, anyhow};
 
-pub unsafe fn create_swapchain(window: &Window, instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn create_swapchain(
+    window: &Window,
+    instance: &Instance,
+    device: &Device,
+    data: &mut AppData,
+) -> Result<()> {
     // Image
 
     let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
     let support = SwapchainSupport::get(instance, data, data.physical_device)?;
 
-    if !support.capabilities.supported_usage_flags.contains(vk::ImageUsageFlags::SAMPLED.union(vk::ImageUsageFlags::STORAGE)) {
-        return Err(anyhow!(SuitabilityError("Current GPU's swapchain images do not support being rendered to from a compute shader")));
+    let required_usage = vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::TRANSFER_DST;
+    if !support
+        .capabilities
+        .supported_usage_flags
+        .contains(required_usage)
+    {
+        return Err(anyhow!(SuitabilityError(
+            "Current GPU's swapchain images do not support required storage/transfer usage",
+        )));
     }
 
     let surface_format = get_swapchain_surface_format(&support.formats);
@@ -24,7 +37,9 @@ pub unsafe fn create_swapchain(window: &Window, instance: &Instance, device: &De
     data.swapchain_extent = extent;
 
     let mut image_count = support.capabilities.min_image_count + 1;
-    if support.capabilities.max_image_count != 0 && image_count > support.capabilities.max_image_count {
+    if support.capabilities.max_image_count != 0
+        && image_count > support.capabilities.max_image_count
+    {
         image_count = support.capabilities.max_image_count;
     }
 
@@ -51,7 +66,7 @@ pub unsafe fn create_swapchain(window: &Window, instance: &Instance, device: &De
         .image_color_space(surface_format.color_space)
         .image_extent(extent)
         .image_array_layers(1)
-        .image_usage(vk::ImageUsageFlags::STORAGE)
+        .image_usage(required_usage)
         .image_sharing_mode(image_sharing_mode)
         .queue_family_indices(&queue_family_indices)
         .pre_transform(support.capabilities.current_transform)
@@ -66,8 +81,13 @@ pub unsafe fn create_swapchain(window: &Window, instance: &Instance, device: &De
     // Images
 
     data.swapchain_images = device.get_swapchain_images_khr(data.swapchain)?;
-    info!("Created {} Swapchain Images: {:?}",data.swapchain_images.len(), data.swapchain_images);
+    info!(
+        "Created {} Swapchain Images: {:?}",
+        data.swapchain_images.len(),
+        data.swapchain_images
+    );
 
+    data.swapchain_image_layouts = vec![vk::ImageLayout::UNDEFINED; data.swapchain_images.len()];
 
     Ok(())
 }
@@ -76,7 +96,10 @@ pub fn get_swapchain_surface_format(formats: &[vk::SurfaceFormatKHR]) -> vk::Sur
     formats
         .iter()
         .cloned()
-        .find(|f| f.format == vk::Format::B8G8R8A8_UNORM && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR)
+        .find(|f| {
+            f.format == vk::Format::B8G8R8A8_UNORM
+                && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+        })
         .unwrap_or_else(|| formats[0])
 }
 

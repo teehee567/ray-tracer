@@ -1,18 +1,26 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use eframe::egui::epaint::{ClippedPrimitive, ImageData, Mesh, Primitive, Vertex, ColorImage};
+use crate::RenderMetrics;
+use crossbeam_channel::{Receiver, TryRecvError};
+use eframe::egui::epaint::{ClippedPrimitive, ColorImage, ImageData, Mesh, Primitive, Vertex};
 use eframe::egui::{
-    self, Color32, Event, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2, Rect, TextureId, Vec2, ViewportId, ViewportInfo, pos2, vec2
+    self, Color32, ComboBox, Event, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2, Rect,
+    TextureId, Vec2, ViewportId, ViewportInfo, pos2, vec2,
 };
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::keyboard::ModifiersState;
 use winit::keyboard::{Key as WinitKey, NamedKey};
 use winit::window::Window;
-use winit::keyboard::ModifiersState;
 
 /// Logical width of the GUI side panel in egui points.
 const PANEL_WIDTH_POINTS: f32 = 320.0;
+
+/// Convert the logical panel width into physical pixels for a given scale factor.
+pub fn panel_width_pixels(scale_factor: f32) -> u32 {
+    (PANEL_WIDTH_POINTS * scale_factor).round().max(0.0) as u32
+}
 
 /// Shared GUI state accessible by the render worker.
 #[derive(Default)]
@@ -239,7 +247,8 @@ impl SoftwarePainter {
                 let mut color = blend_vertex_colors(v0, v1, v2, w0, w1, w2);
 
                 if let Some(tex) = texture {
-                    let uv = (v0.uv.to_vec2() * w0) + (v1.uv.to_vec2() * w1) + (v2.uv.to_vec2() * w2);
+                    let uv =
+                        (v0.uv.to_vec2() * w0) + (v1.uv.to_vec2() * w1) + (v2.uv.to_vec2() * w2);
                     let tex_color = sample_texture(tex, uv);
                     color = multiply_colors(color, tex_color);
                 }
@@ -350,10 +359,13 @@ pub struct GuiFrontend {
     pixels_per_point: f32,
     panel_height: u32,
     generation: u64,
+    metrics_rx: Receiver<RenderMetrics>,
+    latest_metrics: Option<RenderMetrics>,
+    theme: GuiTheme,
 }
 
 impl GuiFrontend {
-    pub fn new(window: &Window, shared: GuiShared) -> Self {
+    pub fn new(window: &Window, shared: GuiShared, metrics_rx: Receiver<RenderMetrics>) -> Self {
         let ctx = egui::Context::default();
         let scale_factor = window.scale_factor() as f32;
         let size = window.inner_size();
@@ -369,6 +381,9 @@ impl GuiFrontend {
             pixels_per_point: scale_factor as f32,
             panel_height: size.height,
             generation: 0,
+            metrics_rx,
+            latest_metrics: None,
+            theme: GuiTheme::Dark,
         }
     }
 
@@ -440,6 +455,9 @@ impl GuiFrontend {
     }
 
     pub fn run_frame(&mut self, _window: &Window) {
+        self.poll_metrics();
+        self.apply_theme();
+
         let width_points = PANEL_WIDTH_POINTS;
         let height_points = if self.pixels_per_point <= f32::EPSILON {
             self.panel_height as f32
@@ -469,16 +487,26 @@ impl GuiFrontend {
             raw_input.events.push(Event::PointerGone);
         }
 
+        let mut theme = self.theme;
+        let metrics = self.latest_metrics;
+        let panel_height = self.panel_height;
+        let pixels_per_point = self.pixels_per_point;
+
         let full_output = self.ctx.run(raw_input, |ctx| {
-            self.draw_panels(ctx);
+            draw_panels(ctx, &mut theme, metrics, panel_height, pixels_per_point);
         });
 
-        self.painter.update_textures(&full_output.textures_delta);
-        let clipped = self.ctx.tessellate(full_output.shapes, self.pixels_per_point);
+        if self.theme != theme {
+            self.theme = theme;
+            self.apply_theme();
+        }
 
-        let panel_width_px = (PANEL_WIDTH_POINTS * self.pixels_per_point)
-            .round()
-            .max(0.0) as u32;
+        self.painter.update_textures(&full_output.textures_delta);
+        let clipped = self
+            .ctx
+            .tessellate(full_output.shapes, self.pixels_per_point);
+
+        let panel_width_px = panel_width_pixels(self.pixels_per_point);
         let height_px = self.panel_height.max(1);
 
         let background = self.ctx.style().visuals.panel_fill;
@@ -503,22 +531,9 @@ impl GuiFrontend {
         }
     }
 
-    fn draw_panels(&self, ctx: &egui::Context) {
-        egui::SidePanel::left("control_panel")
-            .resizable(false)
-            .exact_width(PANEL_WIDTH_POINTS)
-            .show(ctx, |ui| {
-                ui.heading("Controls");
-                ui.separator();
-                ui.label("Add egui widgets here.");
-            });
-
-        egui::CentralPanel::default().show(ctx, |_| {});
-    }
-
     fn handle_cursor_moved(&mut self, position: PhysicalPosition<f64>) {
-        let panel_width = PANEL_WIDTH_POINTS * self.pixels_per_point;
-        if position.x <= panel_width as f64 {
+        let panel_width = panel_width_pixels(self.pixels_per_point) as f64;
+        if position.x <= panel_width {
             let pos = Pos2::new(
                 position.x as f32 / self.pixels_per_point,
                 position.y as f32 / self.pixels_per_point,
@@ -594,7 +609,7 @@ impl GuiFrontend {
                     '9' => Key::Num9,
                     _ => return None,
                 }
-            },
+            }
             _ => return None,
         };
 
@@ -606,6 +621,23 @@ impl GuiFrontend {
             repeat: event.repeat,
             modifiers: self.modifiers,
         })
+    }
+
+    fn poll_metrics(&mut self) {
+        loop {
+            match self.metrics_rx.try_recv() {
+                Ok(metrics) => self.latest_metrics = Some(metrics),
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => break,
+            }
+        }
+    }
+
+    fn apply_theme(&self) {
+        match self.theme {
+            GuiTheme::Dark => self.ctx.set_visuals(egui::Visuals::dark()),
+            GuiTheme::Light => self.ctx.set_visuals(egui::Visuals::light()),
+        }
     }
 }
 
@@ -625,4 +657,64 @@ fn fill_background(pixels: &mut [u8], width: u32, height: u32, color: Color32) {
 
 fn is_printable(ch: char) -> bool {
     !ch.is_control()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GuiTheme {
+    Dark,
+    Light,
+}
+
+fn draw_panels(
+    ctx: &egui::Context,
+    theme: &mut GuiTheme,
+    metrics: Option<RenderMetrics>,
+    panel_height: u32,
+    pixels_per_point: f32,
+) {
+    egui::SidePanel::left("control_panel")
+        .resizable(false)
+        .exact_width(PANEL_WIDTH_POINTS)
+        .show(ctx, |ui| {
+            ui.heading("Ray Tracer");
+            ui.label(format!("v{}", env!("CARGO_PKG_VERSION")));
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label("Theme");
+                ComboBox::from_id_source("theme_combo")
+                    .selected_text(match theme {
+                        GuiTheme::Dark => "Dark",
+                        GuiTheme::Light => "Light",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(theme, GuiTheme::Dark, "Dark");
+                        ui.selectable_value(theme, GuiTheme::Light, "Light");
+                    });
+            });
+            ui.separator();
+
+            ui.heading("Renderer");
+            if let Some(metrics) = metrics {
+                ui.label(format!("FPS: {:.1}", metrics.fps));
+                let frame_ms = if metrics.fps > f64::EPSILON {
+                    1000.0 / metrics.fps
+                } else {
+                    f64::INFINITY
+                };
+                if frame_ms.is_finite() {
+                    ui.label(format!("Frame time: {:.2} ms", frame_ms));
+                } else {
+                    ui.label("Frame time: ∞");
+                }
+            } else {
+                ui.label("Waiting for renderer…");
+            }
+
+            ui.separator();
+            ui.heading("Panel");
+            let width_px = panel_width_pixels(pixels_per_point);
+            ui.label(format!("Resolution: {} × {} px", width_px, panel_height));
+        });
+
+    egui::CentralPanel::default().show(ctx, |_| {});
 }
