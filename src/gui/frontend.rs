@@ -1,12 +1,11 @@
-use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use crate::RenderMetrics;
 use crossbeam_channel::{Receiver, TryRecvError};
-use eframe::egui::epaint::{ClippedPrimitive, ColorImage, ImageData, Mesh, Primitive, Vertex};
+use eframe::egui::epaint::ClippedPrimitive;
 use eframe::egui::{
-    self, Color32, ComboBox, Event, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2, Rect,
-    TextureId, Vec2, ViewportId, ViewportInfo, pos2, vec2,
+    self, ComboBox, Event, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2, Rect, Vec2,
+    ViewportId, ViewportInfo, pos2, vec2,
 };
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
@@ -25,16 +24,24 @@ pub fn panel_width_pixels(scale_factor: f32) -> u32 {
 /// Shared GUI state accessible by the render worker.
 #[derive(Default)]
 pub struct GuiState {
-    latest: Option<GuiFrame>,
+    latest: Option<Arc<GuiFrame>>,
 }
 
 impl GuiState {
-    fn update(&mut self, frame: GuiFrame) {
-        self.latest = Some(frame);
+    fn update(&mut self, mut frame: GuiFrame) {
+        if let Some(pending) = self.latest.take() {
+            if let Ok(mut pending_frame) = Arc::try_unwrap(pending) {
+                frame.textures_delta.append(pending_frame.textures_delta);
+            } else {
+                // The render thread is already presenting the pending frame, so its
+                // texture uploads will be consumed directly from that clone.
+            }
+        }
+        self.latest = Some(Arc::new(frame));
     }
 
-    pub fn latest(&self) -> Option<GuiFrame> {
-        self.latest.clone()
+    pub fn take_latest(&mut self) -> Option<Arc<GuiFrame>> {
+        self.latest.take()
     }
 }
 
@@ -46,310 +53,19 @@ pub fn create_shared_state() -> GuiShared {
     Arc::new(RwLock::new(GuiState::default()))
 }
 
-/// CPU-rasterised GUI frame.
-#[derive(Clone)]
+/// GPU-ready GUI frame data.
 pub struct GuiFrame {
-    pub pixels: Arc<Vec<u8>>,
-    pub width: u32,
-    pub height: u32,
+    pub textures_delta: egui::TexturesDelta,
+    pub clipped_primitives: Vec<ClippedPrimitive>,
+    pub panel_width: u32,
+    pub panel_height: u32,
+    pub pixels_per_point: f32,
     pub generation: u64,
-}
-
-#[derive(Clone)]
-struct GuiTexture {
-    size: [usize; 2],
-    pixels: Vec<Color32>,
-}
-
-struct SoftwarePainter {
-    textures: HashMap<TextureId, GuiTexture>,
-}
-
-impl SoftwarePainter {
-    fn new() -> Self {
-        Self {
-            textures: HashMap::new(),
-        }
-    }
-
-    fn update_textures(&mut self, delta: &egui::TexturesDelta) {
-        for (id, image_delta) in &delta.set {
-            match &image_delta.image {
-                ImageData::Color(color) => {
-                    let mut texture = GuiTexture {
-                        size: [color.size[0], color.size[1]],
-                        pixels: color.pixels.clone(),
-                    };
-                    if let Some([x, y]) = image_delta.pos {
-                        self.sub_update_texture(id, &mut texture, x, y);
-                    } else {
-                        self.textures.insert(*id, texture);
-                    }
-                }
-            }
-        }
-        for id in &delta.free {
-            self.textures.remove(id);
-        }
-    }
-
-    fn sub_update_texture(&mut self, id: &TextureId, texture: &mut GuiTexture, x: usize, y: usize) {
-        if let Some(existing) = self.textures.get_mut(id) {
-            let width = texture.size[0];
-            let height = texture.size[1];
-            for row in 0..height {
-                let dst_index = (row + y) * existing.size[0] + x;
-                let src_index = row * width;
-                let len = width.min(existing.size[0].saturating_sub(x));
-                if len == 0 {
-                    continue;
-                }
-                existing.pixels[dst_index..dst_index + len]
-                    .copy_from_slice(&texture.pixels[src_index..src_index + len]);
-            }
-        } else {
-            self.textures.insert(*id, texture.clone());
-        }
-    }
-
-    fn paint(
-        &self,
-        width: u32,
-        height: u32,
-        pixels_per_point: f32,
-        background: Color32,
-        primitives: &[ClippedPrimitive],
-    ) -> Vec<u8> {
-        let mut pixels = vec![0u8; (width as usize) * (height as usize) * 4];
-        fill_background(&mut pixels, width, height, background);
-
-        for ClippedPrimitive {
-            clip_rect,
-            primitive,
-        } in primitives
-        {
-            let mesh = match primitive {
-                Primitive::Mesh(mesh) => mesh,
-                Primitive::Callback(_) => continue,
-            };
-
-            let clip_min_x = (clip_rect.min.x * pixels_per_point).floor() as i32;
-            let clip_min_y = (clip_rect.min.y * pixels_per_point).floor() as i32;
-            let clip_max_x = (clip_rect.max.x * pixels_per_point).ceil() as i32;
-            let clip_max_y = (clip_rect.max.y * pixels_per_point).ceil() as i32;
-
-            self.paint_mesh(
-                mesh,
-                width as i32,
-                height as i32,
-                clip_min_x.clamp(0, width as i32),
-                clip_max_x.clamp(0, width as i32),
-                clip_min_y.clamp(0, height as i32),
-                clip_max_y.clamp(0, height as i32),
-                pixels_per_point,
-                &mut pixels,
-            );
-        }
-
-        pixels
-    }
-
-    fn paint_mesh(
-        &self,
-        mesh: &Mesh,
-        width: i32,
-        height: i32,
-        clip_min_x: i32,
-        clip_max_x: i32,
-        clip_min_y: i32,
-        clip_max_y: i32,
-        pixels_per_point: f32,
-        pixels: &mut [u8],
-    ) {
-        if mesh.indices.len() < 3 {
-            return;
-        }
-
-        for tri in mesh.indices.chunks_exact(3) {
-            let v0 = &mesh.vertices[tri[0] as usize];
-            let v1 = &mesh.vertices[tri[1] as usize];
-            let v2 = &mesh.vertices[tri[2] as usize];
-
-            self.rasterize_triangle(
-                mesh.texture_id,
-                v0,
-                v1,
-                v2,
-                width,
-                height,
-                clip_min_x,
-                clip_max_x,
-                clip_min_y,
-                clip_max_y,
-                pixels_per_point,
-                pixels,
-            );
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn rasterize_triangle(
-        &self,
-        texture_id: TextureId,
-        v0: &Vertex,
-        v1: &Vertex,
-        v2: &Vertex,
-        width: i32,
-        height: i32,
-        clip_min_x: i32,
-        clip_max_x: i32,
-        clip_min_y: i32,
-        clip_max_y: i32,
-        pixels_per_point: f32,
-        pixels: &mut [u8],
-    ) {
-        let p0 = v0.pos * pixels_per_point;
-        let p1 = v1.pos * pixels_per_point;
-        let p2 = v2.pos * pixels_per_point;
-
-        let min_x = clip_min_x.max(f32::floor(p0.x.min(p1.x).min(p2.x)) as i32 - 1);
-        let min_y = clip_min_y.max(f32::floor(p0.y.min(p1.y).min(p2.y)) as i32 - 1);
-        let max_x = clip_max_x.min(f32::ceil(p0.x.max(p1.x).max(p2.x)) as i32 + 1);
-        let max_y = clip_max_y.min(f32::ceil(p0.y.max(p1.y).max(p2.y)) as i32 + 1);
-
-        if min_x >= max_x || min_y >= max_y {
-            return;
-        }
-
-        let area = edge_function(p0, p1, p2);
-        if area.abs() < f32::EPSILON {
-            return;
-        }
-        let inv_area = 1.0 / area;
-
-        let texture = self.textures.get(&texture_id);
-
-        for y in min_y..max_y {
-            for x in min_x..max_x {
-                if x < 0 || x >= width || y < 0 || y >= height {
-                    continue;
-                }
-
-                let sample = Pos2::new(x as f32 + 0.5, y as f32 + 0.5);
-                let w0 = edge_function(p1, p2, sample) * inv_area;
-                let w1 = edge_function(p2, p0, sample) * inv_area;
-                let w2 = edge_function(p0, p1, sample) * inv_area;
-
-                if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
-                    continue;
-                }
-
-                let mut color = blend_vertex_colors(v0, v1, v2, w0, w1, w2);
-
-                if let Some(tex) = texture {
-                    let uv =
-                        (v0.uv.to_vec2() * w0) + (v1.uv.to_vec2() * w1) + (v2.uv.to_vec2() * w2);
-                    let tex_color = sample_texture(tex, uv);
-                    color = multiply_colors(color, tex_color);
-                }
-
-                let offset = ((y as usize) * (width as usize) + x as usize) * 4;
-                let dst = &mut pixels[offset..offset + 4];
-                let dst_color = Color32::from_rgba_unmultiplied(dst[0], dst[1], dst[2], dst[3]);
-                let blended = alpha_blend(dst_color, color);
-                dst.copy_from_slice(&blended.to_array());
-            }
-        }
-    }
-}
-
-fn edge_function(a: Pos2, b: Pos2, c: Pos2) -> f32 {
-    (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x)
-}
-
-fn blend_vertex_colors(
-    v0: &Vertex,
-    v1: &Vertex,
-    v2: &Vertex,
-    w0: f32,
-    w1: f32,
-    w2: f32,
-) -> Color32 {
-    let mut to_vec4 = |color: Color32| -> [f32; 4] {
-        let [r, g, b, a] = color.to_array();
-        [
-            r as f32 / 255.0,
-            g as f32 / 255.0,
-            b as f32 / 255.0,
-            a as f32 / 255.0,
-        ]
-    };
-
-    let c0 = to_vec4(v0.color);
-    let c1 = to_vec4(v1.color);
-    let c2 = to_vec4(v2.color);
-
-    let r = c0[0] * w0 + c1[0] * w1 + c2[0] * w2;
-    let g = c0[1] * w0 + c1[1] * w1 + c2[1] * w2;
-    let b = c0[2] * w0 + c1[2] * w1 + c2[2] * w2;
-    let a = c0[3] * w0 + c1[3] * w1 + c2[3] * w2;
-
-    Color32::from_rgba_unmultiplied(
-        (r * 255.0) as u8,
-        (g * 255.0) as u8,
-        (b * 255.0) as u8,
-        (a * 255.0) as u8,
-    )
-}
-
-fn multiply_colors(a: Color32, b: Color32) -> Color32 {
-    let [ar, ag, ab, aa] = a.to_array();
-    let [br, bg, bb, ba] = b.to_array();
-    let mut mul = |ac: u8, bc: u8| -> u8 { (((ac as u16) * (bc as u16)) / 255) as u8 };
-    Color32::from_rgba_unmultiplied(mul(ar, br), mul(ag, bg), mul(ab, bb), mul(aa, ba))
-}
-
-fn alpha_blend(dst: Color32, src: Color32) -> Color32 {
-    let [dr, dg, db, da] = dst.to_array();
-    let [sr, sg, sb, sa] = src.to_array();
-    let src_a = sa as f32 / 255.0;
-    let dst_a = da as f32 / 255.0;
-    let out_a = src_a + dst_a * (1.0 - src_a);
-
-    if out_a <= f32::EPSILON {
-        return Color32::TRANSPARENT;
-    }
-
-    let blend = |dc: u8, sc: u8| -> u8 {
-        let dc = dc as f32 / 255.0;
-        let sc = sc as f32 / 255.0;
-        let out = (sc * src_a + dc * dst_a * (1.0 - src_a)) / out_a;
-        (out * 255.0).round().clamp(0.0, 255.0) as u8
-    };
-
-    Color32::from_rgba_unmultiplied(
-        blend(dr, sr),
-        blend(dg, sg),
-        blend(db, sb),
-        (out_a * 255.0).round().clamp(0.0, 255.0) as u8,
-    )
-}
-
-fn sample_texture(texture: &GuiTexture, uv: egui::Vec2) -> Color32 {
-    if texture.size[0] == 0 || texture.size[1] == 0 {
-        return Color32::TRANSPARENT;
-    }
-    let u = uv.x.clamp(0.0, 1.0) * (texture.size[0] as f32 - 1.0);
-    let v = uv.y.clamp(0.0, 1.0) * (texture.size[1] as f32 - 1.0);
-    let x = u.round() as usize;
-    let y = v.round() as usize;
-    texture.pixels[y * texture.size[0] + x]
 }
 
 /// Front-end responsible for building egui input and rasterising frames.
 pub struct GuiFrontend {
     ctx: egui::Context,
-    painter: SoftwarePainter,
     shared: GuiShared,
     raw_events: Vec<Event>,
     modifiers: Modifiers,
@@ -371,7 +87,6 @@ impl GuiFrontend {
         let size = window.inner_size();
         Self {
             ctx,
-            painter: SoftwarePainter::new(),
             shared,
             raw_events: Vec::new(),
             modifiers: Modifiers::default(),
@@ -501,7 +216,6 @@ impl GuiFrontend {
             self.apply_theme();
         }
 
-        self.painter.update_textures(&full_output.textures_delta);
         let clipped = self
             .ctx
             .tessellate(full_output.shapes, self.pixels_per_point);
@@ -509,20 +223,13 @@ impl GuiFrontend {
         let panel_width_px = panel_width_pixels(self.pixels_per_point);
         let height_px = self.panel_height.max(1);
 
-        let background = self.ctx.style().visuals.panel_fill;
-        let pixels = self.painter.paint(
-            panel_width_px,
-            height_px,
-            self.pixels_per_point,
-            background,
-            &clipped,
-        );
-
         self.generation += 1;
         let frame = GuiFrame {
-            pixels: Arc::new(pixels),
-            width: panel_width_px,
-            height: height_px,
+            textures_delta: full_output.textures_delta,
+            clipped_primitives: clipped,
+            panel_width: panel_width_px,
+            panel_height: height_px,
+            pixels_per_point: self.pixels_per_point,
             generation: self.generation,
         };
 
@@ -637,20 +344,6 @@ impl GuiFrontend {
         match self.theme {
             GuiTheme::Dark => self.ctx.set_visuals(egui::Visuals::dark()),
             GuiTheme::Light => self.ctx.set_visuals(egui::Visuals::light()),
-        }
-    }
-}
-
-fn fill_background(pixels: &mut [u8], width: u32, height: u32, color: Color32) {
-    let [r, g, b, a] = color.to_array();
-    for y in 0..height {
-        let row = y as usize * width as usize * 4;
-        for x in 0..width as usize {
-            let idx = row + x * 4;
-            pixels[idx] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
-            pixels[idx + 3] = a;
         }
     }
 }
