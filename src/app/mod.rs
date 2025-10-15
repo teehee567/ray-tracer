@@ -7,6 +7,7 @@ use save_frame::save_frame;
 use std::collections::HashMap;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
+use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use glam::UVec2;
@@ -670,12 +671,15 @@ impl GuiRenderer {
 
         let viewport = vk::Viewport {
             x: 0.0,
-            y: 0.0,
+            y: swap_extent.height as f32,
             width: swap_extent.width as f32,
-            height: swap_extent.height as f32,
+            height: -(swap_extent.height as f32),
             min_depth: 0.0,
             max_depth: 1.0,
         };
+        // The egui vertices already use Vulkan-style window coordinates (origin at the
+        // top-left), so we flip the viewport by using a negative height to avoid
+        // presenting the GUI upside down.
         device.cmd_set_viewport(command_buffer, 0, &[viewport]);
 
         let push = [swap_extent.width as f32, swap_extent.height as f32];
@@ -1464,11 +1468,11 @@ impl App {
     unsafe fn present_frame(
         &mut self,
         frame_index: usize,
-        gui_frame: Option<ui::GuiFrame>,
+        gui_frame: Option<Arc<ui::GuiFrame>>,
     ) -> Result<()> {
-        if let Some(frame) = gui_frame {
+        if let Some(frame) = gui_frame.as_deref() {
             self.gui
-                .update(&self.instance, &self.device, &self.data, &frame)?;
+                .update(&self.instance, &self.device, &self.data, frame)?;
         }
 
         self.gui

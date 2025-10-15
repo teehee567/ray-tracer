@@ -24,18 +24,23 @@ pub fn panel_width_pixels(scale_factor: f32) -> u32 {
 /// Shared GUI state accessible by the render worker.
 #[derive(Default)]
 pub struct GuiState {
-    latest: Option<GuiFrame>,
+    latest: Option<Arc<GuiFrame>>,
 }
 
 impl GuiState {
     fn update(&mut self, mut frame: GuiFrame) {
-        if let Some(mut pending) = self.latest.take() {
-            frame.textures_delta.append(pending.textures_delta);
+        if let Some(pending) = self.latest.take() {
+            if let Ok(mut pending_frame) = Arc::try_unwrap(pending) {
+                frame.textures_delta.append(pending_frame.textures_delta);
+            } else {
+                // The render thread is already presenting the pending frame, so its
+                // texture uploads will be consumed directly from that clone.
+            }
         }
-        self.latest = Some(frame);
+        self.latest = Some(Arc::new(frame));
     }
 
-    pub fn take_latest(&mut self) -> Option<GuiFrame> {
+    pub fn take_latest(&mut self) -> Option<Arc<GuiFrame>> {
         self.latest.take()
     }
 }
@@ -49,7 +54,6 @@ pub fn create_shared_state() -> GuiShared {
 }
 
 /// GPU-ready GUI frame data.
-#[derive(Clone)]
 pub struct GuiFrame {
     pub textures_delta: egui::TexturesDelta,
     pub clipped_primitives: Vec<ClippedPrimitive>,
