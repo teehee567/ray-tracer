@@ -153,7 +153,11 @@ fn render_loop(
         }
 
         if present_requested {
-            let gui_frame = gui_shared.read().ok().and_then(|state| state.latest());
+            let gui_frame = if let Ok(mut state) = gui_shared.write() {
+                state.take_latest()
+            } else {
+                None
+            };
             if let Some(new_frame) = ready.pop_back() {
                 while let Some(stale) = ready.pop_front() {
                     available.push_back(stale);
@@ -166,7 +170,7 @@ fn render_loop(
                     available.push_back(previous);
                 }
             } else if let Some(current) = current_frame {
-                if let Err(err) = unsafe { app.present_frame(current, gui_frame) } {
+                if let Err(err) = unsafe { app.present_frame(current, gui_frame.clone()) } {
                     error!("present error: {err:?}");
                 }
             }

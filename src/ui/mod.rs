@@ -28,12 +28,15 @@ pub struct GuiState {
 }
 
 impl GuiState {
-    fn update(&mut self, frame: GuiFrame) {
+    fn update(&mut self, mut frame: GuiFrame) {
+        if let Some(mut pending) = self.latest.take() {
+            frame.textures_delta.append(pending.textures_delta);
+        }
         self.latest = Some(frame);
     }
 
-    pub fn latest(&self) -> Option<GuiFrame> {
-        self.latest.clone()
+    pub fn take_latest(&mut self) -> Option<GuiFrame> {
+        self.latest.take()
     }
 }
 
