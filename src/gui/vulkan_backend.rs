@@ -570,7 +570,7 @@ impl Texture {
             &interface.device,
             cmd_buffer,
             self.image.image,
-            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         );
         // Transition new image for transfer src
