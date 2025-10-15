@@ -22,7 +22,7 @@ mod ui;
 mod vulkan;
 
 pub use app::{
-    App, AppData, DEVICE_EXTENSIONS, GuiCopyInfo, OFFSCREEN_FRAME_COUNT, PORTABILITY_MACOS_VERSION,
+    App, AppData, DEVICE_EXTENSIONS, OFFSCREEN_FRAME_COUNT, PORTABILITY_MACOS_VERSION,
     QueueFamilyIndices, RenderCommand, RenderController, RenderMetrics, SwapchainSupport,
     TILE_SIZE, VALIDATION_ENABLED, VALIDATION_LAYER,
 };
