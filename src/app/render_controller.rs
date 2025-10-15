@@ -6,7 +6,7 @@ use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
 use log::error;
 
-use crate::ui;
+use crate::gui;
 
 use super::{App, OFFSCREEN_FRAME_COUNT, RenderMetrics};
 use vulkanalia::vk::DeviceV1_0;
@@ -18,7 +18,7 @@ pub struct RenderController {
 }
 
 impl RenderController {
-    pub fn spawn(app: App, gui_shared: ui::GuiShared) -> Result<Self> {
+    pub fn spawn(app: App, gui_shared: gui::GuiShared) -> Result<Self> {
         let (command_tx, command_rx) = bounded(16);
         let (metrics_tx, metrics_rx) = bounded(32);
 
@@ -86,7 +86,7 @@ pub enum RenderCommand {
 
 fn render_loop(
     mut app: App,
-    gui_shared: ui::GuiShared,
+    gui_shared: gui::GuiShared,
     command_rx: Receiver<RenderCommand>,
     metrics_tx: Sender<RenderMetrics>,
 ) {

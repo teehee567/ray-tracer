@@ -1,4 +1,7 @@
+pub mod frontend;
 
-mod vulkan_backend;
+pub use frontend::*;
 
-pub use vulkan_backend::{Painter, DrawCmd};
+pub mod gui_renderer;
+
+pub(crate) use gui_renderer::GuiRenderer;
