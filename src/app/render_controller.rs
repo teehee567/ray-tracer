@@ -6,7 +6,7 @@ use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
 use log::error;
 
-use crate::ui;
+use crate::gui;
 
 use super::{App, OFFSCREEN_FRAME_COUNT, RenderMetrics};
 use vulkanalia::vk::DeviceV1_0;
@@ -18,7 +18,7 @@ pub struct RenderController {
 }
 
 impl RenderController {
-    pub fn spawn(app: App, gui_shared: ui::GuiShared) -> Result<Self> {
+    pub fn spawn(app: App, gui_shared: gui::GuiShared) -> Result<Self> {
         let (command_tx, command_rx) = bounded(16);
         let (metrics_tx, metrics_rx) = bounded(32);
 
@@ -86,7 +86,7 @@ pub enum RenderCommand {
 
 fn render_loop(
     mut app: App,
-    gui_shared: ui::GuiShared,
+    gui_shared: gui::GuiShared,
     command_rx: Receiver<RenderCommand>,
     metrics_tx: Sender<RenderMetrics>,
 ) {
@@ -153,7 +153,11 @@ fn render_loop(
         }
 
         if present_requested {
-            let gui_frame = gui_shared.read().ok().and_then(|state| state.latest());
+            let gui_frame = if let Ok(mut state) = gui_shared.write() {
+                state.take_latest()
+            } else {
+                None
+            };
             if let Some(new_frame) = ready.pop_back() {
                 while let Some(stale) = ready.pop_front() {
                     available.push_back(stale);
@@ -166,7 +170,7 @@ fn render_loop(
                     available.push_back(previous);
                 }
             } else if let Some(current) = current_frame {
-                if let Err(err) = unsafe { app.present_frame(current, gui_frame) } {
+                if let Err(err) = unsafe { app.present_frame(current, gui_frame.clone()) } {
                     error!("present error: {err:?}");
                 }
             }

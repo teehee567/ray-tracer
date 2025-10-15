@@ -18,7 +18,9 @@ pub unsafe fn create_swapchain(
     let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
     let support = SwapchainSupport::get(instance, data, data.physical_device)?;
 
-    let required_usage = vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::TRANSFER_DST;
+    let required_usage = vk::ImageUsageFlags::STORAGE
+        | vk::ImageUsageFlags::TRANSFER_DST
+        | vk::ImageUsageFlags::COLOR_ATTACHMENT;
     if !support
         .capabilities
         .supported_usage_flags

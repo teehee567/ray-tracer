@@ -139,3 +139,21 @@ pub unsafe fn transition_framebuffer_images(device: &Device, data: &mut AppData)
 
     Ok(())
 }
+
+pub unsafe fn create_swapchain_framebuffers(device: &Device, data: &mut AppData) -> Result<()> {
+    let mut framebuffers = Vec::with_capacity(data.swapchain_image_views.len());
+    for &view in &data.swapchain_image_views {
+        let attachments = [view];
+        let info = vk::FramebufferCreateInfo::builder()
+            .render_pass(data.render_pass)
+            .attachments(&attachments)
+            .width(data.swapchain_extent.width)
+            .height(data.swapchain_extent.height)
+            .layers(1);
+
+        framebuffers.push(device.create_framebuffer(&info, None)?);
+    }
+
+    data.swapchain_framebuffers = framebuffers;
+    Ok(())
+}

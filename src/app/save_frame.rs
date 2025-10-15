@@ -17,7 +17,6 @@ use winit::window::Window;
 use super::AppData;
 use crate::scene::Scene;
 use crate::types::{AUVec2, Au32, CameraBufferObject};
-use crate::ui;
 use crate::vulkan::accumulate_image::{create_image, transition_image_layout};
 use crate::vulkan::buffers::{create_shader_buffers, create_uniform_buffer};
 use crate::vulkan::command_buffers::{

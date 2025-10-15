@@ -1,7 +1,7 @@
 use log::info;
 use vulkanalia::prelude::v1_0::*;
 
-use crate::{AppData, GuiCopyInfo, OFFSCREEN_FRAME_COUNT, TILE_SIZE};
+use crate::{AppData, OFFSCREEN_FRAME_COUNT, TILE_SIZE, gui::GuiRenderer};
 use anyhow::{Result, anyhow};
 use glam::UVec2;
 
@@ -69,7 +69,7 @@ pub unsafe fn record_present_commands(
     frame_index: usize,
     panel_width: u32,
     render_extent: UVec2,
-    gui_copy: Option<GuiCopyInfo>,
+    gui: &GuiRenderer,
 ) -> Result<()> {
     let command_buffer = data.present_command_buffer;
     let begin_info = vk::CommandBufferBeginInfo::builder();
@@ -213,36 +213,54 @@ pub unsafe fn record_present_commands(
         );
     }
 
-    if let Some(copy) = gui_copy {
-        if copy.width > 0 && copy.height > 0 {
-            let region = vk::BufferImageCopy::builder()
-                .buffer_offset(0)
-                .buffer_row_length(0)
-                .buffer_image_height(0)
-                .image_subresource(
-                    vk::ImageSubresourceLayers::builder()
-                        .aspect_mask(vk::ImageAspectFlags::COLOR)
-                        .mip_level(0)
-                        .base_array_layer(0)
-                        .layer_count(1)
-                        .build(),
-                )
-                .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
-                .image_extent(vk::Extent3D {
-                    width: copy.width,
-                    height: copy.height,
-                    depth: 1,
-                })
-                .build();
+    let mut swap_layout_after = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
 
-            device.cmd_copy_buffer_to_image(
-                command_buffer,
-                copy.buffer,
-                data.swapchain_images[swapchain_index],
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                &[region],
-            );
-        }
+    if gui.has_draws() {
+        let barrier = vk::ImageMemoryBarrier::builder()
+            .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+            .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .image(data.swapchain_images[swapchain_index])
+            .subresource_range(
+                vk::ImageSubresourceRange::builder()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .base_mip_level(0)
+                    .level_count(1)
+                    .base_array_layer(0)
+                    .layer_count(1)
+                    .build(),
+            )
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .build();
+
+        device.cmd_pipeline_barrier(
+            command_buffer,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            vk::DependencyFlags::empty(),
+            &[] as &[vk::MemoryBarrier],
+            &[] as &[vk::BufferMemoryBarrier],
+            &[barrier],
+        );
+
+        let framebuffer = data.swapchain_framebuffers[swapchain_index];
+        let render_area = vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent: data.swapchain_extent,
+        };
+        let begin_info = vk::RenderPassBeginInfo::builder()
+            .render_pass(data.render_pass)
+            .framebuffer(framebuffer)
+            .render_area(render_area);
+
+        device.cmd_begin_render_pass(command_buffer, &begin_info, vk::SubpassContents::INLINE);
+
+        gui.record_draws(device, command_buffer, frame_index, data.swapchain_extent)?;
+
+        device.cmd_end_render_pass(command_buffer);
+        swap_layout_after = vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
     }
 
     let framebuffer_to_general = vk::ImageMemoryBarrier::builder()
@@ -274,8 +292,21 @@ pub unsafe fn record_present_commands(
         &[framebuffer_to_general],
     );
 
+    let (present_src_stage, present_src_access) =
+        if swap_layout_after == vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL {
+            (
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+            )
+        } else {
+            (
+                vk::PipelineStageFlags::TRANSFER,
+                vk::AccessFlags::TRANSFER_WRITE,
+            )
+        };
+
     let present_barrier = vk::ImageMemoryBarrier::builder()
-        .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+        .old_layout(swap_layout_after)
         .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
         .image(data.swapchain_images[swapchain_index])
         .subresource_range(
@@ -289,13 +320,13 @@ pub unsafe fn record_present_commands(
         )
         .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
         .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+        .src_access_mask(present_src_access)
         .dst_access_mask(vk::AccessFlags::empty())
         .build();
 
     device.cmd_pipeline_barrier(
         command_buffer,
-        vk::PipelineStageFlags::TRANSFER,
+        present_src_stage,
         vk::PipelineStageFlags::BOTTOM_OF_PIPE,
         vk::DependencyFlags::empty(),
         &[] as &[vk::MemoryBarrier],
