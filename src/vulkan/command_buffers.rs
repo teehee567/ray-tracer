@@ -1,7 +1,7 @@
 use log::info;
 use vulkanalia::prelude::v1_0::*;
 
-use crate::{AppData, OFFSCREEN_FRAME_COUNT, TILE_SIZE, app::GuiRenderer};
+use crate::{AppData, OFFSCREEN_FRAME_COUNT, TILE_SIZE, gui::GuiRenderer};
 use anyhow::{Result, anyhow};
 use glam::UVec2;
 

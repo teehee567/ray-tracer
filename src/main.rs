@@ -16,9 +16,9 @@ use winit::window::WindowBuilder;
 
 mod accelerators;
 mod app;
+mod gui;
 mod scene;
 mod types;
-mod ui;
 mod vulkan;
 
 pub use app::{
@@ -87,7 +87,7 @@ fn main() -> Result<()> {
         .build(&event_loop)?;
 
     let scale_factor = window.scale_factor() as f32;
-    let panel_width_px = ui::panel_width_pixels(scale_factor);
+    let panel_width_px = gui::panel_width_pixels(scale_factor);
     if panel_width_px > 0 {
         let total_width = render_resolution.x + panel_width_px;
         let _ = window.request_inner_size(PhysicalSize::new(total_width, render_resolution.y));
@@ -98,10 +98,10 @@ fn main() -> Result<()> {
         app.upload_scene()?;
     }
 
-    let gui_shared = ui::create_shared_state();
+    let gui_shared = gui::create_shared_state();
     let mut render_controller = RenderController::spawn(app, gui_shared.clone())?;
     let metrics_rx = render_controller.metrics_receiver();
-    let mut gui = ui::GuiFrontend::new(&window, gui_shared.clone(), metrics_rx);
+    let mut gui = gui::GuiFrontend::new(&window, gui_shared.clone(), metrics_rx);
 
     let mut minimized = false;
     event_loop.run(move |event, elwt| {
