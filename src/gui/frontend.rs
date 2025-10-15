@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use crate::RenderMetrics;
+use super::GuiData;
 use crossbeam_channel::{Receiver, TryRecvError};
 use eframe::egui::epaint::ClippedPrimitive;
 use eframe::egui::{
@@ -13,15 +13,13 @@ use winit::keyboard::ModifiersState;
 use winit::keyboard::{Key as WinitKey, NamedKey};
 use winit::window::Window;
 
-/// Logical width of the GUI side panel in egui points.
+// egui points
 const PANEL_WIDTH_POINTS: f32 = 320.0;
 
-/// Convert the logical panel width into physical pixels for a given scale factor.
 pub fn panel_width_pixels(scale_factor: f32) -> u32 {
     (PANEL_WIDTH_POINTS * scale_factor).round().max(0.0) as u32
 }
 
-/// Shared GUI state accessible by the render worker.
 #[derive(Default)]
 pub struct GuiState {
     latest: Option<Arc<GuiFrame>>,
@@ -75,13 +73,13 @@ pub struct GuiFrontend {
     pixels_per_point: f32,
     panel_height: u32,
     generation: u64,
-    metrics_rx: Receiver<RenderMetrics>,
-    latest_metrics: Option<RenderMetrics>,
+    gui_data_rx: Receiver<GuiData>,
+    latest_gui_data: Option<GuiData>,
     theme: GuiTheme,
 }
 
 impl GuiFrontend {
-    pub fn new(window: &Window, shared: GuiShared, metrics_rx: Receiver<RenderMetrics>) -> Self {
+    pub fn new(window: &Window, shared: GuiShared, gui_data_rx: Receiver<GuiData>) -> Self {
         let ctx = egui::Context::default();
         let scale_factor = window.scale_factor() as f32;
         let size = window.inner_size();
@@ -96,8 +94,8 @@ impl GuiFrontend {
             pixels_per_point: scale_factor as f32,
             panel_height: size.height,
             generation: 0,
-            metrics_rx,
-            latest_metrics: None,
+            gui_data_rx,
+            latest_gui_data: None,
             theme: GuiTheme::Dark,
         }
     }
@@ -170,7 +168,7 @@ impl GuiFrontend {
     }
 
     pub fn run_frame(&mut self, _window: &Window) {
-        self.poll_metrics();
+        self.poll_gui_data();
         self.apply_theme();
 
         let width_points = PANEL_WIDTH_POINTS;
@@ -203,12 +201,12 @@ impl GuiFrontend {
         }
 
         let mut theme = self.theme;
-        let metrics = self.latest_metrics;
+        let gui_data = self.latest_gui_data;
         let panel_height = self.panel_height;
         let pixels_per_point = self.pixels_per_point;
 
         let full_output = self.ctx.run(raw_input, |ctx| {
-            draw_panels(ctx, &mut theme, metrics, panel_height, pixels_per_point);
+            draw_panels(ctx, &mut theme, gui_data, panel_height, pixels_per_point);
         });
 
         if self.theme != theme {
@@ -330,10 +328,10 @@ impl GuiFrontend {
         })
     }
 
-    fn poll_metrics(&mut self) {
+    fn poll_gui_data(&mut self) {
         loop {
-            match self.metrics_rx.try_recv() {
-                Ok(metrics) => self.latest_metrics = Some(metrics),
+            match self.gui_data_rx.try_recv() {
+                Ok(gui_data) => self.latest_gui_data = Some(gui_data),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => break,
             }
@@ -361,7 +359,7 @@ enum GuiTheme {
 fn draw_panels(
     ctx: &egui::Context,
     theme: &mut GuiTheme,
-    metrics: Option<RenderMetrics>,
+    gui_data: Option<GuiData>,
     panel_height: u32,
     pixels_per_point: f32,
 ) {
@@ -387,10 +385,10 @@ fn draw_panels(
             ui.separator();
 
             ui.heading("Renderer");
-            if let Some(metrics) = metrics {
-                ui.label(format!("FPS: {:.1}", metrics.fps));
-                let frame_ms = if metrics.fps > f64::EPSILON {
-                    1000.0 / metrics.fps
+            if let Some(gui_data) = gui_data {
+                ui.label(format!("FPS: {:.1}", gui_data.fps));
+                let frame_ms = if gui_data.fps > f64::EPSILON {
+                    1000.0 / gui_data.fps
                 } else {
                     f64::INFINITY
                 };

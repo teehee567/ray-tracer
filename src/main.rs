@@ -23,9 +23,11 @@ mod vulkan;
 
 pub use app::{
     App, AppData, DEVICE_EXTENSIONS, OFFSCREEN_FRAME_COUNT, PORTABILITY_MACOS_VERSION,
-    QueueFamilyIndices, RenderCommand, RenderController, RenderMetrics, SwapchainSupport,
+    QueueFamilyIndices, RenderCommand, RenderController, SwapchainSupport,
     TILE_SIZE, VALIDATION_ENABLED, VALIDATION_LAYER,
 };
+
+use gui::GuiData;
 pub use types::*;
 
 macro_rules! print_size {
@@ -100,8 +102,8 @@ fn main() -> Result<()> {
 
     let gui_shared = gui::create_shared_state();
     let mut render_controller = RenderController::spawn(app, gui_shared.clone())?;
-    let metrics_rx = render_controller.metrics_receiver();
-    let mut gui = gui::GuiFrontend::new(&window, gui_shared.clone(), metrics_rx);
+    let gui_data_rx = render_controller.gui_data_receiver();
+    let mut gui = gui::GuiFrontend::new(&window, gui_shared.clone(), gui_data_rx);
 
     let mut minimized = false;
     event_loop.run(move |event, elwt| {

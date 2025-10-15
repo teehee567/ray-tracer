@@ -1,4 +1,4 @@
 #[derive(Clone, Copy, Debug)]
-pub struct RenderMetrics {
+pub struct GuiData {
     pub fps: f64,
 }

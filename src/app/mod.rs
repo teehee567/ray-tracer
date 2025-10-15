@@ -4,7 +4,6 @@ pub mod save_frame;
 mod app;
 pub mod constants;
 pub mod data;
-mod metrics;
 mod queue;
 
 pub use app::App;
@@ -13,7 +12,6 @@ pub use constants::{
     VALIDATION_ENABLED, VALIDATION_LAYER,
 };
 pub use data::AppData;
-pub use metrics::RenderMetrics;
 pub use queue::{QueueFamilyIndices, SwapchainSupport};
 pub use render_controller::{RenderCommand, RenderController};
 pub use save_frame::save_frame;

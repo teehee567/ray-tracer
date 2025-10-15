@@ -7,30 +7,31 @@ use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
 use log::error;
 
 use crate::gui;
+use crate::gui::GuiData;
 
-use super::{App, OFFSCREEN_FRAME_COUNT, RenderMetrics};
+use super::{App, OFFSCREEN_FRAME_COUNT};
 use vulkanalia::vk::DeviceV1_0;
 
 pub struct RenderController {
     command_tx: Sender<RenderCommand>,
-    metrics_rx: Receiver<RenderMetrics>,
+    gui_data_rx: Receiver<GuiData>,
     handle: Option<thread::JoinHandle<()>>,
 }
 
 impl RenderController {
     pub fn spawn(app: App, gui_shared: gui::GuiShared) -> Result<Self> {
         let (command_tx, command_rx) = bounded(16);
-        let (metrics_tx, metrics_rx) = bounded(32);
+        let (gui_data_tx, gui_data_rx) = bounded(32);
 
         let render_gui_shared = gui_shared.clone();
         let handle = thread::Builder::new()
             .name("render-thread".into())
-            .spawn(move || render_loop(app, render_gui_shared, command_rx, metrics_tx))
+            .spawn(move || render_loop(app, render_gui_shared, command_rx, gui_data_tx))
             .map_err(|err| anyhow::anyhow!("failed to spawn render thread: {err}"))?;
 
         Ok(Self {
             command_tx,
-            metrics_rx,
+            gui_data_rx,
             handle: Some(handle),
         })
     }
@@ -60,8 +61,8 @@ impl RenderController {
         }
     }
 
-    pub fn metrics_receiver(&self) -> Receiver<RenderMetrics> {
-        self.metrics_rx.clone()
+    pub fn gui_data_receiver(&self) -> Receiver<GuiData> {
+        self.gui_data_rx.clone()
     }
 
     pub fn command_sender(&self) -> Sender<RenderCommand> {
@@ -88,7 +89,7 @@ fn render_loop(
     mut app: App,
     gui_shared: gui::GuiShared,
     command_rx: Receiver<RenderCommand>,
-    metrics_tx: Sender<RenderMetrics>,
+    gui_data_tx: Sender<GuiData>,
 ) {
     let mut paused = false;
     let mut running = true;
@@ -149,7 +150,7 @@ fn render_loop(
         for index in completed {
             ready.push_back(index);
             let fps = app.fps_counter.tick();
-            let _ = metrics_tx.try_send(RenderMetrics { fps });
+            let _ = gui_data_tx.try_send(GuiData { fps });
         }
 
         if present_requested {
