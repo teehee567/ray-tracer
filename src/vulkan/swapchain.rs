@@ -109,7 +109,7 @@ pub fn get_swapchain_present_mode(present_modes: &[vk::PresentModeKHR]) -> vk::P
     present_modes
         .iter()
         .cloned()
-        .find(|m| *m == vk::PresentModeKHR::FIFO)
+        .find(|m| *m == vk::PresentModeKHR::MAILBOX)
         .unwrap_or(vk::PresentModeKHR::FIFO)
 }
 

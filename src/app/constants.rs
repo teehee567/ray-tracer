@@ -10,6 +10,7 @@ pub const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[
     vk::KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION.name,
     vk::EXT_DESCRIPTOR_INDEXING_EXTENSION.name,
     vk::KHR_MAINTENANCE3_EXTENSION.name,
+    vk::KHR_MAINTENANCE1_EXTENSION.name,
 ];
 
 pub const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
