@@ -7,6 +7,8 @@
     clippy::unnecessary_wraps
 )]
 
+use std::time::{Duration, Instant};
+
 use anyhow::Result;
 use scene::Scene;
 use winit::dpi::PhysicalSize;
@@ -38,32 +40,6 @@ macro_rules! print_size {
             std::mem::size_of::<$t>()
         );
     };
-}
-
-fn assert_vecs_equal<T: std::fmt::Debug + PartialEq>(v1: &[T], v2: &[T], context: usize) {
-    if v1.len() != v2.len() {
-        panic!(
-            "Vectors have different lengths: {} vs {}",
-            v1.len(),
-            v2.len()
-        );
-    }
-
-    for (i, (a, b)) in v1.iter().zip(v2.iter()).enumerate() {
-        if a != b {
-            let start = i.saturating_sub(context);
-            let end = (i + context + 1).min(v1.len());
-
-            println!("Vectors differ at index {}:", i);
-            println!("Vector 1 context: {:?}", &v1[start..end]);
-            println!("Vector 2 context: {:?}", &v2[start..end]);
-            println!("Specific difference: {:?} != {:?}", a, b);
-            dbg!(a);
-            dbg!(b);
-
-            panic!("Vector mismatch at index {}", i);
-        }
-    }
 }
 
 #[rustfmt::skip]
@@ -106,8 +82,8 @@ fn main() -> Result<()> {
     let mut gui = gui::GuiFrontend::new(&window, gui_shared.clone(), gui_data_rx);
 
     let mut minimized = false;
-    let mut last_frame_time = std::time::Instant::now();
-    let target_frametime = std::time::Duration::from_micros(1_000_000 / 144);
+    let mut last_frame_time = Instant::now();
+    let target_frametime = Duration::from_micros(1_000_000 / 144);
     event_loop.run(move |event, elwt| {
         match event {
             Event::NewEvents(_) => {
