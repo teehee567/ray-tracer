@@ -1,10 +1,10 @@
-mod textures;
-mod skybox;
 mod gui_textures;
+mod skybox;
+mod textures;
 
-pub use textures::*;
-pub use skybox::*;
 pub use gui_textures::*;
+pub use skybox::*;
+pub use textures::*;
 
 use crate::AppData;
 use anyhow::{Result, anyhow};
