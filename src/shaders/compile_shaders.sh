@@ -10,5 +10,7 @@ echo "$VULKAN_SDK"
 # Set GLSLC path (note: on macOS, the executable is typically named "glslc" without the .exe extension)
 GLSLC_PATH="$VULKAN_SDK/bin/glslc"
 
-# Compile the shader
+# Compile the shaders
 "$GLSLC_PATH" ./src/shaders/main.comp -o ./src/shaders/main.comp.spv
+"$GLSLC_PATH" ./src/shaders/gui.vert -o ./src/shaders/gui.vert.spv
+"$GLSLC_PATH" ./src/shaders/gui.frag -o ./src/shaders/gui.frag.spv

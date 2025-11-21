@@ -1,6 +1,5 @@
-
-use vulkanalia::prelude::v1_0::*;
 use anyhow::Result;
+use vulkanalia::prelude::v1_0::*;
 
 use crate::{AppData, vulkan::utils::get_memory_type_index};
 
@@ -86,30 +85,20 @@ pub unsafe fn create_texture_resource(
         );
     let view = device.create_image_view(&view_info, None)?;
 
-    let sampler_info = vk::DescriptorImageInfo::builder()
-        .sampler(sampler)
-        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-        .build();
     let image_info = vk::DescriptorImageInfo::builder()
-        .sampler(vk::Sampler::null())
+        .sampler(sampler)
         .image_view(view)
         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
         .build();
 
-    let sampler_write = vk::WriteDescriptorSet::builder()
+    let descriptor_write = vk::WriteDescriptorSet::builder()
         .dst_set(descriptor_set)
         .dst_binding(0)
-        .descriptor_type(vk::DescriptorType::SAMPLER)
-        .image_info(std::slice::from_ref(&sampler_info))
-        .build();
-    let image_write = vk::WriteDescriptorSet::builder()
-        .dst_set(descriptor_set)
-        .dst_binding(1)
-        .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
         .image_info(std::slice::from_ref(&image_info))
         .build();
 
-    let writes = [sampler_write, image_write];
+    let writes = [descriptor_write];
     device.update_descriptor_sets(&writes, &[] as &[vk::CopyDescriptorSet]);
 
     Ok(GuiTexture {
@@ -120,4 +109,3 @@ pub unsafe fn create_texture_resource(
         size,
     })
 }
-
