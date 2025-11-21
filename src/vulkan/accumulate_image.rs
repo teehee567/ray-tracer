@@ -5,17 +5,21 @@ use vulkanalia::{
     vk::{ImageSubresourceRange, ImageViewCreateInfo},
 };
 
+use super::utils::get_memory_type_index;
 use crate::AppData;
 
-use super::utils::get_memory_type_index;
-
-pub unsafe fn create_image(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn create_image(
+    instance: &Instance,
+    device: &Device,
+    swapchain_extent: vk::Extent2D,
+    data: &AppData,
+) -> Result<(vk::Image, vk::ImageView, vk::DeviceMemory)> {
     let image_info = vk::ImageCreateInfo::builder()
         .image_type(vk::ImageType::_2D)
         .format(vk::Format::R8G8B8A8_UNORM)
         .extent(vk::Extent3D {
-            width: data.swapchain_extent.width,
-            height: data.swapchain_extent.height,
+            width: swapchain_extent.width,
+            height: swapchain_extent.height,
             depth: 1,
         })
         .mip_levels(1)
@@ -67,18 +71,19 @@ pub unsafe fn create_image(instance: &Instance, device: &Device, data: &mut AppD
     let image_view = device.create_image_view(&view_info, None)?;
     info!("Created image view: {:?}", image_view);
 
-    data.accumulator_image = image;
-    data.accumulator_view = image_view;
-    data.accumulator_memory = image_memory;
-
-    Ok(())
+    Ok((image, image_view, image_memory))
 }
 
-pub unsafe fn transition_image_layout(device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn transition_image_layout(
+    device: &Device,
+    command_pool: vk::CommandPool,
+    compute_queue: vk::Queue,
+    accumulator_image: vk::Image,
+) -> Result<()> {
     info!("Creating transition image layout");
     let info = vk::CommandBufferAllocateInfo::builder()
         .level(vk::CommandBufferLevel::PRIMARY)
-        .command_pool(data.command_pool)
+        .command_pool(command_pool)
         .command_buffer_count(1);
 
     let command_buffer = device.allocate_command_buffers(&info)?[0];
@@ -93,7 +98,7 @@ pub unsafe fn transition_image_layout(device: &Device, data: &mut AppData) -> Re
     let barrier = vk::ImageMemoryBarrier::builder()
         .old_layout(vk::ImageLayout::UNDEFINED)
         .new_layout(vk::ImageLayout::GENERAL)
-        .image(data.accumulator_image)
+        .image(accumulator_image)
         .subresource_range(
             ImageSubresourceRange::builder()
                 .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -125,12 +130,12 @@ pub unsafe fn transition_image_layout(device: &Device, data: &mut AppData) -> Re
     let command_buffers = &[command_buffer];
     let info = vk::SubmitInfo::builder().command_buffers(command_buffers);
 
-    device.queue_submit(data.compute_queue, &[info], vk::Fence::null())?;
-    device.queue_wait_idle(data.compute_queue)?;
+    device.queue_submit(compute_queue, &[info], vk::Fence::null())?;
+    device.queue_wait_idle(compute_queue)?;
 
     // Cleanup
 
-    device.free_command_buffers(data.command_pool, &[command_buffer]);
+    device.free_command_buffers(command_pool, &[command_buffer]);
 
     Ok(())
 }

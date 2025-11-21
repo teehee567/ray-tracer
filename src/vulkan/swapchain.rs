@@ -11,8 +11,14 @@ pub unsafe fn create_swapchain(
     window: &Window,
     instance: &Instance,
     device: &Device,
-    data: &mut AppData,
-) -> Result<()> {
+    data: &AppData,
+) -> Result<(
+    vk::SwapchainKHR,
+    vk::Format,
+    vk::Extent2D,
+    Vec<vk::Image>,
+    Vec<vk::ImageLayout>,
+)> {
     // Image
 
     let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
@@ -34,9 +40,6 @@ pub unsafe fn create_swapchain(
     let surface_format = get_swapchain_surface_format(&support.formats);
     let present_mode = get_swapchain_present_mode(&support.present_modes);
     let extent = get_swapchain_extent(window, support.capabilities);
-
-    data.swapchain_format = surface_format.format;
-    data.swapchain_extent = extent;
 
     let mut image_count = support.capabilities.min_image_count + 1;
     if support.capabilities.max_image_count != 0
@@ -77,21 +80,27 @@ pub unsafe fn create_swapchain(
         .clipped(true)
         .old_swapchain(vk::SwapchainKHR::null());
 
-    data.swapchain = device.create_swapchain_khr(&info, None)?;
-    info!("Created Swapchain: {:?}", data.swapchain);
+    let swapchain = device.create_swapchain_khr(&info, None)?;
+    info!("Created Swapchain: {:?}", swapchain);
 
     // Images
 
-    data.swapchain_images = device.get_swapchain_images_khr(data.swapchain)?;
+    let swapchain_images = device.get_swapchain_images_khr(swapchain)?;
     info!(
         "Created {} Swapchain Images: {:?}",
-        data.swapchain_images.len(),
-        data.swapchain_images
+        swapchain_images.len(),
+        swapchain_images
     );
 
-    data.swapchain_image_layouts = vec![vk::ImageLayout::UNDEFINED; data.swapchain_images.len()];
+    let swapchain_image_layouts = vec![vk::ImageLayout::UNDEFINED; swapchain_images.len()];
 
-    Ok(())
+    Ok((
+        swapchain,
+        surface_format.format,
+        extent,
+        swapchain_images,
+        swapchain_image_layouts,
+    ))
 }
 
 pub fn get_swapchain_surface_format(formats: &[vk::SurfaceFormatKHR]) -> vk::SurfaceFormatKHR {
@@ -131,9 +140,12 @@ pub fn get_swapchain_extent(window: &Window, capabilities: vk::SurfaceCapabiliti
     }
 }
 
-pub unsafe fn create_swapchain_image_views(device: &Device, data: &mut AppData) -> Result<()> {
-    data.swapchain_image_views = data
-        .swapchain_images
+pub unsafe fn create_swapchain_image_views(
+    device: &Device,
+    swapchain_images: &[vk::Image],
+    swapchain_format: vk::Format,
+) -> Result<Vec<vk::ImageView>> {
+    let views = swapchain_images
         .iter()
         .map(|i| {
             let components = vk::ComponentMapping::builder()
@@ -152,7 +164,7 @@ pub unsafe fn create_swapchain_image_views(device: &Device, data: &mut AppData) 
             let info = vk::ImageViewCreateInfo::builder()
                 .image(*i)
                 .view_type(vk::ImageViewType::_2D)
-                .format(data.swapchain_format)
+                .format(swapchain_format)
                 .components(components)
                 .subresource_range(subresource_range);
 
@@ -161,5 +173,5 @@ pub unsafe fn create_swapchain_image_views(device: &Device, data: &mut AppData) 
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(())
+    Ok(views)
 }

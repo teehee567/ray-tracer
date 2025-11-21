@@ -5,10 +5,13 @@ use crate::{AppData, OFFSCREEN_FRAME_COUNT, TILE_SIZE, gui::GuiRenderer};
 use anyhow::{Result, anyhow};
 use glam::UVec2;
 
-pub unsafe fn create_command_buffer(device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn create_command_buffer(
+    device: &Device,
+    command_pool: vk::CommandPool,
+) -> Result<(Vec<vk::CommandBuffer>, vk::CommandBuffer)> {
     let command_buffer_count = (OFFSCREEN_FRAME_COUNT + 1) as u32;
     let allocate_info = vk::CommandBufferAllocateInfo::builder()
-        .command_pool(data.command_pool)
+        .command_pool(command_pool)
         .level(vk::CommandBufferLevel::PRIMARY)
         .command_buffer_count(command_buffer_count);
 
@@ -19,11 +22,11 @@ pub unsafe fn create_command_buffer(device: &Device, data: &mut AppData) -> Resu
         ));
     }
 
-    data.compute_command_buffers = buffers[..OFFSCREEN_FRAME_COUNT].to_vec();
-    data.present_command_buffer = buffers[OFFSCREEN_FRAME_COUNT];
-    info!("Created command buffers for: {:?}", data.command_pool);
+    let compute_command_buffers = buffers[..OFFSCREEN_FRAME_COUNT].to_vec();
+    let present_command_buffer = buffers[OFFSCREEN_FRAME_COUNT];
+    info!("Created command buffers for: {:?}", command_pool);
 
-    Ok(())
+    Ok((compute_command_buffers, present_command_buffer))
 }
 
 pub unsafe fn record_compute_commands(

@@ -3,9 +3,7 @@ use vulkanalia::prelude::v1_0::*;
 
 use anyhow::Result;
 
-use crate::AppData;
-
-pub unsafe fn create_sampler(device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn create_sampler(device: &Device) -> Result<vk::Sampler> {
     info!("Creating sampler");
     let sampler_info = vk::SamplerCreateInfo::builder()
         .mag_filter(vk::Filter::NEAREST)
@@ -25,6 +23,5 @@ pub unsafe fn create_sampler(device: &Device, data: &mut AppData) -> Result<()> 
 
     let sampler = device.create_sampler(&sampler_info, None)?;
 
-    data.sampler = sampler;
-    Ok(())
+    Ok(sampler)
 }

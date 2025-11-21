@@ -8,14 +8,13 @@ use vulkanalia::window as vk_window;
 use vulkanalia::{prelude::v1_0::*, vk::ExtDebugUtilsExtension};
 use winit::window::Window;
 
-use crate::{AppData, PORTABILITY_MACOS_VERSION, VALIDATION_ENABLED, VALIDATION_LAYER};
+use crate::{PORTABILITY_MACOS_VERSION, VALIDATION_ENABLED, VALIDATION_LAYER};
 use anyhow::{Result, anyhow};
 
 pub unsafe fn create_instance(
     window: &Window,
     entry: &Entry,
-    data: &mut AppData,
-) -> Result<Instance> {
+) -> Result<(Instance, vk::DebugUtilsMessengerEXT)> {
     // Application Info
 
     let application_info = vk::ApplicationInfo::builder()
@@ -93,11 +92,13 @@ pub unsafe fn create_instance(
 
     // Messenger
 
-    if VALIDATION_ENABLED {
-        data.messenger = instance.create_debug_utils_messenger_ext(&debug_info, None)?;
-    }
+    let messenger = if VALIDATION_ENABLED {
+        instance.create_debug_utils_messenger_ext(&debug_info, None)?
+    } else {
+        vk::DebugUtilsMessengerEXT::null()
+    };
 
-    Ok(instance)
+    Ok((instance, messenger))
 }
 
 pub extern "system" fn debug_callback(
