@@ -6,6 +6,7 @@ pub mod command_pool;
 pub mod descriptors;
 pub mod fps_counter;
 pub mod framebuffer;
+pub mod gui_renderer;
 pub mod instance;
 pub mod logical_device;
 pub mod physical_device;

@@ -60,7 +60,10 @@ pub unsafe fn create_descriptor_sets(
         .build();
 
     let compute_descriptor_sets = device.allocate_descriptor_sets(&info)?;
-    info!("Allocated Descriptor sets len {}", compute_descriptor_sets.len());
+    info!(
+        "Allocated Descriptor sets len {}",
+        compute_descriptor_sets.len()
+    );
 
     for (i, framebuffer_view) in data.framebuffer_image_views.iter().enumerate() {
         debug!("Started Update Descriptor Sets");
