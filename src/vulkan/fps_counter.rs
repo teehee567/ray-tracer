@@ -40,7 +40,7 @@ impl FPSCounter {
             .back()
             .unwrap()
             .duration_since(*self.frame_times.front().unwrap());
-        let frame_count = self.frame_times.len() as f64;
+        let frame_count = (self.frame_times.len() - 1) as f64;
 
         if duration.as_secs_f64() > 0.0 {
             frame_count / duration.as_secs_f64()

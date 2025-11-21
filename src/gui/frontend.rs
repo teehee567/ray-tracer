@@ -1,9 +1,11 @@
 use std::sync::{Arc, RwLock};
 
 use super::GuiData;
+use crate::gui::panels::{GuiPanels, GuiTheme};
+use crate::vulkan::fps_counter::FPSCounter;
 use crossbeam_channel::{Receiver, TryRecvError};
-use eframe::egui::epaint::ClippedPrimitive;
-use eframe::egui::{
+use egui::epaint::ClippedPrimitive;
+use egui::{
     self, ComboBox, Event, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2, Rect, Vec2,
     ViewportId, ViewportInfo, pos2, vec2,
 };
@@ -14,7 +16,7 @@ use winit::keyboard::{Key as WinitKey, NamedKey};
 use winit::window::Window;
 
 // egui points
-const PANEL_WIDTH_POINTS: f32 = 320.0;
+pub const PANEL_WIDTH_POINTS: f32 = 320.0;
 
 pub fn panel_width_pixels(scale_factor: f32) -> u32 {
     (PANEL_WIDTH_POINTS * scale_factor).round().max(0.0) as u32
@@ -75,7 +77,9 @@ pub struct GuiFrontend {
     generation: u64,
     gui_data_rx: Receiver<GuiData>,
     latest_gui_data: Option<GuiData>,
-    theme: GuiTheme,
+
+    panels: GuiPanels,
+    ui_fps_counter: FPSCounter,
 }
 
 impl GuiFrontend {
@@ -96,7 +100,9 @@ impl GuiFrontend {
             generation: 0,
             gui_data_rx,
             latest_gui_data: None,
-            theme: GuiTheme::Dark,
+
+            panels: GuiPanels::new(),
+            ui_fps_counter: FPSCounter::new(60),
         }
     }
 
@@ -167,6 +173,10 @@ impl GuiFrontend {
         }
     }
 
+    pub fn tick_ui_fps(&mut self) {
+        self.ui_fps_counter.tick();
+    }
+
     pub fn run_frame(&mut self, _window: &Window) {
         self.poll_gui_data();
         self.apply_theme();
@@ -200,17 +210,23 @@ impl GuiFrontend {
             raw_input.events.push(Event::PointerGone);
         }
 
-        let mut theme = self.theme;
+        let mut theme = self.panels.theme;
         let gui_data = self.latest_gui_data;
         let panel_height = self.panel_height;
         let pixels_per_point = self.pixels_per_point;
+        let ui_fps = self.ui_fps_counter.get_fps();
 
         let full_output = self.ctx.run(raw_input, |ctx| {
-            draw_panels(ctx, &mut theme, gui_data, panel_height, pixels_per_point);
+            self.panels.draw(
+                ctx,
+                gui_data.as_ref(),
+                panel_height,
+                pixels_per_point,
+                ui_fps,
+            );
         });
 
-        if self.theme != theme {
-            self.theme = theme;
+        if self.panels.theme != theme {
             self.apply_theme();
         }
 
@@ -230,7 +246,7 @@ impl GuiFrontend {
             pixels_per_point: self.pixels_per_point,
             generation: self.generation,
         };
-
+        
         if let Ok(mut state) = self.shared.write() {
             state.update(frame);
         }
@@ -339,7 +355,7 @@ impl GuiFrontend {
     }
 
     fn apply_theme(&self) {
-        match self.theme {
+        match self.panels.theme {
             GuiTheme::Dark => self.ctx.set_visuals(egui::Visuals::dark()),
             GuiTheme::Light => self.ctx.set_visuals(egui::Visuals::light()),
         }
@@ -350,62 +366,4 @@ fn is_printable(ch: char) -> bool {
     !ch.is_control()
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum GuiTheme {
-    Dark,
-    Light,
-}
 
-fn draw_panels(
-    ctx: &egui::Context,
-    theme: &mut GuiTheme,
-    gui_data: Option<GuiData>,
-    panel_height: u32,
-    pixels_per_point: f32,
-) {
-    egui::SidePanel::left("control_panel")
-        .resizable(false)
-        .exact_width(PANEL_WIDTH_POINTS)
-        .show(ctx, |ui| {
-            ui.heading("Ray Tracer");
-            ui.label(format!("v{}", env!("CARGO_PKG_VERSION")));
-            ui.separator();
-            ui.horizontal(|ui| {
-                ui.label("Theme");
-                ComboBox::from_id_source("theme_combo")
-                    .selected_text(match theme {
-                        GuiTheme::Dark => "Dark",
-                        GuiTheme::Light => "Light",
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(theme, GuiTheme::Dark, "Dark");
-                        ui.selectable_value(theme, GuiTheme::Light, "Light");
-                    });
-            });
-            ui.separator();
-
-            ui.heading("Renderer");
-            if let Some(gui_data) = gui_data {
-                ui.label(format!("FPS: {:.1}", gui_data.fps));
-                let frame_ms = if gui_data.fps > f64::EPSILON {
-                    1000.0 / gui_data.fps
-                } else {
-                    f64::INFINITY
-                };
-                if frame_ms.is_finite() {
-                    ui.label(format!("Frame time: {:.2} ms", frame_ms));
-                } else {
-                    ui.label("Frame time: ∞");
-                }
-            } else {
-                ui.label("Waiting for renderer…");
-            }
-
-            ui.separator();
-            ui.heading("Panel");
-            let width_px = panel_width_pixels(pixels_per_point);
-            ui.label(format!("Resolution: {} × {} px", width_px, panel_height));
-        });
-
-    egui::CentralPanel::default().show(ctx, |_| {});
-}

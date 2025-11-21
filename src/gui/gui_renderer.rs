@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::mem::size_of;
 
 use anyhow::{Result, anyhow};
-use eframe::egui::epaint::{ClippedPrimitive, Primitive};
-use eframe::egui::{self, TextureId};
+use egui::epaint::{ClippedPrimitive, Primitive};
+use egui::{self, TextureId};
 use glam::UVec2;
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::{self, DeviceV1_0};
@@ -791,6 +791,27 @@ impl GuiRenderer {
             let size = [delta.image.width() as u32, delta.image.height() as u32];
             let (pixels, size) = Self::image_to_rgba(&delta.image);
             let offset = delta.pos.map(|[x, y]| [x as u32, y as u32]);
+            // Check if we need to recreate the texture due to size change
+            if let Some(texture) = self.textures.get(id) {
+                if delta.pos.is_none() && texture.size != size {
+                    // Remove and destroy old texture
+                    if let Some(texture) = self.textures.remove(id) {
+                        if texture.view != vk::ImageView::null() {
+                            device.destroy_image_view(texture.view, None);
+                        }
+                        if texture.image != vk::Image::null() {
+                            device.destroy_image(texture.image, None);
+                        }
+                        if texture.memory != vk::DeviceMemory::null() {
+                            device.free_memory(texture.memory, None);
+                        }
+                        if texture.descriptor_set != vk::DescriptorSet::null() {
+                            device.free_descriptor_sets(self.descriptor_pool, &[texture.descriptor_set])?;
+                        }
+                    }
+                }
+            }
+
             if let Some(texture) = self.textures.get_mut(id) {
                 Self::upload_pixels(
                     instance, device, data, texture, &pixels, size, offset, false,
@@ -808,7 +829,9 @@ impl GuiRenderer {
                     self.sampler,
                     size,
                 )?;
-                Self::upload_pixels(instance, device, data, &texture, &pixels, size, None, true)?;
+                Self::upload_pixels(
+                    instance, device, data, &texture, &pixels, size, None, true,
+                )?;
                 texture.size = size;
                 self.textures.insert(*id, texture);
             }

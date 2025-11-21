@@ -50,8 +50,8 @@ impl RenderController {
             .try_send(RenderCommand::Resize { width, height });
     }
 
-    pub fn present(&self) {
-        let _ = self.command_tx.try_send(RenderCommand::Present);
+    pub fn present(&self) -> bool {
+        self.command_tx.try_send(RenderCommand::Present).is_ok()
     }
 
     pub fn shutdown(&mut self) {
