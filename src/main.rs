@@ -111,25 +111,11 @@ fn main() -> Result<()> {
     event_loop.run(move |event, elwt| {
         match event {
             Event::NewEvents(_) => {
-                let now = std::time::Instant::now();
-                if now.duration_since(last_frame_time) >= target_frametime {
-                    elwt.set_control_flow(ControlFlow::Poll);
-                } else {
-                    elwt.set_control_flow(ControlFlow::WaitUntil(last_frame_time + target_frametime));
-                }
-
-                
+                elwt.set_control_flow(ControlFlow::Poll);
             }
             Event::AboutToWait => {
                 if !minimized {
-                    let now = std::time::Instant::now();
-                    if now.duration_since(last_frame_time) >= target_frametime {
-                        last_frame_time = now;
-                        window.request_redraw();
-                    } else {
-                        elwt.set_control_flow(ControlFlow::WaitUntil(last_frame_time + target_frametime));
-                    }
-                    
+                    window.request_redraw();
                 }
             }
             Event::WindowEvent { event, .. } => {
