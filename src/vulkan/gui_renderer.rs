@@ -669,14 +669,16 @@ impl GuiRenderer {
         data: &AppData,
         delta: &egui::TexturesDelta,
     ) -> Result<()> {
+        // Pass 1: full replacements first (ensure correct size before partial updates)
         for (id, delta) in &delta.set {
+            if delta.pos.is_some() {
+                continue;
+            }
             let size = [delta.image.width() as u32, delta.image.height() as u32];
             let (pixels, size) = Self::image_to_rgba(&delta.image);
-            let offset = delta.pos.map(|[x, y]| [x as u32, y as u32]);
-            // Check if we need to recreate the texture due to size change
+
             if let Some(texture) = self.textures.get(id) {
-                if delta.pos.is_none() && texture.size != size {
-                    // Remove and destroy old texture
+                if texture.size != size {
                     if let Some(texture) = self.textures.remove(id) {
                         if texture.view != vk::ImageView::null() {
                             device.destroy_image_view(texture.view, None);
@@ -698,12 +700,8 @@ impl GuiRenderer {
             }
 
             if let Some(texture) = self.textures.get_mut(id) {
-                Self::upload_pixels(
-                    instance, device, data, texture, &pixels, size, offset, false,
-                )?;
-                if delta.pos.is_none() {
-                    texture.size = size;
-                }
+                Self::upload_pixels(instance, device, data, texture, &pixels, size, None, false)?;
+                texture.size = size;
             } else {
                 let mut texture = create_texture_resource(
                     instance,
@@ -716,6 +714,60 @@ impl GuiRenderer {
                 )?;
                 Self::upload_pixels(instance, device, data, &texture, &pixels, size, None, true)?;
                 texture.size = size;
+                self.textures.insert(*id, texture);
+            }
+        }
+
+        // Pass 2: partial updates (must fit current texture)
+        for (id, delta) in &delta.set {
+            let Some([ox, oy]) = delta.pos.map(|[x, y]| [x as u32, y as u32]) else {
+                continue;
+            };
+            let (pixels, sub_size) = Self::image_to_rgba(&delta.image);
+
+            if let Some(texture) = self.textures.get_mut(id) {
+                let fits = ox.saturating_add(sub_size[0]) <= texture.size[0]
+                    && oy.saturating_add(sub_size[1]) <= texture.size[1];
+                if !fits {
+                    // Skip invalid partial update to avoid out-of-bounds copy.
+                    continue;
+                }
+                Self::upload_pixels(
+                    instance,
+                    device,
+                    data,
+                    texture,
+                    &pixels,
+                    sub_size,
+                    Some([ox, oy]),
+                    false,
+                )?;
+            } else {
+                // No texture exists yet: allocate one that fits the sub-rect and upload
+                let alloc_size = [
+                    ox.saturating_add(sub_size[0]).max(1),
+                    oy.saturating_add(sub_size[1]).max(1),
+                ];
+                let mut texture = create_texture_resource(
+                    instance,
+                    device,
+                    data,
+                    self.descriptor_set_layout,
+                    self.descriptor_pool,
+                    self.sampler,
+                    alloc_size,
+                )?;
+                Self::upload_pixels(
+                    instance,
+                    device,
+                    data,
+                    &texture,
+                    &pixels,
+                    sub_size,
+                    Some([ox, oy]),
+                    true,
+                )?;
+                texture.size = alloc_size;
                 self.textures.insert(*id, texture);
             }
         }
