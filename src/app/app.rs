@@ -14,7 +14,6 @@ use vulkanalia::window as vk_window;
 use winit::window::Window;
 
 use crate::gui;
-use crate::gui::gui_renderer::GuiRenderer;
 use crate::scene::Scene;
 use crate::types::{AUVec2, Au32, CameraBufferObject};
 use crate::vulkan::accumulate_image::{create_image, transition_image_layout};
@@ -30,6 +29,7 @@ use crate::vulkan::fps_counter::FPSCounter;
 use crate::vulkan::framebuffer::{
     create_framebuffer_images, create_swapchain_framebuffers, transition_framebuffer_images,
 };
+use crate::vulkan::gui_renderer::GuiRenderer;
 use crate::vulkan::instance::create_instance;
 use crate::vulkan::logical_device::create_logical_device;
 use crate::vulkan::physical_device::{SuitabilityError, pick_physical_device};

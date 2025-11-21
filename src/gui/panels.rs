@@ -1,6 +1,6 @@
-use egui::{self, ComboBox};
 use super::GuiData;
 use super::frontend::{PANEL_WIDTH_POINTS, panel_width_pixels};
+use egui::{self, ComboBox};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GuiTheme {

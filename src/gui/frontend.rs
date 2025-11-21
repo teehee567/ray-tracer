@@ -246,7 +246,7 @@ impl GuiFrontend {
             pixels_per_point: self.pixels_per_point,
             generation: self.generation,
         };
-        
+
         if let Ok(mut state) = self.shared.write() {
             state.update(frame);
         }
@@ -365,5 +365,3 @@ impl GuiFrontend {
 fn is_printable(ch: char) -> bool {
     !ch.is_control()
 }
-
-
