@@ -82,8 +82,6 @@ fn main() -> Result<()> {
     let mut gui = gui::GuiFrontend::new(&window, gui_shared.clone(), gui_data_rx);
 
     let mut minimized = false;
-    let mut last_frame_time = Instant::now();
-    let target_frametime = Duration::from_micros(1_000_000 / 144);
     event_loop.run(move |event, elwt| {
         match event {
             Event::NewEvents(_) => {
