@@ -20,7 +20,7 @@ pub unsafe fn create_descriptor_pool(device: &Device, data: &mut AppData) -> Res
         .build();
     let sampler_size = vk::DescriptorPoolSize::builder()
         .type_(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(max_sets * data.textures.len() as u32)
+        .descriptor_count(max_sets * (data.textures.len() as u32 + 1))
         .build();
 
     let pool_sizes = &[ubo_size, sbo_size, sbo_size1, sampler_size];

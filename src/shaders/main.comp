@@ -1,6 +1,6 @@
 #version 460
 
-#define SAMPLES 8
+#define SAMPLES 1
 #define BOUNCES 24
 #define EPSILON 0.0001
 #define MAX_BVH_DEPTH 64

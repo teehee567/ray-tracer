@@ -106,14 +106,30 @@ fn main() -> Result<()> {
     let mut gui = gui::GuiFrontend::new(&window, gui_shared.clone(), gui_data_rx);
 
     let mut minimized = false;
+    let mut last_frame_time = std::time::Instant::now();
+    let target_frametime = std::time::Duration::from_micros(1_000_000 / 144);
     event_loop.run(move |event, elwt| {
         match event {
             Event::NewEvents(_) => {
-                elwt.set_control_flow(ControlFlow::Poll);
+                let now = std::time::Instant::now();
+                if now.duration_since(last_frame_time) >= target_frametime {
+                    elwt.set_control_flow(ControlFlow::Poll);
+                } else {
+                    elwt.set_control_flow(ControlFlow::WaitUntil(last_frame_time + target_frametime));
+                }
+
+                
             }
             Event::AboutToWait => {
                 if !minimized {
-                    window.request_redraw();
+                    let now = std::time::Instant::now();
+                    if now.duration_since(last_frame_time) >= target_frametime {
+                        last_frame_time = now;
+                        window.request_redraw();
+                    } else {
+                        elwt.set_control_flow(ControlFlow::WaitUntil(last_frame_time + target_frametime));
+                    }
+                    
                 }
             }
             Event::WindowEvent { event, .. } => {
@@ -122,7 +138,9 @@ fn main() -> Result<()> {
                 match event {
                     WindowEvent::RedrawRequested => {
                         gui.run_frame(&window);
-                        render_controller.present();
+                        if render_controller.present() {
+                            gui.tick_ui_fps();
+                        }
                     }
                     WindowEvent::Resized(size) => {
                         if size.width == 0 || size.height == 0 {
