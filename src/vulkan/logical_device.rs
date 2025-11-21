@@ -12,8 +12,8 @@ use anyhow::Result;
 pub unsafe fn create_logical_device(
     entry: &Entry,
     instance: &Instance,
-    data: &mut AppData,
-) -> Result<Device> {
+    data: &AppData,
+) -> Result<(Device, vk::Queue, vk::Queue)> {
     // Queue Create Infos
     let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
 
@@ -83,10 +83,10 @@ pub unsafe fn create_logical_device(
     info!("Created Logical Device, {:?}", device);
 
     // Queues
-    data.compute_queue = device.get_device_queue(indices.compute, 0);
-    info!("Created Compute Queue: {:?}", data.compute_queue);
-    data.present_queue = device.get_device_queue(indices.present, 0);
-    info!("Created Present Queue: {:?}", data.present_queue);
+    let compute_queue = device.get_device_queue(indices.compute, 0);
+    info!("Created Compute Queue: {:?}", compute_queue);
+    let present_queue = device.get_device_queue(indices.present, 0);
+    info!("Created Present Queue: {:?}", present_queue);
 
-    Ok(device)
+    Ok((device, compute_queue, present_queue))
 }

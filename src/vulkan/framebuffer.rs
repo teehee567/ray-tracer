@@ -9,9 +9,9 @@ use super::utils::get_memory_type_index;
 pub unsafe fn create_framebuffer_images(
     instance: &Instance,
     device: &Device,
-    data: &mut AppData,
+    data: &AppData,
     count: usize,
-) -> Result<()> {
+) -> Result<(Vec<vk::Image>, Vec<vk::ImageView>, Vec<vk::DeviceMemory>)> {
     let mut images = Vec::with_capacity(count);
     let mut views = Vec::with_capacity(count);
     let mut memories = Vec::with_capacity(count);
@@ -74,20 +74,21 @@ pub unsafe fn create_framebuffer_images(
         memories.push(memory);
     }
 
-    data.framebuffer_images = images;
-    data.framebuffer_image_views = views;
-    data.framebuffer_memories = memories;
-
-    Ok(())
+    Ok((images, views, memories))
 }
 
-pub unsafe fn transition_framebuffer_images(device: &Device, data: &mut AppData) -> Result<()> {
-    if data.framebuffer_images.is_empty() {
+pub unsafe fn transition_framebuffer_images(
+    device: &Device,
+    command_pool: vk::CommandPool,
+    compute_queue: vk::Queue,
+    framebuffer_images: &[vk::Image],
+) -> Result<()> {
+    if framebuffer_images.is_empty() {
         return Ok(());
     }
 
     let allocate_info = vk::CommandBufferAllocateInfo::builder()
-        .command_pool(data.command_pool)
+        .command_pool(command_pool)
         .level(vk::CommandBufferLevel::PRIMARY)
         .command_buffer_count(1);
 
@@ -97,7 +98,7 @@ pub unsafe fn transition_framebuffer_images(device: &Device, data: &mut AppData)
 
     device.begin_command_buffer(command_buffer, &begin_info)?;
 
-    for &image in &data.framebuffer_images {
+    for &image in framebuffer_images {
         let barrier = vk::ImageMemoryBarrier::builder()
             .old_layout(vk::ImageLayout::UNDEFINED)
             .new_layout(vk::ImageLayout::GENERAL)
@@ -132,28 +133,32 @@ pub unsafe fn transition_framebuffer_images(device: &Device, data: &mut AppData)
     let submit_info =
         vk::SubmitInfo::builder().command_buffers(std::slice::from_ref(&command_buffer));
 
-    device.queue_submit(data.compute_queue, &[submit_info], vk::Fence::null())?;
-    device.queue_wait_idle(data.compute_queue)?;
+    device.queue_submit(compute_queue, &[submit_info], vk::Fence::null())?;
+    device.queue_wait_idle(compute_queue)?;
 
-    device.free_command_buffers(data.command_pool, &[command_buffer]);
+    device.free_command_buffers(command_pool, &[command_buffer]);
 
     Ok(())
 }
 
-pub unsafe fn create_swapchain_framebuffers(device: &Device, data: &mut AppData) -> Result<()> {
-    let mut framebuffers = Vec::with_capacity(data.swapchain_image_views.len());
-    for &view in &data.swapchain_image_views {
+pub unsafe fn create_swapchain_framebuffers(
+    device: &Device,
+    render_pass: vk::RenderPass,
+    swapchain_image_views: &[vk::ImageView],
+    swapchain_extent: vk::Extent2D,
+) -> Result<Vec<vk::Framebuffer>> {
+    let mut framebuffers = Vec::with_capacity(swapchain_image_views.len());
+    for &view in swapchain_image_views {
         let attachments = [view];
         let info = vk::FramebufferCreateInfo::builder()
-            .render_pass(data.render_pass)
+            .render_pass(render_pass)
             .attachments(&attachments)
-            .width(data.swapchain_extent.width)
-            .height(data.swapchain_extent.height)
+            .width(swapchain_extent.width)
+            .height(swapchain_extent.height)
             .layers(1);
 
         framebuffers.push(device.create_framebuffer(&info, None)?);
     }
 
-    data.swapchain_framebuffers = framebuffers;
-    Ok(())
+    Ok(framebuffers)
 }

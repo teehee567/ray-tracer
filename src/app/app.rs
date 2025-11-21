@@ -14,6 +14,7 @@ use vulkanalia::window as vk_window;
 use winit::window::Window;
 
 use crate::gui;
+use crate::gui::gui_renderer::GuiRenderer;
 use crate::scene::Scene;
 use crate::types::{AUVec2, Au32, CameraBufferObject};
 use crate::vulkan::accumulate_image::{create_image, transition_image_layout};
@@ -41,7 +42,6 @@ use crate::vulkan::texture::{
     create_texture_sampler,
 };
 use crate::vulkan::utils::get_memory_type_index;
-use crate::gui::gui_renderer::GuiRenderer;
 
 use super::constants::{OFFSCREEN_FRAME_COUNT, TO_SAVE, VALIDATION_ENABLED};
 use super::data::AppData;
@@ -68,26 +68,70 @@ impl App {
         let mut data = AppData::default();
         data.scene = scene;
         let scene_sizes = data.scene.get_buffer_sizes();
-        let instance = create_instance(window, &entry, &mut data)?;
+        let (instance, messenger) = create_instance(window, &entry)?;
+        data.messenger = messenger;
         data.surface = vk_window::create_surface(&instance, window, window)?;
-        pick_physical_device(&instance, &mut data)?;
-        let device = create_logical_device(&entry, &instance, &mut data)?;
-        create_swapchain(window, &instance, &device, &mut data)?;
-        create_swapchain_image_views(&device, &mut data)?;
-        create_render_pass(&instance, &device, &mut data)?;
-        create_swapchain_framebuffers(&device, &mut data)?;
-        create_command_pool(&instance, &device, &mut data)?;
-        create_framebuffer_images(&instance, &device, &mut data, OFFSCREEN_FRAME_COUNT)?;
-        transition_framebuffer_images(&device, &mut data)?;
-        create_uniform_buffer(&instance, &device, &mut data)?;
-        create_shader_buffers(
+        data.physical_device = pick_physical_device(&instance, &data)?;
+        let (device, compute_queue, present_queue) =
+            create_logical_device(&entry, &instance, &data)?;
+        data.compute_queue = compute_queue;
+        data.present_queue = present_queue;
+        let (
+            swapchain,
+            swapchain_format,
+            swapchain_extent,
+            swapchain_images,
+            swapchain_image_layouts,
+        ) = create_swapchain(window, &instance, &device, &data)?;
+        data.swapchain = swapchain;
+        data.swapchain_format = swapchain_format;
+        data.swapchain_extent = swapchain_extent;
+        data.swapchain_images = swapchain_images;
+        data.swapchain_image_layouts = swapchain_image_layouts;
+        data.swapchain_image_views =
+            create_swapchain_image_views(&device, &data.swapchain_images, data.swapchain_format)?;
+        data.render_pass = create_render_pass(&instance, &device, data.swapchain_format)?;
+        data.swapchain_framebuffers = create_swapchain_framebuffers(
+            &device,
+            data.render_pass,
+            &data.swapchain_image_views,
+            data.swapchain_extent,
+        )?;
+        data.command_pool = create_command_pool(&instance, &device, &data)?;
+        let (framebuffer_images, framebuffer_image_views, framebuffer_memories) =
+            create_framebuffer_images(&instance, &device, &data, OFFSCREEN_FRAME_COUNT)?;
+        data.framebuffer_images = framebuffer_images;
+        data.framebuffer_image_views = framebuffer_image_views;
+        data.framebuffer_memories = framebuffer_memories;
+        transition_framebuffer_images(
+            &device,
+            data.command_pool,
+            data.compute_queue,
+            &data.framebuffer_images,
+        )?;
+        let (uniform_buffer, uniform_buffer_memory) =
+            create_uniform_buffer(&instance, &device, &data)?;
+        data.uniform_buffer = uniform_buffer;
+        data.uniform_buffer_memory = uniform_buffer_memory;
+        let (shader_buffer, shader_buffer_memory) = create_shader_buffers(
             &instance,
             &device,
-            &mut data,
+            &data,
             (scene_sizes.0 + scene_sizes.1 + scene_sizes.2) as u64,
         )?;
-        create_image(&instance, &device, &mut data)?;
-        transition_image_layout(&device, &mut data)?;
+        data.compute_ssbo_buffer = shader_buffer;
+        data.compute_ssbo_buffer_memory = shader_buffer_memory;
+        let (accumulator_image, accumulator_view, accumulator_memory) =
+            create_image(&instance, &device, data.swapchain_extent, &data)?;
+        data.accumulator_image = accumulator_image;
+        data.accumulator_view = accumulator_view;
+        data.accumulator_memory = accumulator_memory;
+        transition_image_layout(
+            &device,
+            data.command_pool,
+            data.compute_queue,
+            data.accumulator_image,
+        )?;
 
         data.texture_sampler = create_texture_sampler(&device)?;
         data.skybox_sampler = create_cubemap_sampler(&device)?;
@@ -121,18 +165,31 @@ impl App {
         )?;
 
         create_compute_descriptor_set_layout(&device, &mut data)?;
-        create_compute_pipeline(&device, &mut data)?;
-        create_descriptor_pool(&device, &mut data)?;
-        create_sampler(&device, &mut data)?;
-        create_descriptor_sets(
+        let (compute_pipeline_layout, compute_pipeline) =
+            create_compute_pipeline(&device, data.descriptor_set_layout)?;
+        data.compute_pipeline_layout = compute_pipeline_layout;
+        data.compute_pipeline = compute_pipeline;
+        data.descriptor_pool = create_descriptor_pool(
             &device,
-            &mut data,
+            data.framebuffer_image_views.len(),
+            data.textures.len(),
+        )?;
+        data.sampler = create_sampler(&device)?;
+        data.compute_descriptor_sets = create_descriptor_sets(
+            &device,
+            &data,
             scene_sizes.0 as u64,
             scene_sizes.1 as u64,
             scene_sizes.2 as u64,
         )?;
-        create_command_buffer(&device, &mut data)?;
-        create_sync_objects(&device, &mut data)?;
+        let (compute_command_buffers, present_command_buffer) =
+            create_command_buffer(&device, data.command_pool)?;
+        data.compute_command_buffers = compute_command_buffers;
+        data.present_command_buffer = present_command_buffer;
+        let (image_available_semaphores, compute_finished_semaphores) =
+            create_sync_objects(&device)?;
+        data.image_available_semaphores = image_available_semaphores;
+        data.compute_finished_semaphores = compute_finished_semaphores;
 
         let mut frame_fences = Vec::with_capacity(OFFSCREEN_FRAME_COUNT);
         for _ in 0..OFFSCREEN_FRAME_COUNT {

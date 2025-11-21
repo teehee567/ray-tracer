@@ -11,7 +11,10 @@ use anyhow::{Result, anyhow};
 #[error("{0}")]
 pub struct SuitabilityError(pub &'static str);
 
-pub unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) -> Result<()> {
+pub unsafe fn pick_physical_device(
+    instance: &Instance,
+    data: &AppData,
+) -> Result<vk::PhysicalDevice> {
     for physical_device in instance.enumerate_physical_devices()? {
         let properties = instance.get_physical_device_properties(physical_device);
 
@@ -22,8 +25,7 @@ pub unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) -> R
             );
         } else {
             info!("Selected physical device (`{}`).", properties.device_name);
-            data.physical_device = physical_device;
-            return Ok(());
+            return Ok(physical_device);
         }
     }
 

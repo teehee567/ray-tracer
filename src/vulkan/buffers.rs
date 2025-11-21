@@ -8,8 +8,8 @@ use anyhow::Result;
 pub unsafe fn create_uniform_buffer(
     instance: &Instance,
     device: &Device,
-    data: &mut AppData,
-) -> Result<()> {
+    data: &AppData,
+) -> Result<(vk::Buffer, vk::DeviceMemory)> {
     let (uniform_buffer, uniform_buffer_memory) = create_buffer(
         instance,
         device,
@@ -19,22 +19,20 @@ pub unsafe fn create_uniform_buffer(
         vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
     )?;
 
-    data.uniform_buffer = uniform_buffer;
-    data.uniform_buffer_memory = uniform_buffer_memory;
     info!(
         "Created a uniform buffer with size {:?}",
         size_of::<CameraBufferObject>()
     );
 
-    Ok(())
+    Ok((uniform_buffer, uniform_buffer_memory))
 }
 
 pub unsafe fn create_shader_buffers(
     instance: &Instance,
     device: &Device,
-    data: &mut AppData,
+    data: &AppData,
     size: u64,
-) -> Result<()> {
+) -> Result<(vk::Buffer, vk::DeviceMemory)> {
     let (shader_buffer, shader_buffer_memory) = create_buffer(
         instance,
         device,
@@ -45,7 +43,5 @@ pub unsafe fn create_shader_buffers(
     )?;
     info!("Created a shader buffer with size: {:?}", size);
 
-    data.compute_ssbo_buffer = shader_buffer;
-    data.compute_ssbo_buffer_memory = shader_buffer_memory;
-    Ok(())
+    Ok((shader_buffer, shader_buffer_memory))
 }
