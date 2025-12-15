@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::mem::size_of;
 
 use anyhow::{Result, anyhow};
 use egui::epaint::{ClippedPrimitive, Primitive};
@@ -11,11 +10,8 @@ use vulkanalia::vk::{self, DeviceV1_0};
 use crate::app::constants::OFFSCREEN_FRAME_COUNT;
 use crate::app::data::AppData;
 use crate::gui::GuiFrame;
-use crate::vulkan::pipeline::create_shader_module;
+use crate::vulkan::gui::{self, GuiVertex};
 use crate::vulkan::texture::{GuiTexture, create_texture_resource};
-use crate::vulkan::utils::get_memory_type_index;
-
-const MAX_GUI_TEXTURES: u32 = 64;
 
 #[derive(Clone, Debug)]
 pub(crate) struct GuiRenderer {
@@ -61,22 +57,14 @@ impl Default for GuiFrameBuffers {
 
 impl GuiFrameBuffers {
     pub(crate) unsafe fn destroy(&mut self, device: &Device) {
-        if self.vertex_buffer != vk::Buffer::null() {
-            device.destroy_buffer(self.vertex_buffer, None);
-            self.vertex_buffer = vk::Buffer::null();
-        }
-        if self.vertex_memory != vk::DeviceMemory::null() {
-            device.free_memory(self.vertex_memory, None);
-            self.vertex_memory = vk::DeviceMemory::null();
-        }
-        if self.index_buffer != vk::Buffer::null() {
-            device.destroy_buffer(self.index_buffer, None);
-            self.index_buffer = vk::Buffer::null();
-        }
-        if self.index_memory != vk::DeviceMemory::null() {
-            device.free_memory(self.index_memory, None);
-            self.index_memory = vk::DeviceMemory::null();
-        }
+        gui::destroy_buffer(device, self.vertex_buffer, self.vertex_memory);
+        self.vertex_buffer = vk::Buffer::null();
+        self.vertex_memory = vk::DeviceMemory::null();
+        
+        gui::destroy_buffer(device, self.index_buffer, self.index_memory);
+        self.index_buffer = vk::Buffer::null();
+        self.index_memory = vk::DeviceMemory::null();
+        
         self.vertex_capacity = 0;
         self.index_capacity = 0;
         self.uploaded_generation = None;
@@ -103,14 +91,6 @@ struct GuiDraw {
     vertex_offset: i32,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-struct GuiVertex {
-    pos: [f32; 2],
-    uv: [f32; 2],
-    color: [f32; 4],
-}
-
 impl GuiRenderer {
     pub(crate) unsafe fn new(
         instance: &Instance,
@@ -122,11 +102,11 @@ impl GuiRenderer {
         let clamped_height = base_extent.y.min(data.swapchain_extent.height);
         let render_extent = UVec2::new(clamped_width, clamped_height);
 
-        let sampler = create_gui_sampler(device)?;
-        let descriptor_set_layout = create_gui_descriptor_set_layout(device)?;
-        let pipeline_layout = create_gui_pipeline_layout(device, descriptor_set_layout)?;
-        let pipeline = create_gui_pipeline(device, pipeline_layout, data.render_pass)?;
-        let descriptor_pool = create_gui_descriptor_pool(device)?;
+        let sampler = gui::create_sampler(device)?;
+        let descriptor_set_layout = gui::create_descriptor_set_layout(device)?;
+        let pipeline_layout = gui::create_pipeline_layout(device, descriptor_set_layout)?;
+        let pipeline = gui::create_pipeline(device, pipeline_layout, data.render_pass)?;
+        let descriptor_pool = gui::create_descriptor_pool(device)?;
 
         let mut frames = Vec::with_capacity(OFFSCREEN_FRAME_COUNT);
         for _ in 0..OFFSCREEN_FRAME_COUNT {
@@ -265,17 +245,11 @@ impl GuiRenderer {
             return Ok(());
         }
 
-        let vertex_size = (draw_data.vertices.len() * size_of::<GuiVertex>()) as vk::DeviceSize;
+        let vertex_size = (draw_data.vertices.len() * std::mem::size_of::<GuiVertex>()) as vk::DeviceSize;
         if buffers.vertex_buffer == vk::Buffer::null() || buffers.vertex_capacity < vertex_size {
-            if buffers.vertex_buffer != vk::Buffer::null() {
-                device.destroy_buffer(buffers.vertex_buffer, None);
-                buffers.vertex_buffer = vk::Buffer::null();
-            }
-            if buffers.vertex_memory != vk::DeviceMemory::null() {
-                device.free_memory(buffers.vertex_memory, None);
-                buffers.vertex_memory = vk::DeviceMemory::null();
-            }
-            let (buffer, memory, capacity) = Self::create_buffer(
+            gui::destroy_buffer(device, buffers.vertex_buffer, buffers.vertex_memory);
+            
+            let (buffer, memory, capacity) = gui::create_dynamic_buffer(
                 instance,
                 device,
                 data,
@@ -287,27 +261,13 @@ impl GuiRenderer {
             buffers.vertex_capacity = capacity;
         }
 
-        let ptr = device.map_memory(
-            buffers.vertex_memory,
-            0,
-            vertex_size,
-            vk::MemoryMapFlags::empty(),
-        )? as *mut GuiVertex;
-        ptr.copy_from_nonoverlapping(draw_data.vertices.as_ptr(), draw_data.vertices.len());
-        device.unmap_memory(buffers.vertex_memory);
+        gui::upload_to_buffer(device, buffers.vertex_memory, &draw_data.vertices)?;
 
-        let index_size = (draw_data.indices.len() * size_of::<u32>()) as vk::DeviceSize;
+        let index_size = (draw_data.indices.len() * std::mem::size_of::<u32>()) as vk::DeviceSize;
         if buffers.index_buffer == vk::Buffer::null() || buffers.index_capacity < index_size {
-            if buffers.index_buffer != vk::Buffer::null() {
-                device.destroy_buffer(buffers.index_buffer, None);
-                buffers.index_buffer = vk::Buffer::null();
-            }
-            if buffers.index_memory != vk::DeviceMemory::null() {
-                device.free_memory(buffers.index_memory, None);
-                buffers.index_memory = vk::DeviceMemory::null();
-            }
+            gui::destroy_buffer(device, buffers.index_buffer, buffers.index_memory);
 
-            let (buffer, memory, capacity) = Self::create_buffer(
+            let (buffer, memory, capacity) = gui::create_dynamic_buffer(
                 instance,
                 device,
                 data,
@@ -319,14 +279,7 @@ impl GuiRenderer {
             buffers.index_capacity = capacity;
         }
 
-        let ptr = device.map_memory(
-            buffers.index_memory,
-            0,
-            index_size,
-            vk::MemoryMapFlags::empty(),
-        )? as *mut u32;
-        ptr.copy_from_nonoverlapping(draw_data.indices.as_ptr(), draw_data.indices.len());
-        device.unmap_memory(buffers.index_memory);
+        gui::upload_to_buffer(device, buffers.index_memory, &draw_data.indices)?;
 
         buffers.uploaded_generation = Some(draw_data.generation);
         Ok(())
@@ -472,37 +425,6 @@ impl GuiRenderer {
         }
     }
 
-    unsafe fn create_buffer(
-        instance: &Instance,
-        device: &Device,
-        data: &AppData,
-        size: vk::DeviceSize,
-        usage: vk::BufferUsageFlags,
-    ) -> Result<(vk::Buffer, vk::DeviceMemory, vk::DeviceSize)> {
-        let buffer_info = vk::BufferCreateInfo::builder()
-            .size(size)
-            .usage(usage)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-        let buffer = device.create_buffer(&buffer_info, None)?;
-        let requirements = device.get_buffer_memory_requirements(buffer);
-        let allocation_size = requirements.size.max(size);
-        let memory_type = get_memory_type_index(
-            instance,
-            data,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            requirements,
-        )?;
-
-        let alloc_info = vk::MemoryAllocateInfo::builder()
-            .allocation_size(allocation_size)
-            .memory_type_index(memory_type);
-        let memory = device.allocate_memory(&alloc_info, None)?;
-        device.bind_buffer_memory(buffer, memory, 0)?;
-
-        Ok((buffer, memory, allocation_size))
-    }
-
     unsafe fn apply_textures(
         &mut self,
         instance: &Instance,
@@ -643,110 +565,16 @@ impl GuiRenderer {
         offset: Option<[u32; 2]>,
         is_new: bool,
     ) -> Result<()> {
-        let staging_info = vk::BufferCreateInfo::builder()
-            .size(pixels.len() as vk::DeviceSize)
-            .usage(vk::BufferUsageFlags::TRANSFER_SRC)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
-        let staging_buffer = device.create_buffer(&staging_info, None)?;
-
-        let requirements = device.get_buffer_memory_requirements(staging_buffer);
-        let memory_type = get_memory_type_index(
+        gui::upload_pixels_to_image(
             instance,
+            device,
             data,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            requirements,
-        )?;
-
-        let alloc_info = vk::MemoryAllocateInfo::builder()
-            .allocation_size(requirements.size)
-            .memory_type_index(memory_type);
-        let staging_memory = device.allocate_memory(&alloc_info, None)?;
-        device.bind_buffer_memory(staging_buffer, staging_memory, 0)?;
-
-        let ptr = device.map_memory(
-            staging_memory,
-            0,
-            requirements.size,
-            vk::MemoryMapFlags::empty(),
-        )? as *mut u8;
-        ptr.copy_from_nonoverlapping(pixels.as_ptr(), pixels.len());
-        device.unmap_memory(staging_memory);
-
-        let alloc_info = vk::CommandBufferAllocateInfo::builder()
-            .command_pool(data.command_pool)
-            .level(vk::CommandBufferLevel::PRIMARY)
-            .command_buffer_count(1);
-        let command_buffer = device.allocate_command_buffers(&alloc_info)?[0];
-
-        let begin_info = vk::CommandBufferBeginInfo::builder()
-            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-        device.begin_command_buffer(command_buffer, &begin_info)?;
-
-        let old_layout = if is_new {
-            vk::ImageLayout::UNDEFINED
-        } else {
-            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
-        };
-        Self::transition_image(
-            device,
-            command_buffer,
             texture.image,
-            old_layout,
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-        );
-
-        let offset = offset.unwrap_or([0, 0]);
-        let region = vk::BufferImageCopy::builder()
-            .buffer_offset(0)
-            .buffer_row_length(0)
-            .buffer_image_height(0)
-            .image_subresource(
-                vk::ImageSubresourceLayers::builder()
-                    .aspect_mask(vk::ImageAspectFlags::COLOR)
-                    .mip_level(0)
-                    .base_array_layer(0)
-                    .layer_count(1)
-                    .build(),
-            )
-            .image_offset(vk::Offset3D {
-                x: offset[0] as i32,
-                y: offset[1] as i32,
-                z: 0,
-            })
-            .image_extent(vk::Extent3D {
-                width: size[0],
-                height: size[1],
-                depth: 1,
-            })
-            .build();
-
-        device.cmd_copy_buffer_to_image(
-            command_buffer,
-            staging_buffer,
-            texture.image,
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            &[region],
-        );
-
-        Self::transition_image(
-            device,
-            command_buffer,
-            texture.image,
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        );
-
-        device.end_command_buffer(command_buffer)?;
-        let submit_info =
-            vk::SubmitInfo::builder().command_buffers(std::slice::from_ref(&command_buffer));
-        device.queue_submit(data.compute_queue, &[submit_info], vk::Fence::null())?;
-        device.queue_wait_idle(data.compute_queue)?;
-        device.free_command_buffers(data.command_pool, &[command_buffer]);
-
-        device.destroy_buffer(staging_buffer, None);
-        device.free_memory(staging_memory, None);
-
-        Ok(())
+            pixels,
+            size,
+            offset,
+            is_new,
+        )
     }
 
     fn image_to_rgba(image: &egui::epaint::ImageData) -> (Vec<u8>, [u32; 2]) {
@@ -950,178 +778,4 @@ impl GuiRenderer {
             &[barrier],
         );
     }
-}
-
-unsafe fn create_gui_sampler(device: &Device) -> Result<vk::Sampler> {
-    let sampler_info = vk::SamplerCreateInfo::builder()
-        .mag_filter(vk::Filter::LINEAR)
-        .min_filter(vk::Filter::LINEAR)
-        .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
-        .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-        .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-        .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-        .border_color(vk::BorderColor::FLOAT_OPAQUE_WHITE)
-        .unnormalized_coordinates(false)
-        .min_lod(0.0)
-        .max_lod(0.0);
-
-    Ok(device.create_sampler(&sampler_info, None)?)
-}
-
-unsafe fn create_gui_descriptor_set_layout(device: &Device) -> Result<vk::DescriptorSetLayout> {
-    let binding = vk::DescriptorSetLayoutBinding::builder()
-        .binding(0)
-        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-        .build();
-    let bindings = [binding];
-    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
-    Ok(device.create_descriptor_set_layout(&layout_info, None)?)
-}
-
-unsafe fn create_gui_pipeline_layout(
-    device: &Device,
-    descriptor_set_layout: vk::DescriptorSetLayout,
-) -> Result<vk::PipelineLayout> {
-    let push_constant = vk::PushConstantRange::builder()
-        .stage_flags(vk::ShaderStageFlags::VERTEX)
-        .offset(0)
-        .size(size_of::<[f32; 2]>() as u32)
-        .build();
-    let descriptor_set_layouts = [descriptor_set_layout];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder()
-        .set_layouts(&descriptor_set_layouts)
-        .push_constant_ranges(std::slice::from_ref(&push_constant));
-
-    Ok(device.create_pipeline_layout(&layout_info, None)?)
-}
-
-unsafe fn create_gui_pipeline(
-    device: &Device,
-    pipeline_layout: vk::PipelineLayout,
-    render_pass: vk::RenderPass,
-) -> Result<vk::Pipeline> {
-    let vert_shader = create_shader_module(device, include_bytes!("../shaders/gui.vert.spv"))?;
-    let frag_shader = create_shader_module(device, include_bytes!("../shaders/gui.frag.spv"))?;
-
-    let shader_stages = [
-        vk::PipelineShaderStageCreateInfo::builder()
-            .stage(vk::ShaderStageFlags::VERTEX)
-            .module(vert_shader)
-            .name(b"main\0")
-            .build(),
-        vk::PipelineShaderStageCreateInfo::builder()
-            .stage(vk::ShaderStageFlags::FRAGMENT)
-            .module(frag_shader)
-            .name(b"main\0")
-            .build(),
-    ];
-
-    let vertex_binding = vk::VertexInputBindingDescription::builder()
-        .binding(0)
-        .stride(size_of::<GuiVertex>() as u32)
-        .input_rate(vk::VertexInputRate::VERTEX)
-        .build();
-    let vertex_bindings = [vertex_binding];
-    let pos_offset = 0u32;
-    let uv_offset = size_of::<[f32; 2]>() as u32;
-    let color_offset = (size_of::<[f32; 2]>() * 2) as u32;
-    let attributes = [
-        vk::VertexInputAttributeDescription::builder()
-            .binding(0)
-            .location(0)
-            .format(vk::Format::R32G32_SFLOAT)
-            .offset(pos_offset)
-            .build(),
-        vk::VertexInputAttributeDescription::builder()
-            .binding(0)
-            .location(1)
-            .format(vk::Format::R32G32_SFLOAT)
-            .offset(uv_offset)
-            .build(),
-        vk::VertexInputAttributeDescription::builder()
-            .binding(0)
-            .location(2)
-            .format(vk::Format::R32G32B32A32_SFLOAT)
-            .offset(color_offset)
-            .build(),
-    ];
-    let vertex_input = vk::PipelineVertexInputStateCreateInfo::builder()
-        .vertex_binding_descriptions(&vertex_bindings)
-        .vertex_attribute_descriptions(&attributes);
-
-    let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::builder()
-        .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
-
-    let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
-        .viewport_count(1)
-        .scissor_count(1);
-
-    let rasterizer = vk::PipelineRasterizationStateCreateInfo::builder()
-        .polygon_mode(vk::PolygonMode::FILL)
-        .cull_mode(vk::CullModeFlags::NONE)
-        .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
-        .line_width(1.0);
-
-    let multisample = vk::PipelineMultisampleStateCreateInfo::builder()
-        .rasterization_samples(vk::SampleCountFlags::_1);
-
-    let blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
-        .blend_enable(true)
-        .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
-        .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-        .color_blend_op(vk::BlendOp::ADD)
-        .src_alpha_blend_factor(vk::BlendFactor::ONE)
-        .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-        .alpha_blend_op(vk::BlendOp::ADD)
-        .color_write_mask(
-            vk::ColorComponentFlags::R
-                | vk::ColorComponentFlags::G
-                | vk::ColorComponentFlags::B
-                | vk::ColorComponentFlags::A,
-        )
-        .build();
-    let blend_attachments = [blend_attachment];
-    let color_blend =
-        vk::PipelineColorBlendStateCreateInfo::builder().attachments(&blend_attachments);
-
-    let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
-    let dynamic_state =
-        vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
-
-    let pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
-        .stages(&shader_stages)
-        .vertex_input_state(&vertex_input)
-        .input_assembly_state(&input_assembly)
-        .viewport_state(&viewport_state)
-        .rasterization_state(&rasterizer)
-        .multisample_state(&multisample)
-        .color_blend_state(&color_blend)
-        .dynamic_state(&dynamic_state)
-        .layout(pipeline_layout)
-        .render_pass(render_pass)
-        .subpass(0);
-
-    let pipeline = device
-        .create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info], None)?
-        .0[0];
-
-    device.destroy_shader_module(vert_shader, None);
-    device.destroy_shader_module(frag_shader, None);
-
-    Ok(pipeline)
-}
-
-unsafe fn create_gui_descriptor_pool(device: &Device) -> Result<vk::DescriptorPool> {
-    let pool_sizes = [vk::DescriptorPoolSize::builder()
-        .type_(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(MAX_GUI_TEXTURES)
-        .build()];
-    let pool_info = vk::DescriptorPoolCreateInfo::builder()
-        .pool_sizes(&pool_sizes)
-        .max_sets(MAX_GUI_TEXTURES)
-        .flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET);
-
-    Ok(device.create_descriptor_pool(&pool_info, None)?)
 }
