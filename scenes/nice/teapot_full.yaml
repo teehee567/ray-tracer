@@ -1,0 +1,105 @@
+camera:
+  resolution: [800, 800]
+  focal_length: 2.2
+  location: [23.1701, 15.7142, -0.172476]
+  look_at: [0.0, 2.0, 0.0] 
+skybox: [
+  "data/test_scene/boiler_room_skybox/px.png",
+  "data/test_scene/boiler_room_skybox/nx.png",
+  "data/test_scene/boiler_room_skybox/py.png",
+  "data/test_scene/boiler_room_skybox/ny.png",
+  "data/test_scene/boiler_room_skybox/pz.png",
+  "data/test_scene/boiler_room_skybox/nz.png",
+]
+materials:
+  # Averaged color of the checkerboard: 
+  # (0.325 + 0.725)/2, (0.31 + 0.71)/2, (0.25 + 0.68)/2
+  FloorMat:
+    base_colour: [51, 51, 51]  # Darker gray floor
+    metallic: 0.0
+    roughness: 0.75
+    ior: 1.5
+    relative_ior: 1.5
+
+  GlassMat:
+    base_colour: [255, 255, 255]
+    roughness: 0.0
+    metallic: 0.0
+    spec_trans: 1.0
+    ior: 1.5
+    relative_ior: 1.5
+    thin: false
+
+  # Represents the liquid (Water/Whiskey)
+  LiquidMat:
+    # For volumetric absorption: base_color represents transmittance
+    # Lighter values = more transparent, darker = more absorption
+    # Amber/whiskey: moderate absorption (darker blue channel = more blue absorption = amber color)
+    # Using transmittance values: [R, G, B] where lower B = more blue absorption = amber
+    base_colour: [189, 137, 53]  # Transmittance color (lighter = less absorption)
+    roughness: 0.0
+    metallic: 0.0
+    spec_trans: 0.95  # High transmission for liquid
+    ior: 1.33
+    thin: false
+
+  # Represents Ice or Bubbles (Low IOR)
+  IceMat:
+    base_colour: [255, 255, 255]
+    roughness: 0.1 # Slight roughness for ice
+    metallic: 0.0
+    spec_trans: 1.0
+    ior: 1.13
+    thin: false
+
+  Light:
+    emission: [150, 150, 150]  # Balanced light intensity
+
+surfaces:
+  # --- Floor Plane ---
+  # Floor positioned at y=0, extending large enough to be visible
+  - type: "mesh"
+    smooth: false
+    material: "FloorMat"
+    vertices: [
+      [-50.0, 0.0, -50.0],
+      [ 50.0, 0.0, -50.0],
+      [ 50.0, 0.0,  50.0],
+      [-50.0, 0.0,  50.0]
+    ]
+    triangles: [[0,1,2], [0,2,3]]
+
+  # --- Glass Container (Outer) ---
+  - type: "object"
+    smooth: true
+    file: "data/teapot_full/Mesh003.obj"
+    material: "GlassMat"
+
+  # --- Glass Container (Inner/Details) ---
+  - type: "object"
+    smooth: true
+    file: "data/teapot_full/Mesh001.obj"
+    material: "GlassMat"
+
+  # --- Liquid ---
+  - type: "object"
+    smooth: true
+    file: "data/teapot_full/Mesh002.obj"
+    material: "LiquidMat"
+
+  # --- Ice Cubes ---
+  - type: "object"
+    smooth: true
+    file: "data/teapot_full/Mesh000.obj"
+    material: "IceMat"
+
+  # --- Area Light Source ---
+  - type: "mesh"
+    vertices: [
+      [-5.0, 10.0, -5.0],
+      [ 5.0, 10.0, -5.0],
+      [ 5.0, 10.0,  5.0],
+      [-5.0, 10.0,  5.0]
+    ]
+    triangles: [[0,1,2], [0,2,3]]
+    material: "Light"

@@ -16,7 +16,7 @@ pub unsafe fn create_descriptor_pool(
         .build();
     let sbo_size = vk::DescriptorPoolSize::builder()
         .type_(vk::DescriptorType::STORAGE_BUFFER)
-        .descriptor_count(3 * max_sets)
+        .descriptor_count(6 * max_sets)
         .build();
     let sbo_size1 = vk::DescriptorPoolSize::builder()
         .type_(vk::DescriptorType::STORAGE_IMAGE)
@@ -49,6 +49,9 @@ pub unsafe fn create_descriptor_sets(
     bvh_size: u64,
     mat_size: u64,
     triangle_size: u64,
+    light_size: u64,
+    emissive_tri_size: u64,
+    cdf_size: u64,
 ) -> Result<Vec<vk::DescriptorSet>> {
     // Allocate
 
@@ -89,6 +92,24 @@ pub unsafe fn create_descriptor_sets(
             .buffer(data.compute_ssbo_buffer)
             .offset(bvh_size + mat_size)
             .range(triangle_size)
+            .build();
+
+        let light_buffer_info = vk::DescriptorBufferInfo::builder()
+            .buffer(data.compute_ssbo_buffer)
+            .offset(bvh_size + mat_size + triangle_size)
+            .range(light_size)
+            .build();
+
+        let emissive_tri_buffer_info = vk::DescriptorBufferInfo::builder()
+            .buffer(data.compute_ssbo_buffer)
+            .offset(bvh_size + mat_size + triangle_size + light_size)
+            .range(emissive_tri_size)
+            .build();
+
+        let cdf_buffer_info = vk::DescriptorBufferInfo::builder()
+            .buffer(data.compute_ssbo_buffer)
+            .offset(bvh_size + mat_size + triangle_size + light_size + emissive_tri_size)
+            .range(cdf_size)
             .build();
 
         let accumulator_image_info = vk::DescriptorImageInfo::builder()
@@ -151,6 +172,33 @@ pub unsafe fn create_descriptor_sets(
             .buffer_info(&triangle_buffer_array)
             .build();
 
+        let light_buffer_array = [light_buffer_info];
+        let light_shader = vk::WriteDescriptorSet::builder()
+            .dst_set(compute_descriptor_sets[i])
+            .dst_binding(8)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .buffer_info(&light_buffer_array)
+            .build();
+
+        let emissive_tri_buffer_array = [emissive_tri_buffer_info];
+        let emissive_tri_shader = vk::WriteDescriptorSet::builder()
+            .dst_set(compute_descriptor_sets[i])
+            .dst_binding(9)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .buffer_info(&emissive_tri_buffer_array)
+            .build();
+
+        let cdf_buffer_array = [cdf_buffer_info];
+        let cdf_shader = vk::WriteDescriptorSet::builder()
+            .dst_set(compute_descriptor_sets[i])
+            .dst_binding(10)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .buffer_info(&cdf_buffer_array)
+            .build();
+
         let accumulator_image_array = [accumulator_image_info];
         let write_accumulator = vk::WriteDescriptorSet::builder()
             .dst_set(compute_descriptor_sets[i])
@@ -201,6 +249,9 @@ pub unsafe fn create_descriptor_sets(
             write_framebuffer,
             texture_write,
             skybox_write,
+            light_shader,
+            emissive_tri_shader,
+            cdf_shader,
         ];
 
         device.update_descriptor_sets(descriptor_writes, &[] as &[vk::CopyDescriptorSet]);
@@ -262,6 +313,24 @@ pub unsafe fn create_compute_descriptor_set_layout(
         .descriptor_count(1)
         .stage_flags(vk::ShaderStageFlags::COMPUTE);
 
+    let light_binding = vk::DescriptorSetLayoutBinding::builder()
+        .binding(8)
+        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+        .descriptor_count(1)
+        .stage_flags(vk::ShaderStageFlags::COMPUTE);
+
+    let emissive_tri_binding = vk::DescriptorSetLayoutBinding::builder()
+        .binding(9)
+        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+        .descriptor_count(1)
+        .stage_flags(vk::ShaderStageFlags::COMPUTE);
+
+    let cdf_binding = vk::DescriptorSetLayoutBinding::builder()
+        .binding(10)
+        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+        .descriptor_count(1)
+        .stage_flags(vk::ShaderStageFlags::COMPUTE);
+
     let bindings = &[
         ubo_binding,
         bvh_binding,
@@ -271,6 +340,9 @@ pub unsafe fn create_compute_descriptor_set_layout(
         swapchain_binding,
         texture_binding,
         skybox_binding,
+        light_binding,
+        emissive_tri_binding,
+        cdf_binding,
     ];
     let info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(bindings);
 

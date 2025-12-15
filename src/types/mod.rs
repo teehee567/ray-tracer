@@ -12,6 +12,9 @@ pub use material::*;
 mod triangle;
 pub use triangle::*;
 
+mod light;
+pub use light::*;
+
 #[derive(Clone, Default)]
 pub struct SceneComponents {
     pub camera: CameraBufferObject,
@@ -20,6 +23,8 @@ pub struct SceneComponents {
     pub triangles: Vec<Triangle>,
     pub textures: Vec<TextureData>,
     pub skybox: TextureData,
+    pub lights: Vec<Light>,
+    pub mesh_light_sampler: MeshLightSampler,
 }
 
 #[repr(C)]

@@ -6,9 +6,8 @@
 #define EPS 0.001
 #define INF 1000000.0
 
-#define QUAD_LIGHT 0
-#define SPHERE_LIGHT 1
-#define DISTANT_LIGHT 2
+#define POINT_LIGHT 0
+#define MESH_LIGHT 1
 
 #define LIGHTS
 //#define RR
@@ -67,40 +66,16 @@ struct Light
 {
     vec3 position;
     vec3 emission;
-    vec3 u;
-    vec3 v;
-    float radius;
-    float area;
     int type;
 };
 
-
-#define NUM_LIGHTS 1
-Light lights[NUM_LIGHTS];
-
-void initLights() {
-
-    for(int i = 0; i < NUM_LIGHTS; i +=1) {
-        float f = float(i) * 10;
-        
-        vec3 p = vec3(0., 25., 0.);
-  
-        vec3 u = vec3(30., 30., 30) - p;
-        vec3 v = vec3(-30., 30., 30) - p;
-        
-
-        float area = length(cross(u, v));
-        
-        lights[i] = Light( p,         // Position
-                           vec3(4.),   // Emission
-                           u,         // u, only for rect lights
-                           v,         // v, only for rect lights
-                           0.,        // Radius for sphere light, 
-                           area,      // area  
-                           0);        // type: 0 - rect, 1 - sphere, 2 - dist
-    
-    }
-}
+struct EmissiveTri
+{
+    uint tri_index;
+    uint mesh_index;
+    float area;
+    float power;
+};
 
 // Get the camera position and lookAt
 void getCameraPos(inout vec3 origin, inout vec3 lookAt) {
