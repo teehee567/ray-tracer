@@ -117,7 +117,7 @@ impl App {
             &instance,
             &device,
             &data,
-            (scene_sizes.0 + scene_sizes.1 + scene_sizes.2) as u64,
+            (scene_sizes.0 + scene_sizes.1 + scene_sizes.2 + scene_sizes.3 + scene_sizes.4 + scene_sizes.5) as u64,
         )?;
         data.compute_ssbo_buffer = shader_buffer;
         data.compute_ssbo_buffer_memory = shader_buffer_memory;
@@ -181,6 +181,9 @@ impl App {
             scene_sizes.0 as u64,
             scene_sizes.1 as u64,
             scene_sizes.2 as u64,
+            scene_sizes.3 as u64,
+            scene_sizes.4 as u64,
+            scene_sizes.5 as u64,
         )?;
         let (compute_command_buffers, present_command_buffer) =
             create_command_buffer(&device, data.command_pool)?;
@@ -218,7 +221,7 @@ impl App {
 
     pub unsafe fn upload_scene(&mut self) -> Result<()> {
         let sizes = self.data.scene.get_buffer_sizes();
-        let total_size = sizes.0 + sizes.1 + sizes.2;
+        let total_size = sizes.0 + sizes.1 + sizes.2 + sizes.3 + sizes.4 + sizes.5;
         let mapped_ptr = self.device.map_memory(
             self.data.compute_ssbo_buffer_memory,
             0,
@@ -229,8 +232,8 @@ impl App {
         self.data.scene.write_buffers(mapped_ptr);
 
         println!(
-            "sizes: bvh({}), mat({}), tri({})",
-            sizes.0, sizes.1, sizes.2
+            "sizes: bvh({}), mat({}), tri({}), lights({}), emissive_tris({}), cdf({})",
+            sizes.0, sizes.1, sizes.2, sizes.3, sizes.4, sizes.5
         );
         println!("Total memory: {}", total_size);
 

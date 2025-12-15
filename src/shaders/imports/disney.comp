@@ -247,16 +247,59 @@ void SampleDistantLight(in Light light, in vec3 surfacePos, inout LightSampleRec
     lightSampleRec.pdf = 1.0;
 }
 
+void SamplePointLight(in Light light, in vec3 surfacePos, inout LightSampleRec lightSampleRec)
+{
+    lightSampleRec.direction = light.position - surfacePos;
+    lightSampleRec.dist = length(lightSampleRec.direction);
+    float distSq = lightSampleRec.dist * lightSampleRec.dist;
+    lightSampleRec.direction /= lightSampleRec.dist;
+    lightSampleRec.normal = -lightSampleRec.direction;
+    lightSampleRec.emission = light.emission;
+    lightSampleRec.pdf = 1.0 / distSq; // Solid angle PDF approximation
+}
+
+void SampleMeshLight(in EmissiveTri emissive_tri, in vec3 surfacePos, inout LightSampleRec lightSampleRec)
+{
+    Triangle tri = triangles.get[emissive_tri.tri_index];
+    
+    // Uniform sampling on triangle using barycentric coordinates
+    float r1 = pgc_random(seed);
+    float r2 = pgc_random(seed);
+    float sqrt_r1 = sqrt(r1);
+    float u = 1.0 - sqrt_r1;
+    float v = r2 * sqrt_r1;
+    float w = 1.0 - u - v;
+    
+    // Sample point on triangle
+    vec3 lightSurfacePos = tri.vertices[0] * u + tri.vertices[1] * v + tri.vertices[2] * w;
+    
+    lightSampleRec.direction = lightSurfacePos - surfacePos;
+    lightSampleRec.dist = length(lightSampleRec.direction);
+    float distSq = lightSampleRec.dist * lightSampleRec.dist;
+    lightSampleRec.direction /= lightSampleRec.dist;
+    
+    // Calculate triangle normal
+    vec3 edge1 = tri.vertices[1] - tri.vertices[0];
+    vec3 edge2 = tri.vertices[2] - tri.vertices[0];
+    lightSampleRec.normal = normalize(cross(edge1, edge2));
+    
+    // Get emission from material
+    Material mat = materials.get[tri.material_idx];
+    lightSampleRec.emission = mat.emission.rgb;
+    
+    // PDF: 1 / area * dist^2 / cos(theta)
+    float cos_theta = abs(dot(lightSampleRec.normal, -lightSampleRec.direction));
+    lightSampleRec.pdf = distSq / (emissive_tri.area * max(cos_theta, 0.0001));
+}
+
 void SampleOneLight(in Light light, in vec3 surfacePos, inout LightSampleRec lightSampleRec)
 {
     int type = int(light.type);
 
-    if (type == QUAD_LIGHT)
-        SampleRectLight(light, surfacePos, lightSampleRec);
-    else if (type == SPHERE_LIGHT)
-        SampleSphereLight(light, surfacePos, lightSampleRec);
+    if (type == POINT_LIGHT)
+        SamplePointLight(light, surfacePos, lightSampleRec);
     else
-        SampleDistantLight(light, surfacePos, lightSampleRec);
+        SamplePointLight(light, surfacePos, lightSampleRec); // Fallback, shouldn't happen
 }
 
 
@@ -575,33 +618,56 @@ vec3 DirectLight(in Ray r, in HitRecord rec, inout uint mesh_tests)
 #endif
 #endif
     
-    // Analytic Lights 
+    // Lights (point lights + mesh lights)
     {
         LightSampleRec lightSampleRec;
+        int num_point_lights = lights.get.length();
+        int num_mesh_lights = emissive_tris.get.length();
 
-        //Pick a light to sample
-        int index = int(pgc_random(seed) * float(numOfLights));
+        if (numOfLights > 0) {
+            // Pick a light to sample
+            float light_rand = pgc_random(seed);
+            int light_index = int(light_rand * float(numOfLights));
+            
+            if (light_index < num_point_lights) {
+                // Sample point light
+                Light light = lights.get[light_index];
+                SampleOneLight(light, surfacePos, lightSampleRec);
+            } else {
+                // Sample mesh light using CDF
+                // Binary search in CDF
+                float cdf_rand = pgc_random(seed);
+                int tri_idx = 0;
+                int cdf_len = cdf.get.length();
+                for (int i = 0; i < cdf_len; i++) {
+                    if (cdf.get[i] >= cdf_rand) {
+                        tri_idx = i;
+                        break;
+                    }
+                }
+                // Clamp to valid range
+                tri_idx = min(tri_idx, emissive_tris.get.length() - 1);
+                
+                EmissiveTri emissive_tri = emissive_tris.get[tri_idx];
+                SampleMeshLight(emissive_tri, surfacePos, lightSampleRec);
+            }
 
-        Light light = lights[index];
+            if (dot(lightSampleRec.direction, lightSampleRec.normal) < 0.0)
+            {
+                Ray shadowRay = Ray(surfacePos, lightSampleRec.direction, 0.);
+                HitRecord shadowHit = hit_meshes(shadowRay, mesh_tests, true);
+                bool inShadow = shadowHit.did_hit && shadowHit.hit_dist < lightSampleRec.dist - EPS;
 
-        light = Light(light.position, light.emission, light.u, light.v, light.radius, light.area, light.type);
-        SampleOneLight(light, surfacePos, lightSampleRec);
+                if (!inShadow) {
+                    bsdfSampleRec.f = DisneyEval(rec, -r.direction, rec.ffnormal, lightSampleRec.direction, bsdfSampleRec.pdf);
 
-        if (dot(lightSampleRec.direction, lightSampleRec.normal) < 0.0)
-        {
-            Ray shadowRay = Ray(surfacePos, lightSampleRec.direction, 0.);
-            HitRecord shadowHit = hit_meshes(shadowRay, mesh_tests, true);
-            bool inShadow = shadowHit.did_hit && shadowHit.hit_dist < lightSampleRec.dist - EPS;
+                    float weight = 1.0;
+                    if (lightSampleRec.pdf > 0.0) // Use MIS for area lights
+                        weight = PowerHeuristic(lightSampleRec.pdf, bsdfSampleRec.pdf);
 
-            if (!inShadow) {
-                bsdfSampleRec.f = DisneyEval(rec, -r.direction, rec.ffnormal, lightSampleRec.direction, bsdfSampleRec.pdf);
-
-                float weight = 1.0;
-                if(light.area > 0.0) // No MIS for distant light
-                    weight = PowerHeuristic(lightSampleRec.pdf, bsdfSampleRec.pdf);
-
-                if (bsdfSampleRec.pdf > 0.0)
-                    Li += weight * bsdfSampleRec.f * lightSampleRec.emission / lightSampleRec.pdf;
+                    if (bsdfSampleRec.pdf > 0.0)
+                        Li += weight * bsdfSampleRec.f * lightSampleRec.emission / lightSampleRec.pdf;
+                }
             }
         }
     }

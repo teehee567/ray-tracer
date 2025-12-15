@@ -65,6 +65,15 @@ layout(set = 0, binding = 4, rgba8) uniform image2D accumulator;
 layout(set = 0, binding = 5) writeonly uniform image2D framebuffer;
 layout(set = 0, binding = 6) uniform sampler2D textures[];
 layout(set = 0, binding = 7) uniform samplerCube skybox;
+layout(std430, set = 0, binding = 8) readonly buffer LightBuffer {
+    Light get[];
+} lights;
+layout(std430, set = 0, binding = 9) readonly buffer EmissiveTriBuffer {
+    EmissiveTri get[];
+} emissive_tris;
+layout(std430, set = 0, binding = 10) readonly buffer CdfBuffer {
+    float get[];
+} cdf;
 
 #include "imports/generate_ray.comp"
 #include "imports/intersects.comp"
@@ -116,8 +125,7 @@ vec3 ray_color(Ray ray, inout uint mesh_tests) {
     LightSampleRec lightSampleRec;
     BsdfSampleRec bsdfSampleRec;
 
-    initLights();
-    numOfLights = NUM_LIGHTS;
+    numOfLights = lights.get.length() + emissive_tris.get.length();
     
     for(int bounce = 0; bounce < BOUNCES; bounce++) {
         HitRecord hit = hit_meshes(ray, mesh_tests, false);

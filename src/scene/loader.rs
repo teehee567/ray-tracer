@@ -15,6 +15,7 @@ impl Scene {
         };
         scene.components = Self::load_scene_yaml(path);
         scene.build_bvh();
+        scene.build_lights();
         println!("Triangles: {}", scene.components.triangles.len());
         Ok(scene)
     }
