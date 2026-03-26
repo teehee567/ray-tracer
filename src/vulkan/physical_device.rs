@@ -4,7 +4,7 @@ use log::{info, warn};
 use thiserror::Error;
 use vulkanalia::prelude::v1_0::*;
 
-use crate::{AppData, DEVICE_EXTENSIONS, QueueFamilyIndices, SwapchainSupport};
+use crate::{DEVICE_EXTENSIONS, QueueFamilyIndices, SwapchainSupport};
 use anyhow::{Result, anyhow};
 
 #[derive(Debug, Error)]
@@ -13,12 +13,12 @@ pub struct SuitabilityError(pub &'static str);
 
 pub unsafe fn pick_physical_device(
     instance: &Instance,
-    data: &AppData,
+    surface: vk::SurfaceKHR,
 ) -> Result<vk::PhysicalDevice> {
     for physical_device in instance.enumerate_physical_devices()? {
         let properties = instance.get_physical_device_properties(physical_device);
 
-        if let Err(error) = check_physical_device(instance, data, physical_device) {
+        if let Err(error) = check_physical_device(instance, surface, physical_device) {
             warn!(
                 "Skipping physical device (`{}`): {}",
                 properties.device_name, error
@@ -34,13 +34,13 @@ pub unsafe fn pick_physical_device(
 
 pub unsafe fn check_physical_device(
     instance: &Instance,
-    data: &AppData,
+    surface: vk::SurfaceKHR,
     physical_device: vk::PhysicalDevice,
 ) -> Result<()> {
-    QueueFamilyIndices::get(instance, data, physical_device)?;
+    QueueFamilyIndices::get(instance, surface, physical_device)?;
     check_physical_device_extensions(instance, physical_device)?;
 
-    let support = SwapchainSupport::get(instance, data, physical_device)?;
+    let support = SwapchainSupport::get(instance, surface, physical_device)?;
     if support.formats.is_empty() || support.present_modes.is_empty() {
         return Err(anyhow!(SuitabilityError("Insufficient swapchain support.")));
     }

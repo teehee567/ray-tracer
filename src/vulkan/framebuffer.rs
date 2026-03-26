@@ -2,14 +2,14 @@ use anyhow::Result;
 use log::info;
 use vulkanalia::prelude::v1_0::*;
 
-use crate::AppData;
-
 use super::utils::get_memory_type_index;
 
 pub unsafe fn create_framebuffer_images(
     instance: &Instance,
     device: &Device,
-    data: &AppData,
+    physical_device: vk::PhysicalDevice,
+    format: vk::Format,
+    extent: vk::Extent2D,
     count: usize,
 ) -> Result<(Vec<vk::Image>, Vec<vk::ImageView>, Vec<vk::DeviceMemory>)> {
     let mut images = Vec::with_capacity(count);
@@ -19,10 +19,10 @@ pub unsafe fn create_framebuffer_images(
     for _ in 0..count {
         let image_info = vk::ImageCreateInfo::builder()
             .image_type(vk::ImageType::_2D)
-            .format(data.swapchain_format)
+            .format(format)
             .extent(vk::Extent3D {
-                width: data.swapchain_extent.width,
-                height: data.swapchain_extent.height,
+                width: extent.width,
+                height: extent.height,
                 depth: 1,
             })
             .mip_levels(1)
@@ -45,7 +45,7 @@ pub unsafe fn create_framebuffer_images(
             .allocation_size(requirements.size)
             .memory_type_index(get_memory_type_index(
                 instance,
-                data,
+                physical_device,
                 vk::MemoryPropertyFlags::DEVICE_LOCAL,
                 requirements,
             )?);
@@ -56,7 +56,7 @@ pub unsafe fn create_framebuffer_images(
         let view_info = vk::ImageViewCreateInfo::builder()
             .image(image)
             .view_type(vk::ImageViewType::_2D)
-            .format(data.swapchain_format)
+            .format(format)
             .subresource_range(
                 vk::ImageSubresourceRange::builder()
                     .aspect_mask(vk::ImageAspectFlags::COLOR)

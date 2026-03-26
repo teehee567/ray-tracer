@@ -3,16 +3,15 @@ use vulkanalia::{Device, Instance};
 
 use anyhow::Result;
 
-use crate::AppData;
+use crate::vulkan::context::VulkanContext;
 
 use super::Texture;
-use super::{begin_single_time_commands, end_single_time_commands, transition_texture_layout};
 use crate::vulkan::utils::{create_buffer, get_memory_type_index};
 
 pub unsafe fn create_cubemap_texture(
     instance: &Instance,
     device: &Device,
-    data: &AppData,
+    ctx: &VulkanContext,
     pixels: &[u8],
     width: u32,
     height: u32,
@@ -23,7 +22,7 @@ pub unsafe fn create_cubemap_texture(
     let (staging_buffer, staging_buffer_memory) = create_buffer(
         instance,
         device,
-        data,
+        ctx.physical_device,
         size,
         vk::BufferUsageFlags::TRANSFER_SRC,
         vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
@@ -58,7 +57,7 @@ pub unsafe fn create_cubemap_texture(
     let mem_requirements = device.get_image_memory_requirements(image);
     let memory_type = get_memory_type_index(
         instance,
-        data,
+        ctx.physical_device,
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
         mem_requirements,
     )?;
@@ -71,9 +70,10 @@ pub unsafe fn create_cubemap_texture(
     device.bind_image_memory(image, image_memory, 0)?;
 
     // Transition image layout and copy data
-    transition_texture_layout(
+    super::transition_texture_layout(
         device,
-        data,
+        ctx.command_pool,
+        ctx.compute_queue,
         image,
         vk::Format::R8G8B8A8_SRGB,
         vk::ImageLayout::UNDEFINED,
@@ -81,11 +81,12 @@ pub unsafe fn create_cubemap_texture(
         6,
     )?;
 
-    copy_buffer_to_cubemap(device, data, staging_buffer, image, width, height)?;
+    copy_buffer_to_cubemap(device, ctx.command_pool, ctx.compute_queue, staging_buffer, image, width, height)?;
 
-    transition_texture_layout(
+    super::transition_texture_layout(
         device,
-        data,
+        ctx.command_pool,
+        ctx.compute_queue,
         image,
         vk::Format::R8G8B8A8_SRGB,
         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
@@ -123,13 +124,14 @@ pub unsafe fn create_cubemap_texture(
 
 unsafe fn copy_buffer_to_cubemap(
     device: &Device,
-    data: &AppData,
+    command_pool: vk::CommandPool,
+    compute_queue: vk::Queue,
     buffer: vk::Buffer,
     image: vk::Image,
     width: u32,
     height: u32,
 ) -> Result<()> {
-    let command_buffer = begin_single_time_commands(device, data)?;
+    let command_buffer = super::begin_single_time_commands(device, command_pool)?;
 
     let mut regions = Vec::with_capacity(6);
     let face_size = (width * height * 4) as u64;
@@ -164,7 +166,7 @@ unsafe fn copy_buffer_to_cubemap(
         &regions,
     );
 
-    end_single_time_commands(device, data, command_buffer)?;
+    super::end_single_time_commands(device, command_pool, compute_queue, command_buffer)?;
 
     Ok(())
 }

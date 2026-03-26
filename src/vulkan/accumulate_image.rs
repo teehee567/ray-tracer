@@ -6,13 +6,12 @@ use vulkanalia::{
 };
 
 use super::utils::get_memory_type_index;
-use crate::AppData;
 
 pub unsafe fn create_image(
     instance: &Instance,
     device: &Device,
     swapchain_extent: vk::Extent2D,
-    data: &AppData,
+    physical_device: vk::PhysicalDevice,
 ) -> Result<(vk::Image, vk::ImageView, vk::DeviceMemory)> {
     let image_info = vk::ImageCreateInfo::builder()
         .image_type(vk::ImageType::_2D)
@@ -43,7 +42,7 @@ pub unsafe fn create_image(
         .allocation_size(mem_requirements.size)
         .memory_type_index(get_memory_type_index(
             instance,
-            data,
+            physical_device,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
             mem_requirements,
         )?);

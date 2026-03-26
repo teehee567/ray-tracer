@@ -4,7 +4,7 @@ use log::info;
 use vulkanalia::{prelude::v1_0::*, vk::InstanceV1_1};
 
 use crate::{
-    AppData, DEVICE_EXTENSIONS, PORTABILITY_MACOS_VERSION, QueueFamilyIndices, VALIDATION_ENABLED,
+    DEVICE_EXTENSIONS, PORTABILITY_MACOS_VERSION, QueueFamilyIndices, VALIDATION_ENABLED,
     VALIDATION_LAYER,
 };
 use anyhow::Result;
@@ -12,10 +12,11 @@ use anyhow::Result;
 pub unsafe fn create_logical_device(
     entry: &Entry,
     instance: &Instance,
-    data: &AppData,
+    surface: vk::SurfaceKHR,
+    physical_device: vk::PhysicalDevice,
 ) -> Result<(Device, vk::Queue, vk::Queue)> {
     // Queue Create Infos
-    let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
+    let indices = QueueFamilyIndices::get(instance, surface, physical_device)?;
 
     let mut unique_indices = HashSet::new();
     unique_indices.insert(indices.graphics);
@@ -77,9 +78,9 @@ pub unsafe fn create_logical_device(
 
     // Check device properties
     let mut device_properties = vk::PhysicalDeviceProperties2::default();
-    instance.get_physical_device_properties2(data.physical_device, &mut device_properties);
+    instance.get_physical_device_properties2(physical_device, &mut device_properties);
 
-    let device = instance.create_device(data.physical_device, &info, None)?;
+    let device = instance.create_device(physical_device, &info, None)?;
     info!("Created Logical Device, {:?}", device);
 
     // Queues

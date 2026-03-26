@@ -1,7 +1,7 @@
 use anyhow::Result;
 use vulkanalia::prelude::v1_0::*;
 
-use crate::{AppData, vulkan::utils::get_memory_type_index};
+use crate::vulkan::utils::get_memory_type_index;
 
 #[derive(Clone, Debug)]
 pub struct GuiTexture {
@@ -27,7 +27,7 @@ impl Default for GuiTexture {
 pub unsafe fn create_texture_resource(
     instance: &Instance,
     device: &Device,
-    data: &AppData,
+    physical_device: vk::PhysicalDevice,
     layout: vk::DescriptorSetLayout,
     pool: vk::DescriptorPool,
     sampler: vk::Sampler,
@@ -59,7 +59,7 @@ pub unsafe fn create_texture_resource(
     let requirements = device.get_image_memory_requirements(image);
     let memory_type = get_memory_type_index(
         instance,
-        data,
+        physical_device,
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
         requirements,
     )?;

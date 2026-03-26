@@ -1,15 +1,16 @@
 use log::info;
 use vulkanalia::prelude::v1_0::*;
 
-use crate::{AppData, QueueFamilyIndices};
+use crate::QueueFamilyIndices;
 use anyhow::Result;
 
 pub unsafe fn create_command_pool(
     instance: &Instance,
     device: &Device,
-    data: &AppData,
+    surface: vk::SurfaceKHR,
+    physical_device: vk::PhysicalDevice,
 ) -> Result<vk::CommandPool> {
-    let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
+    let indices = QueueFamilyIndices::get(instance, surface, physical_device)?;
 
     let info = vk::CommandPoolCreateInfo::builder()
         .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)

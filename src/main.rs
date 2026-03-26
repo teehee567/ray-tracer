@@ -24,7 +24,7 @@ mod types;
 mod vulkan;
 
 pub use app::{
-    App, AppData, DEVICE_EXTENSIONS, OFFSCREEN_FRAME_COUNT, PORTABILITY_MACOS_VERSION,
+    App, DEVICE_EXTENSIONS, OFFSCREEN_FRAME_COUNT, PORTABILITY_MACOS_VERSION,
     QueueFamilyIndices, RenderCommand, RenderController, SwapchainSupport, TILE_SIZE,
     VALIDATION_ENABLED, VALIDATION_LAYER,
 };

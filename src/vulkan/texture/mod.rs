@@ -6,21 +6,21 @@ pub use gui_textures::*;
 pub use skybox::*;
 pub use textures::*;
 
-use crate::AppData;
 use anyhow::{Result, anyhow};
 use vulkanalia::Device;
 use vulkanalia::prelude::v1_0::*;
 
 unsafe fn transition_texture_layout(
     device: &Device,
-    data: &AppData,
+    command_pool: vk::CommandPool,
+    compute_queue: vk::Queue,
     image: vk::Image,
     format: vk::Format,
     old_layout: vk::ImageLayout,
     new_layout: vk::ImageLayout,
     layers: u32,
 ) -> Result<()> {
-    let command_buffer = begin_single_time_commands(device, data)?;
+    let command_buffer = begin_single_time_commands(device, command_pool)?;
 
     let (src_access_mask, dst_access_mask, src_stage_mask, dst_stage_mask) =
         match (old_layout, new_layout) {
@@ -66,15 +66,15 @@ unsafe fn transition_texture_layout(
         &[barrier],
     );
 
-    end_single_time_commands(device, data, command_buffer)?;
+    end_single_time_commands(device, command_pool, compute_queue, command_buffer)?;
 
     Ok(())
 }
 
-unsafe fn begin_single_time_commands(device: &Device, data: &AppData) -> Result<vk::CommandBuffer> {
+unsafe fn begin_single_time_commands(device: &Device, command_pool: vk::CommandPool) -> Result<vk::CommandBuffer> {
     let info = vk::CommandBufferAllocateInfo::builder()
         .level(vk::CommandBufferLevel::PRIMARY)
-        .command_pool(data.command_pool)
+        .command_pool(command_pool)
         .command_buffer_count(1);
 
     let command_buffer = device.allocate_command_buffers(&info)?[0];
@@ -89,7 +89,8 @@ unsafe fn begin_single_time_commands(device: &Device, data: &AppData) -> Result<
 
 unsafe fn end_single_time_commands(
     device: &Device,
-    data: &AppData,
+    command_pool: vk::CommandPool,
+    compute_queue: vk::Queue,
     command_buffer: vk::CommandBuffer,
 ) -> Result<()> {
     device.end_command_buffer(command_buffer)?;
@@ -97,10 +98,10 @@ unsafe fn end_single_time_commands(
     let command_buffers = &[command_buffer];
     let info = vk::SubmitInfo::builder().command_buffers(command_buffers);
 
-    device.queue_submit(data.compute_queue, &[info], vk::Fence::null())?;
-    device.queue_wait_idle(data.compute_queue)?;
+    device.queue_submit(compute_queue, &[info], vk::Fence::null())?;
+    device.queue_wait_idle(compute_queue)?;
 
-    device.free_command_buffers(data.command_pool, command_buffers);
+    device.free_command_buffers(command_pool, command_buffers);
 
     Ok(())
 }

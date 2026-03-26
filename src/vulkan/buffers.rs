@@ -2,18 +2,18 @@ use log::info;
 use vulkanalia::prelude::v1_0::*;
 
 use super::utils::create_buffer;
-use crate::{AppData, CameraBufferObject};
+use crate::types::CameraBufferObject;
 use anyhow::Result;
 
 pub unsafe fn create_uniform_buffer(
     instance: &Instance,
     device: &Device,
-    data: &AppData,
+    physical_device: vk::PhysicalDevice,
 ) -> Result<(vk::Buffer, vk::DeviceMemory)> {
     let (uniform_buffer, uniform_buffer_memory) = create_buffer(
         instance,
         device,
-        data,
+        physical_device,
         size_of::<CameraBufferObject>() as u64,
         vk::BufferUsageFlags::UNIFORM_BUFFER,
         vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
@@ -30,13 +30,13 @@ pub unsafe fn create_uniform_buffer(
 pub unsafe fn create_shader_buffers(
     instance: &Instance,
     device: &Device,
-    data: &AppData,
+    physical_device: vk::PhysicalDevice,
     size: u64,
 ) -> Result<(vk::Buffer, vk::DeviceMemory)> {
     let (shader_buffer, shader_buffer_memory) = create_buffer(
         instance,
         device,
-        data,
+        physical_device,
         size,
         vk::BufferUsageFlags::STORAGE_BUFFER,
         vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
