@@ -1,12 +1,11 @@
 use vulkanalia::prelude::v1_0::*;
 
-use crate::AppData;
 use anyhow::{Result, anyhow};
 
 pub unsafe fn create_buffer(
     instance: &Instance,
     device: &Device,
-    data: &AppData,
+    physical_device: vk::PhysicalDevice,
     size: vk::DeviceSize,
     usage: vk::BufferUsageFlags,
     properties: vk::MemoryPropertyFlags,
@@ -28,7 +27,7 @@ pub unsafe fn create_buffer(
         .allocation_size(requirements.size)
         .memory_type_index(get_memory_type_index(
             instance,
-            data,
+            physical_device,
             properties,
             requirements,
         )?);
@@ -42,8 +41,8 @@ pub unsafe fn create_buffer(
 
 pub unsafe fn copy_buffer(
     device: &Device,
-    data: &AppData,
-    queue: &vk::Queue,
+    command_pool: vk::CommandPool,
+    queue: vk::Queue,
     source: vk::Buffer,
     destination: vk::Buffer,
     size: vk::DeviceSize,
@@ -52,7 +51,7 @@ pub unsafe fn copy_buffer(
 
     let info = vk::CommandBufferAllocateInfo::builder()
         .level(vk::CommandBufferLevel::PRIMARY)
-        .command_pool(data.command_pool)
+        .command_pool(command_pool)
         .command_buffer_count(1);
 
     let command_buffer = device.allocate_command_buffers(&info)?[0];
@@ -74,12 +73,12 @@ pub unsafe fn copy_buffer(
     let command_buffers = &[command_buffer];
     let info = vk::SubmitInfo::builder().command_buffers(command_buffers);
 
-    device.queue_submit(*queue, &[info], vk::Fence::null())?;
-    device.queue_wait_idle(*queue)?;
+    device.queue_submit(queue, &[info], vk::Fence::null())?;
+    device.queue_wait_idle(queue)?;
 
     // Cleanup
 
-    device.free_command_buffers(data.command_pool, &[command_buffer]);
+    device.free_command_buffers(command_pool, &[command_buffer]);
 
     Ok(())
 }
@@ -90,11 +89,11 @@ pub unsafe fn copy_buffer(
 
 pub unsafe fn get_memory_type_index(
     instance: &Instance,
-    data: &AppData,
+    physical_device: vk::PhysicalDevice,
     properties: vk::MemoryPropertyFlags,
     requirements: vk::MemoryRequirements,
 ) -> Result<u32> {
-    let memory = instance.get_physical_device_memory_properties(data.physical_device);
+    let memory = instance.get_physical_device_memory_properties(physical_device);
     (0..memory.memory_type_count)
         .find(|i| {
             let suitable = (requirements.memory_type_bits & (1 << i)) != 0;

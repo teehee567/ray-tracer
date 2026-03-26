@@ -1,7 +1,8 @@
 use log::{debug, info};
 use vulkanalia::prelude::v1_0::*;
 
-use crate::{AppData, CameraBufferObject};
+use crate::types::CameraBufferObject;
+use crate::vulkan::texture::Texture;
 use anyhow::Result;
 
 pub unsafe fn create_descriptor_pool(
@@ -39,13 +40,19 @@ pub unsafe fn create_descriptor_pool(
     Ok(descriptor_pool)
 }
 
-fn align_up(value: u64) -> u64 {
-    ((value + 15) / 16) * 16
-}
-
 pub unsafe fn create_descriptor_sets(
     device: &Device,
-    data: &AppData,
+    descriptor_set_layout: vk::DescriptorSetLayout,
+    descriptor_pool: vk::DescriptorPool,
+    framebuffer_image_views: &[vk::ImageView],
+    uniform_buffer: vk::Buffer,
+    ssbo_buffer: vk::Buffer,
+    accumulator_view: vk::ImageView,
+    sampler: vk::Sampler,
+    textures: &[Texture],
+    texture_sampler: vk::Sampler,
+    skybox_texture: &Texture,
+    skybox_sampler: vk::Sampler,
     bvh_size: u64,
     mat_size: u64,
     triangle_size: u64,
@@ -55,10 +62,10 @@ pub unsafe fn create_descriptor_sets(
 ) -> Result<Vec<vk::DescriptorSet>> {
     // Allocate
 
-    let layouts = vec![data.descriptor_set_layout; data.framebuffer_image_views.len()];
+    let layouts = vec![descriptor_set_layout; framebuffer_image_views.len()];
     debug!("Layouts: {:?}", layouts.len());
     let info = vk::DescriptorSetAllocateInfo::builder()
-        .descriptor_pool(data.descriptor_pool)
+        .descriptor_pool(descriptor_pool)
         .set_layouts(&layouts)
         .build();
 
@@ -68,72 +75,71 @@ pub unsafe fn create_descriptor_sets(
         compute_descriptor_sets.len()
     );
 
-    for (i, framebuffer_view) in data.framebuffer_image_views.iter().enumerate() {
+    for (i, framebuffer_view) in framebuffer_image_views.iter().enumerate() {
         debug!("Started Update Descriptor Sets");
         let uniform_buffer_info = vk::DescriptorBufferInfo::builder()
-            .buffer(data.uniform_buffer)
+            .buffer(uniform_buffer)
             .offset(0)
             .range(std::mem::size_of::<CameraBufferObject>() as u64)
             .build();
 
         let bvh_buffer_info = vk::DescriptorBufferInfo::builder()
-            .buffer(data.compute_ssbo_buffer)
+            .buffer(ssbo_buffer)
             .offset(0)
             .range(bvh_size)
             .build();
 
         let material_buffer_info = vk::DescriptorBufferInfo::builder()
-            .buffer(data.compute_ssbo_buffer)
+            .buffer(ssbo_buffer)
             .offset(bvh_size)
             .range(mat_size)
             .build();
 
         let triangle_buffer_info = vk::DescriptorBufferInfo::builder()
-            .buffer(data.compute_ssbo_buffer)
+            .buffer(ssbo_buffer)
             .offset(bvh_size + mat_size)
             .range(triangle_size)
             .build();
 
         let light_buffer_info = vk::DescriptorBufferInfo::builder()
-            .buffer(data.compute_ssbo_buffer)
+            .buffer(ssbo_buffer)
             .offset(bvh_size + mat_size + triangle_size)
             .range(light_size)
             .build();
 
         let emissive_tri_buffer_info = vk::DescriptorBufferInfo::builder()
-            .buffer(data.compute_ssbo_buffer)
+            .buffer(ssbo_buffer)
             .offset(bvh_size + mat_size + triangle_size + light_size)
             .range(emissive_tri_size)
             .build();
 
         let cdf_buffer_info = vk::DescriptorBufferInfo::builder()
-            .buffer(data.compute_ssbo_buffer)
+            .buffer(ssbo_buffer)
             .offset(bvh_size + mat_size + triangle_size + light_size + emissive_tri_size)
             .range(cdf_size)
             .build();
 
         let accumulator_image_info = vk::DescriptorImageInfo::builder()
-            .sampler(data.sampler)
-            .image_view(data.accumulator_view)
+            .sampler(sampler)
+            .image_view(accumulator_view)
             .image_layout(vk::ImageLayout::GENERAL)
             .build();
 
-        let texture_info: Vec<_> = data
-            .textures
+        let texture_info: Vec<_> = textures
             .iter()
             .map(|tex| {
                 vk::DescriptorImageInfo::builder()
                     .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
                     .image_view(tex.view)
-                    .sampler(data.texture_sampler)
+                    .sampler(texture_sampler)
                     .build()
             })
             .collect();
 
         let skybox_info = vk::DescriptorImageInfo::builder()
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .image_view(data.skybox_texture.view)
-            .sampler(data.skybox_sampler)
+            .image_view(skybox_texture.view)
+            .sampler(skybox_sampler)
             .build();
 
         let uniform_buffer_array = [uniform_buffer_info];
@@ -209,7 +215,7 @@ pub unsafe fn create_descriptor_sets(
             .build();
 
         let framebuffer_image_info = vk::DescriptorImageInfo::builder()
-            .sampler(data.sampler)
+            .sampler(sampler)
             .image_view(*framebuffer_view)
             .image_layout(vk::ImageLayout::GENERAL)
             .build();
@@ -263,8 +269,8 @@ pub unsafe fn create_descriptor_sets(
 
 pub unsafe fn create_compute_descriptor_set_layout(
     device: &Device,
-    data: &mut AppData,
-) -> Result<()> {
+    texture_count: usize,
+) -> Result<vk::DescriptorSetLayout> {
     let ubo_binding = vk::DescriptorSetLayoutBinding::builder()
         .binding(0)
         .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
@@ -304,7 +310,7 @@ pub unsafe fn create_compute_descriptor_set_layout(
     let texture_binding = vk::DescriptorSetLayoutBinding::builder()
         .binding(6)
         .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(data.textures.len() as u32) // Array of textures
+        .descriptor_count(texture_count as u32)
         .stage_flags(vk::ShaderStageFlags::COMPUTE);
 
     let skybox_binding = vk::DescriptorSetLayoutBinding::builder()
@@ -346,11 +352,11 @@ pub unsafe fn create_compute_descriptor_set_layout(
     ];
     let info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(bindings);
 
-    data.descriptor_set_layout = device.create_descriptor_set_layout(&info, None)?;
+    let descriptor_set_layout = device.create_descriptor_set_layout(&info, None)?;
     info!(
         "Created Desciptor set layout: {:?} with bindings: {:?}",
-        data.descriptor_set_layout, bindings
+        descriptor_set_layout, bindings
     );
 
-    Ok(())
+    Ok(descriptor_set_layout)
 }

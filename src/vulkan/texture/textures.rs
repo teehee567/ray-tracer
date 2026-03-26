@@ -3,8 +3,7 @@ use vulkanalia::prelude::v1_0::*;
 
 use anyhow::Result;
 
-use crate::AppData;
-
+use crate::vulkan::context::VulkanContext;
 use crate::vulkan::utils::{create_buffer, get_memory_type_index};
 
 #[repr(C)]
@@ -20,7 +19,7 @@ pub struct Texture {
 pub unsafe fn create_texture_image(
     instance: &Instance,
     device: &Device,
-    data: &AppData,
+    ctx: &VulkanContext,
     pixels: &[u8],
     width: u32,
     height: u32,
@@ -31,7 +30,7 @@ pub unsafe fn create_texture_image(
     let (staging_buffer, staging_buffer_memory) = create_buffer(
         instance,
         device,
-        data,
+        ctx.physical_device,
         size,
         vk::BufferUsageFlags::TRANSFER_SRC,
         vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
@@ -65,7 +64,7 @@ pub unsafe fn create_texture_image(
     let mem_requirements = device.get_image_memory_requirements(image);
     let memory_type = get_memory_type_index(
         instance,
-        data,
+        ctx.physical_device,
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
         mem_requirements,
     )?;
@@ -80,7 +79,8 @@ pub unsafe fn create_texture_image(
     // Transition image layout and copy data
     super::transition_texture_layout(
         device,
-        data,
+        ctx.command_pool,
+        ctx.compute_queue,
         image,
         vk::Format::R8G8B8A8_SRGB,
         vk::ImageLayout::UNDEFINED,
@@ -88,11 +88,12 @@ pub unsafe fn create_texture_image(
         1,
     )?;
 
-    copy_buffer_to_image(device, data, staging_buffer, image, width, height)?;
+    copy_buffer_to_image(device, ctx.command_pool, ctx.compute_queue, staging_buffer, image, width, height)?;
 
     super::transition_texture_layout(
         device,
-        data,
+        ctx.command_pool,
+        ctx.compute_queue,
         image,
         vk::Format::R8G8B8A8_SRGB,
         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
@@ -130,13 +131,14 @@ pub unsafe fn create_texture_image(
 
 unsafe fn copy_buffer_to_image(
     device: &Device,
-    data: &AppData,
+    command_pool: vk::CommandPool,
+    compute_queue: vk::Queue,
     buffer: vk::Buffer,
     image: vk::Image,
     width: u32,
     height: u32,
 ) -> Result<()> {
-    let command_buffer = super::begin_single_time_commands(device, data)?;
+    let command_buffer = super::begin_single_time_commands(device, command_pool)?;
 
     let region = vk::BufferImageCopy::builder()
         .buffer_offset(0)
@@ -163,7 +165,7 @@ unsafe fn copy_buffer_to_image(
         &[region],
     );
 
-    super::end_single_time_commands(device, data, command_buffer)?;
+    super::end_single_time_commands(device, command_pool, compute_queue, command_buffer)?;
 
     Ok(())
 }

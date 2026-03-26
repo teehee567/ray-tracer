@@ -2,7 +2,6 @@ use anyhow::{Result, anyhow};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::{self, KhrSurfaceExtension};
 
-use super::data::AppData;
 use crate::vulkan::physical_device::SuitabilityError;
 
 #[repr(C)]
@@ -16,7 +15,7 @@ pub struct QueueFamilyIndices {
 impl QueueFamilyIndices {
     pub unsafe fn get(
         instance: &Instance,
-        data: &AppData,
+        surface: vk::SurfaceKHR,
         physical_device: vk::PhysicalDevice,
     ) -> Result<Self> {
         let properties = instance.get_physical_device_queue_family_properties(physical_device);
@@ -27,7 +26,7 @@ impl QueueFamilyIndices {
                     .get_physical_device_surface_support_khr(
                         physical_device,
                         i as u32,
-                        data.surface,
+                        surface,
                     )
                     .unwrap_or(false)
             {
@@ -59,16 +58,16 @@ pub struct SwapchainSupport {
 impl SwapchainSupport {
     pub unsafe fn get(
         instance: &Instance,
-        data: &AppData,
+        surface: vk::SurfaceKHR,
         physical_device: vk::PhysicalDevice,
     ) -> Result<Self> {
         Ok(Self {
             capabilities: instance
-                .get_physical_device_surface_capabilities_khr(physical_device, data.surface)?,
+                .get_physical_device_surface_capabilities_khr(physical_device, surface)?,
             formats: instance
-                .get_physical_device_surface_formats_khr(physical_device, data.surface)?,
+                .get_physical_device_surface_formats_khr(physical_device, surface)?,
             present_modes: instance
-                .get_physical_device_surface_present_modes_khr(physical_device, data.surface)?,
+                .get_physical_device_surface_present_modes_khr(physical_device, surface)?,
         })
     }
 }

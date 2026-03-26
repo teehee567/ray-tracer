@@ -3,7 +3,7 @@ use vulkanalia::{prelude::v1_0::*, vk::KhrSwapchainExtension};
 use winit::window::Window;
 
 use crate::{
-    AppData, QueueFamilyIndices, SwapchainSupport, vulkan::physical_device::SuitabilityError,
+    QueueFamilyIndices, SwapchainSupport, vulkan::physical_device::SuitabilityError,
 };
 use anyhow::{Result, anyhow};
 
@@ -11,7 +11,8 @@ pub unsafe fn create_swapchain(
     window: &Window,
     instance: &Instance,
     device: &Device,
-    data: &AppData,
+    surface: vk::SurfaceKHR,
+    physical_device: vk::PhysicalDevice,
 ) -> Result<(
     vk::SwapchainKHR,
     vk::Format,
@@ -21,8 +22,8 @@ pub unsafe fn create_swapchain(
 )> {
     // Image
 
-    let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
-    let support = SwapchainSupport::get(instance, data, data.physical_device)?;
+    let indices = QueueFamilyIndices::get(instance, surface, physical_device)?;
+    let support = SwapchainSupport::get(instance, surface, physical_device)?;
 
     let required_usage = vk::ImageUsageFlags::STORAGE
         | vk::ImageUsageFlags::TRANSFER_DST
@@ -65,7 +66,7 @@ pub unsafe fn create_swapchain(
     // Create
 
     let info = vk::SwapchainCreateInfoKHR::builder()
-        .surface(data.surface)
+        .surface(surface)
         .min_image_count(image_count)
         .image_format(surface_format.format)
         .image_color_space(surface_format.color_space)

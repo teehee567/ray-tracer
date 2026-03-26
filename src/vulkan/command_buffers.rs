@@ -1,8 +1,11 @@
 use log::info;
 use vulkanalia::prelude::v1_0::*;
 
+use crate::vulkan::compute::ComputeResources;
 use crate::vulkan::gui_renderer::GuiRenderer;
-use crate::{AppData, OFFSCREEN_FRAME_COUNT, TILE_SIZE};
+use crate::vulkan::swapchain_data::SwapchainData;
+use crate::OFFSCREEN_FRAME_COUNT;
+use crate::TILE_SIZE;
 use anyhow::{Result, anyhow};
 use glam::UVec2;
 
@@ -32,7 +35,7 @@ pub unsafe fn create_command_buffer(
 
 pub unsafe fn record_compute_commands(
     device: &Device,
-    data: &mut AppData,
+    compute: &ComputeResources,
     command_buffer: vk::CommandBuffer,
     frame_index: usize,
     render_extent: UVec2,
@@ -45,14 +48,14 @@ pub unsafe fn record_compute_commands(
         device.cmd_bind_pipeline(
             command_buffer,
             vk::PipelineBindPoint::COMPUTE,
-            data.compute_pipeline,
+            compute.pipeline,
         );
         device.cmd_bind_descriptor_sets(
             command_buffer,
             vk::PipelineBindPoint::COMPUTE,
-            data.compute_pipeline_layout,
+            compute.pipeline_layout,
             0,
-            &[data.compute_descriptor_sets[frame_index]],
+            &[compute.descriptor_sets[frame_index]],
             &[],
         );
 
@@ -68,21 +71,23 @@ pub unsafe fn record_compute_commands(
 
 pub unsafe fn record_present_commands(
     device: &Device,
-    data: &mut AppData,
+    swapchain: &mut SwapchainData,
+    compute: &ComputeResources,
+    present_command_buffer: vk::CommandBuffer,
     swapchain_index: usize,
     frame_index: usize,
     panel_width: u32,
     render_extent: UVec2,
     gui: &GuiRenderer,
 ) -> Result<()> {
-    let command_buffer = data.present_command_buffer;
+    let command_buffer = present_command_buffer;
     let begin_info = vk::CommandBufferBeginInfo::builder();
     device.begin_command_buffer(command_buffer, &begin_info)?;
 
     let framebuffer_barrier = vk::ImageMemoryBarrier::builder()
         .old_layout(vk::ImageLayout::GENERAL)
         .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-        .image(data.framebuffer_images[frame_index])
+        .image(compute.framebuffer_images[frame_index])
         .subresource_range(
             vk::ImageSubresourceRange::builder()
                 .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -108,8 +113,8 @@ pub unsafe fn record_present_commands(
         &[framebuffer_barrier],
     );
 
-    let current_layout = data
-        .swapchain_image_layouts
+    let current_layout = swapchain
+        .image_layouts
         .get(swapchain_index)
         .copied()
         .unwrap_or(vk::ImageLayout::UNDEFINED);
@@ -132,7 +137,7 @@ pub unsafe fn record_present_commands(
     let swapchain_barrier = vk::ImageMemoryBarrier::builder()
         .old_layout(current_layout)
         .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-        .image(data.swapchain_images[swapchain_index])
+        .image(swapchain.images[swapchain_index])
         .subresource_range(
             vk::ImageSubresourceRange::builder()
                 .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -170,7 +175,7 @@ pub unsafe fn record_present_commands(
         .build();
     device.cmd_clear_color_image(
         command_buffer,
-        data.swapchain_images[swapchain_index],
+        swapchain.images[swapchain_index],
         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         &clear_value,
         &[clear_range],
@@ -209,9 +214,9 @@ pub unsafe fn record_present_commands(
 
         device.cmd_copy_image(
             command_buffer,
-            data.framebuffer_images[frame_index],
+            compute.framebuffer_images[frame_index],
             vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-            data.swapchain_images[swapchain_index],
+            swapchain.images[swapchain_index],
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             &[copy_region],
         );
@@ -223,7 +228,7 @@ pub unsafe fn record_present_commands(
         let barrier = vk::ImageMemoryBarrier::builder()
             .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
             .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .image(data.swapchain_images[swapchain_index])
+            .image(swapchain.images[swapchain_index])
             .subresource_range(
                 vk::ImageSubresourceRange::builder()
                     .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -249,19 +254,19 @@ pub unsafe fn record_present_commands(
             &[barrier],
         );
 
-        let framebuffer = data.swapchain_framebuffers[swapchain_index];
+        let framebuffer = swapchain.framebuffers[swapchain_index];
         let render_area = vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
-            extent: data.swapchain_extent,
+            extent: swapchain.extent,
         };
         let begin_info = vk::RenderPassBeginInfo::builder()
-            .render_pass(data.render_pass)
+            .render_pass(swapchain.render_pass)
             .framebuffer(framebuffer)
             .render_area(render_area);
 
         device.cmd_begin_render_pass(command_buffer, &begin_info, vk::SubpassContents::INLINE);
 
-        gui.record_draws(device, command_buffer, frame_index, data.swapchain_extent)?;
+        gui.record_draws(device, command_buffer, frame_index, swapchain.extent)?;
 
         device.cmd_end_render_pass(command_buffer);
         swap_layout_after = vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
@@ -270,7 +275,7 @@ pub unsafe fn record_present_commands(
     let framebuffer_to_general = vk::ImageMemoryBarrier::builder()
         .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
         .new_layout(vk::ImageLayout::GENERAL)
-        .image(data.framebuffer_images[frame_index])
+        .image(compute.framebuffer_images[frame_index])
         .subresource_range(
             vk::ImageSubresourceRange::builder()
                 .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -312,7 +317,7 @@ pub unsafe fn record_present_commands(
     let present_barrier = vk::ImageMemoryBarrier::builder()
         .old_layout(swap_layout_after)
         .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-        .image(data.swapchain_images[swapchain_index])
+        .image(swapchain.images[swapchain_index])
         .subresource_range(
             vk::ImageSubresourceRange::builder()
                 .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -338,7 +343,7 @@ pub unsafe fn record_present_commands(
         &[present_barrier],
     );
 
-    if let Some(layout) = data.swapchain_image_layouts.get_mut(swapchain_index) {
+    if let Some(layout) = swapchain.image_layouts.get_mut(swapchain_index) {
         *layout = vk::ImageLayout::PRESENT_SRC_KHR;
     }
 
