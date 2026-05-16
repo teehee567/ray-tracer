@@ -88,6 +88,69 @@ pub unsafe fn create_render_pass(
     Ok(render_pass)
 }
 
+pub struct GraphicsPipelineConfig<'a> {
+    pub shaders: &'a [vk::PipelineShaderStageCreateInfo],
+    pub vertex_bindings: &'a [vk::VertexInputBindingDescription],
+    pub vertex_attributes: &'a [vk::VertexInputAttributeDescription],
+    pub blend_attachments: &'a [vk::PipelineColorBlendAttachmentState],
+    pub dynamic_states: &'a [vk::DynamicState],
+    pub layout: vk::PipelineLayout,
+    pub render_pass: vk::RenderPass,
+    pub subpass: u32,
+    pub topology: vk::PrimitiveTopology,
+    pub cull_mode: vk::CullModeFlags,
+}
+
+pub unsafe fn create_graphics_pipeline(
+    device: &Device,
+    config: GraphicsPipelineConfig,
+) -> Result<vk::Pipeline> {
+    let vertex_input = vk::PipelineVertexInputStateCreateInfo::builder()
+        .vertex_binding_descriptions(config.vertex_bindings)
+        .vertex_attribute_descriptions(config.vertex_attributes);
+
+    let input_assembly =
+        vk::PipelineInputAssemblyStateCreateInfo::builder().topology(config.topology);
+
+    let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
+        .viewport_count(1)
+        .scissor_count(1);
+
+    let rasterizer = vk::PipelineRasterizationStateCreateInfo::builder()
+        .polygon_mode(vk::PolygonMode::FILL)
+        .cull_mode(config.cull_mode)
+        .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+        .line_width(1.0);
+
+    let multisample = vk::PipelineMultisampleStateCreateInfo::builder()
+        .rasterization_samples(vk::SampleCountFlags::_1);
+
+    let color_blend =
+        vk::PipelineColorBlendStateCreateInfo::builder().attachments(config.blend_attachments);
+
+    let dynamic_state =
+        vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(config.dynamic_states);
+
+    let info = vk::GraphicsPipelineCreateInfo::builder()
+        .stages(config.shaders)
+        .vertex_input_state(&vertex_input)
+        .input_assembly_state(&input_assembly)
+        .viewport_state(&viewport_state)
+        .rasterization_state(&rasterizer)
+        .multisample_state(&multisample)
+        .color_blend_state(&color_blend)
+        .dynamic_state(&dynamic_state)
+        .layout(config.layout)
+        .render_pass(config.render_pass)
+        .subpass(config.subpass);
+
+    let pipeline = device
+        .create_graphics_pipelines(vk::PipelineCache::null(), &[info], None)?
+        .0[0];
+
+    Ok(pipeline)
+}
+
 pub unsafe fn create_shader_module(device: &Device, bytecode: &[u8]) -> Result<vk::ShaderModule> {
     let bytecode = Bytecode::new(bytecode).unwrap();
 

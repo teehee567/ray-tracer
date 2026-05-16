@@ -4,7 +4,9 @@ use vulkanalia::prelude::v1_0::*;
 use anyhow::Result;
 
 use crate::vulkan::context::VulkanContext;
-use crate::vulkan::utils::{create_buffer, get_memory_type_index};
+use crate::vulkan::image::{cmd_transition_image_layout, create_image_2d, create_image_view_2d};
+use crate::vulkan::single_time::with_single_time;
+use crate::vulkan::utils::create_buffer;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default)]
@@ -26,8 +28,7 @@ pub unsafe fn create_texture_image(
 ) -> Result<Texture> {
     let size = (width * height * 4) as u64;
 
-    // Create staging buffer
-    let (staging_buffer, staging_buffer_memory) = create_buffer(
+    let (staging_buffer, staging_memory) = create_buffer(
         instance,
         device,
         ctx.physical_device,
@@ -36,89 +37,81 @@ pub unsafe fn create_texture_image(
         vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
     )?;
 
-    // Copy pixels to staging buffer
-    let memory = device.map_memory(staging_buffer_memory, 0, size, vk::MemoryMapFlags::empty())?;
-    ptr::copy_nonoverlapping(pixels.as_ptr(), memory.cast(), pixels.len());
-    device.unmap_memory(staging_buffer_memory);
+    let mapped = device.map_memory(staging_memory, 0, size, vk::MemoryMapFlags::empty())?;
+    ptr::copy_nonoverlapping(pixels.as_ptr(), mapped.cast(), pixels.len());
+    device.unmap_memory(staging_memory);
 
-    // Create image
-    let image_info = vk::ImageCreateInfo::builder()
-        .image_type(vk::ImageType::_2D)
-        .extent(vk::Extent3D {
-            width,
-            height,
-            depth: 1,
-        })
-        .mip_levels(1)
-        .array_layers(1)
-        .format(vk::Format::R8G8B8A8_SRGB)
-        .tiling(vk::ImageTiling::OPTIMAL)
-        .initial_layout(vk::ImageLayout::UNDEFINED)
-        .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
-        .sharing_mode(vk::SharingMode::EXCLUSIVE)
-        .samples(vk::SampleCountFlags::_1);
-
-    let image = device.create_image(&image_info, None)?;
-
-    // Allocate memory for image
-    let mem_requirements = device.get_image_memory_requirements(image);
-    let memory_type = get_memory_type_index(
+    let (image, image_memory) = create_image_2d(
         instance,
+        device,
         ctx.physical_device,
+        width,
+        height,
+        vk::Format::R8G8B8A8_SRGB,
+        vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
-        mem_requirements,
+        1,
+        vk::ImageCreateFlags::empty(),
     )?;
 
-    let alloc_info = vk::MemoryAllocateInfo::builder()
-        .allocation_size(mem_requirements.size)
-        .memory_type_index(memory_type);
+    with_single_time(device, ctx.command_pool, ctx.compute_queue, |cb| {
+        cmd_transition_image_layout(
+            device,
+            cb,
+            image,
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            vk::ImageAspectFlags::COLOR,
+            1,
+        )?;
 
-    let image_memory = device.allocate_memory(&alloc_info, None)?;
-    device.bind_image_memory(image, image_memory, 0)?;
+        let region = vk::BufferImageCopy::builder()
+            .image_subresource(
+                vk::ImageSubresourceLayers::builder()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .mip_level(0)
+                    .base_array_layer(0)
+                    .layer_count(1)
+                    .build(),
+            )
+            .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+            .image_extent(vk::Extent3D {
+                width,
+                height,
+                depth: 1,
+            });
 
-    // Transition image layout and copy data
-    super::transition_texture_layout(
+        device.cmd_copy_buffer_to_image(
+            cb,
+            staging_buffer,
+            image,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            &[region],
+        );
+
+        cmd_transition_image_layout(
+            device,
+            cb,
+            image,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            vk::ImageAspectFlags::COLOR,
+            1,
+        )?;
+        Ok(())
+    })?;
+
+    let view = create_image_view_2d(
         device,
-        ctx.command_pool,
-        ctx.compute_queue,
         image,
         vk::Format::R8G8B8A8_SRGB,
-        vk::ImageLayout::UNDEFINED,
-        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        vk::ImageViewType::_2D,
+        vk::ImageAspectFlags::COLOR,
         1,
     )?;
 
-    copy_buffer_to_image(device, ctx.command_pool, ctx.compute_queue, staging_buffer, image, width, height)?;
-
-    super::transition_texture_layout(
-        device,
-        ctx.command_pool,
-        ctx.compute_queue,
-        image,
-        vk::Format::R8G8B8A8_SRGB,
-        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        1,
-    )?;
-
-    // Create image view
-    let view_info = vk::ImageViewCreateInfo::builder()
-        .image(image)
-        .view_type(vk::ImageViewType::_2D)
-        .format(vk::Format::R8G8B8A8_SRGB)
-        .subresource_range(vk::ImageSubresourceRange {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            base_mip_level: 0,
-            level_count: 1,
-            base_array_layer: 0,
-            layer_count: 1,
-        });
-
-    let view = device.create_image_view(&view_info, None)?;
-
-    // Cleanup staging buffer
     device.destroy_buffer(staging_buffer, None);
-    device.free_memory(staging_buffer_memory, None);
+    device.free_memory(staging_memory, None);
 
     Ok(Texture {
         width,
@@ -127,47 +120,6 @@ pub unsafe fn create_texture_image(
         view,
         memory: image_memory,
     })
-}
-
-unsafe fn copy_buffer_to_image(
-    device: &Device,
-    command_pool: vk::CommandPool,
-    compute_queue: vk::Queue,
-    buffer: vk::Buffer,
-    image: vk::Image,
-    width: u32,
-    height: u32,
-) -> Result<()> {
-    let command_buffer = super::begin_single_time_commands(device, command_pool)?;
-
-    let region = vk::BufferImageCopy::builder()
-        .buffer_offset(0)
-        .buffer_row_length(0)
-        .buffer_image_height(0)
-        .image_subresource(vk::ImageSubresourceLayers {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            mip_level: 0,
-            base_array_layer: 0,
-            layer_count: 1,
-        })
-        .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
-        .image_extent(vk::Extent3D {
-            width,
-            height,
-            depth: 1,
-        });
-
-    device.cmd_copy_buffer_to_image(
-        command_buffer,
-        buffer,
-        image,
-        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-        &[region],
-    );
-
-    super::end_single_time_commands(device, command_pool, compute_queue, command_buffer)?;
-
-    Ok(())
 }
 
 pub unsafe fn create_texture_sampler(device: &Device) -> Result<vk::Sampler> {

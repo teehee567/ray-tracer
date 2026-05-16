@@ -1,7 +1,7 @@
 use anyhow::Result;
 use vulkanalia::prelude::v1_0::*;
 
-use crate::vulkan::utils::get_memory_type_index;
+use crate::vulkan::image::{create_image_2d, create_image_view_2d};
 
 #[derive(Clone, Debug)]
 pub struct GuiTexture {
@@ -39,51 +39,27 @@ pub unsafe fn create_texture_resource(
         .set_layouts(&layouts);
     let descriptor_set = device.allocate_descriptor_sets(&alloc_info)?[0];
 
-    let image_info = vk::ImageCreateInfo::builder()
-        .image_type(vk::ImageType::_2D)
-        .format(vk::Format::R8G8B8A8_UNORM)
-        .extent(vk::Extent3D {
-            width: size[0].max(1),
-            height: size[1].max(1),
-            depth: 1,
-        })
-        .mip_levels(1)
-        .array_layers(1)
-        .samples(vk::SampleCountFlags::_1)
-        .tiling(vk::ImageTiling::OPTIMAL)
-        .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
-        .sharing_mode(vk::SharingMode::EXCLUSIVE)
-        .initial_layout(vk::ImageLayout::UNDEFINED);
-
-    let image = device.create_image(&image_info, None)?;
-    let requirements = device.get_image_memory_requirements(image);
-    let memory_type = get_memory_type_index(
+    let (image, memory) = create_image_2d(
         instance,
+        device,
         physical_device,
+        size[0],
+        size[1],
+        vk::Format::R8G8B8A8_UNORM,
+        vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
-        requirements,
+        1,
+        vk::ImageCreateFlags::empty(),
     )?;
 
-    let alloc_info = vk::MemoryAllocateInfo::builder()
-        .allocation_size(requirements.size)
-        .memory_type_index(memory_type);
-    let memory = device.allocate_memory(&alloc_info, None)?;
-    device.bind_image_memory(image, memory, 0)?;
-
-    let view_info = vk::ImageViewCreateInfo::builder()
-        .image(image)
-        .view_type(vk::ImageViewType::_2D)
-        .format(vk::Format::R8G8B8A8_UNORM)
-        .subresource_range(
-            vk::ImageSubresourceRange::builder()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .base_mip_level(0)
-                .level_count(1)
-                .base_array_layer(0)
-                .layer_count(1)
-                .build(),
-        );
-    let view = device.create_image_view(&view_info, None)?;
+    let view = create_image_view_2d(
+        device,
+        image,
+        vk::Format::R8G8B8A8_UNORM,
+        vk::ImageViewType::_2D,
+        vk::ImageAspectFlags::COLOR,
+        1,
+    )?;
 
     let image_info = vk::DescriptorImageInfo::builder()
         .sampler(sampler)
@@ -91,15 +67,14 @@ pub unsafe fn create_texture_resource(
         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
         .build();
 
-    let descriptor_write = vk::WriteDescriptorSet::builder()
+    let write = vk::WriteDescriptorSet::builder()
         .dst_set(descriptor_set)
         .dst_binding(0)
         .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
         .image_info(std::slice::from_ref(&image_info))
         .build();
 
-    let writes = [descriptor_write];
-    device.update_descriptor_sets(&writes, &[] as &[vk::CopyDescriptorSet]);
+    device.update_descriptor_sets(&[write], &[] as &[vk::CopyDescriptorSet]);
 
     Ok(GuiTexture {
         image,
