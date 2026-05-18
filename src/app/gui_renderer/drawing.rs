@@ -1,12 +1,12 @@
 use std::mem::size_of;
 
 use anyhow::{Result, anyhow};
-use egui::epaint::{ClippedPrimitive, Primitive};
 use egui::TextureId;
-use glam::UVec2;
+use egui::epaint::{ClippedPrimitive, Primitive};
 use vulkanalia::prelude::v1_0::*;
 
 use crate::vulkan::context::VulkanContext;
+use crate::vulkan::utils::create_buffer;
 
 use super::GuiRenderer;
 
@@ -152,67 +152,30 @@ impl GuiRenderer {
         }
 
         let vertex_size = (draw_data.vertices.len() * size_of::<GuiVertex>()) as vk::DeviceSize;
-        if buffers.vertex_buffer == vk::Buffer::null() || buffers.vertex_capacity < vertex_size {
-            if buffers.vertex_buffer != vk::Buffer::null() {
-                device.destroy_buffer(buffers.vertex_buffer, None);
-                buffers.vertex_buffer = vk::Buffer::null();
-            }
-            if buffers.vertex_memory != vk::DeviceMemory::null() {
-                device.free_memory(buffers.vertex_memory, None);
-                buffers.vertex_memory = vk::DeviceMemory::null();
-            }
-            let (buffer, memory, capacity) = Self::create_gui_buffer(
-                instance,
-                device,
-                physical_device,
-                vertex_size.max(1),
-                vk::BufferUsageFlags::VERTEX_BUFFER,
-            )?;
-            buffers.vertex_buffer = buffer;
-            buffers.vertex_memory = memory;
-            buffers.vertex_capacity = capacity;
-        }
-
-        let ptr = device.map_memory(
-            buffers.vertex_memory,
-            0,
+        ensure_host_buffer(
+            instance,
+            device,
+            physical_device,
+            &mut buffers.vertex_buffer,
+            &mut buffers.vertex_memory,
+            &mut buffers.vertex_capacity,
             vertex_size,
-            vk::MemoryMapFlags::empty(),
-        )? as *mut GuiVertex;
-        ptr.copy_from_nonoverlapping(draw_data.vertices.as_ptr(), draw_data.vertices.len());
-        device.unmap_memory(buffers.vertex_memory);
+            vk::BufferUsageFlags::VERTEX_BUFFER,
+        )?;
+        write_mapped(device, buffers.vertex_memory, vertex_size, &draw_data.vertices)?;
 
         let index_size = (draw_data.indices.len() * size_of::<u32>()) as vk::DeviceSize;
-        if buffers.index_buffer == vk::Buffer::null() || buffers.index_capacity < index_size {
-            if buffers.index_buffer != vk::Buffer::null() {
-                device.destroy_buffer(buffers.index_buffer, None);
-                buffers.index_buffer = vk::Buffer::null();
-            }
-            if buffers.index_memory != vk::DeviceMemory::null() {
-                device.free_memory(buffers.index_memory, None);
-                buffers.index_memory = vk::DeviceMemory::null();
-            }
-
-            let (buffer, memory, capacity) = Self::create_gui_buffer(
-                instance,
-                device,
-                physical_device,
-                index_size.max(1),
-                vk::BufferUsageFlags::INDEX_BUFFER,
-            )?;
-            buffers.index_buffer = buffer;
-            buffers.index_memory = memory;
-            buffers.index_capacity = capacity;
-        }
-
-        let ptr = device.map_memory(
-            buffers.index_memory,
-            0,
+        ensure_host_buffer(
+            instance,
+            device,
+            physical_device,
+            &mut buffers.index_buffer,
+            &mut buffers.index_memory,
+            &mut buffers.index_capacity,
             index_size,
-            vk::MemoryMapFlags::empty(),
-        )? as *mut u32;
-        ptr.copy_from_nonoverlapping(draw_data.indices.as_ptr(), draw_data.indices.len());
-        device.unmap_memory(buffers.index_memory);
+            vk::BufferUsageFlags::INDEX_BUFFER,
+        )?;
+        write_mapped(device, buffers.index_memory, index_size, &draw_data.indices)?;
 
         buffers.uploaded_generation = Some(draw_data.generation);
         Ok(())
@@ -418,4 +381,51 @@ impl GuiRenderer {
             },
         })
     }
+}
+
+unsafe fn ensure_host_buffer(
+    instance: &Instance,
+    device: &Device,
+    physical_device: vk::PhysicalDevice,
+    buffer: &mut vk::Buffer,
+    memory: &mut vk::DeviceMemory,
+    capacity: &mut vk::DeviceSize,
+    needed: vk::DeviceSize,
+    usage: vk::BufferUsageFlags,
+) -> Result<()> {
+    if *buffer != vk::Buffer::null() && *capacity >= needed {
+        return Ok(());
+    }
+    if *buffer != vk::Buffer::null() {
+        device.destroy_buffer(*buffer, None);
+        *buffer = vk::Buffer::null();
+    }
+    if *memory != vk::DeviceMemory::null() {
+        device.free_memory(*memory, None);
+        *memory = vk::DeviceMemory::null();
+    }
+    let (new_buffer, new_memory) = create_buffer(
+        instance,
+        device,
+        physical_device,
+        needed.max(1),
+        usage,
+        vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+    )?;
+    *buffer = new_buffer;
+    *memory = new_memory;
+    *capacity = needed.max(1);
+    Ok(())
+}
+
+unsafe fn write_mapped<T: Copy>(
+    device: &Device,
+    memory: vk::DeviceMemory,
+    size: vk::DeviceSize,
+    src: &[T],
+) -> Result<()> {
+    let ptr = device.map_memory(memory, 0, size, vk::MemoryMapFlags::empty())? as *mut T;
+    ptr.copy_from_nonoverlapping(src.as_ptr(), src.len());
+    device.unmap_memory(memory);
+    Ok(())
 }

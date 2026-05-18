@@ -39,7 +39,7 @@ pub unsafe fn create_render_pass(
     device: &Device,
     swapchain_format: vk::Format,
 ) -> Result<vk::RenderPass> {
-    // Attachments
+    // attachments
 
     let color_attachment = vk::AttachmentDescription::builder()
         .format(swapchain_format)
@@ -51,7 +51,7 @@ pub unsafe fn create_render_pass(
         .initial_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
         .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
 
-    // Subpasses
+    // subpasses
 
     let color_attachment_ref = vk::AttachmentReference::builder()
         .attachment(0)
@@ -62,7 +62,7 @@ pub unsafe fn create_render_pass(
         .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
         .color_attachments(color_attachments);
 
-    // Dependencies
+    // dependencies
 
     let dependency = vk::SubpassDependency::builder()
         .src_subpass(vk::SUBPASS_EXTERNAL)
@@ -72,7 +72,7 @@ pub unsafe fn create_render_pass(
         .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
         .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
 
-    // Create
+    // create
 
     let attachments = &[color_attachment];
     let subpasses = &[subpass];

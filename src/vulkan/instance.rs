@@ -15,7 +15,7 @@ pub unsafe fn create_instance(
     window: &Window,
     entry: &Entry,
 ) -> Result<(Instance, vk::DebugUtilsMessengerEXT)> {
-    // Application Info
+    // app info
 
     let application_info = vk::ApplicationInfo::builder()
         .application_name(b"Vulkan Tutorial (Rust)\0")
@@ -24,7 +24,7 @@ pub unsafe fn create_instance(
         .engine_version(vk::make_version(1, 0, 0))
         .api_version(vk::make_version(1, 0, 0));
 
-    // Layers
+    // layers
 
     let available_layers = entry
         .enumerate_instance_layer_properties()?
@@ -42,14 +42,14 @@ pub unsafe fn create_instance(
         Vec::new()
     };
 
-    // Extensions
+    // extensions
 
     let mut extensions = vk_window::get_required_instance_extensions(window)
         .iter()
         .map(|e| e.as_ptr())
         .collect::<Vec<_>>();
 
-    // Required by Vulkan SDK on macOS since 1.3.216.
+    // macos portability since 1.3.216
     let flags = if cfg!(target_os = "macos") && entry.version()? >= PORTABILITY_MACOS_VERSION {
         info!("Enabling extensions for macOS portability.");
         extensions.push(
@@ -67,7 +67,7 @@ pub unsafe fn create_instance(
         extensions.push(vk::EXT_DEBUG_UTILS_EXTENSION.name.as_ptr());
     }
 
-    // Create
+    // create
 
     let mut info = vk::InstanceCreateInfo::builder()
         .application_info(&application_info)
@@ -90,7 +90,7 @@ pub unsafe fn create_instance(
 
     let instance = entry.create_instance(&info, None)?;
 
-    // Messenger
+    // messenger
 
     let messenger = if VALIDATION_ENABLED {
         instance.create_debug_utils_messenger_ext(&debug_info, None)?

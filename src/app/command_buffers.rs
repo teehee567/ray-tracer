@@ -1,8 +1,8 @@
 use log::info;
 use vulkanalia::prelude::v1_0::*;
 
-use crate::vulkan::compute::ComputeResources;
-use crate::vulkan::gui_renderer::GuiRenderer;
+use crate::app::compute_renderer::ComputeResources;
+use crate::app::gui_renderer::GuiRenderer;
 use crate::vulkan::swapchain_data::SwapchainData;
 use crate::OFFSCREEN_FRAME_COUNT;
 use crate::TILE_SIZE;

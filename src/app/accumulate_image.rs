@@ -1,8 +1,8 @@
 use anyhow::Result;
 use vulkanalia::prelude::v1_0::*;
 
-use super::image::{cmd_transition_image_layout, create_image_2d, create_image_view_2d};
-use super::single_time::with_single_time;
+use crate::vulkan::image::{cmd_transition_image_layout, create_image_2d, create_image_view_2d};
+use crate::vulkan::single_time::with_single_time;
 
 pub unsafe fn create_image(
     instance: &Instance,

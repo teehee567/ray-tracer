@@ -1,4 +1,5 @@
 mod drawing;
+mod gui_texture;
 mod pipeline;
 mod textures;
 
@@ -9,12 +10,13 @@ use egui::TextureId;
 use glam::UVec2;
 use vulkanalia::prelude::v1_0::*;
 
-use crate::OFFSCREEN_FRAME_COUNT;
 use crate::vulkan::context::VulkanContext;
-use crate::vulkan::texture::GuiTexture;
+
+use super::constants::OFFSCREEN_FRAME_COUNT;
 
 use drawing::GuiFrameBuffers;
 pub(crate) use drawing::{GuiDrawData, GuiVertex};
+use gui_texture::{GuiTexture, create_gui_texture, destroy_gui_texture};
 use pipeline::{
     create_gui_descriptor_pool, create_gui_descriptor_set_layout, create_gui_pipeline,
     create_gui_pipeline_layout, create_gui_sampler,
@@ -77,7 +79,7 @@ impl GuiRenderer {
             fallback: GuiTexture::default(),
         };
 
-        let fallback = crate::vulkan::texture::create_texture_resource(
+        let fallback = create_gui_texture(
             instance,
             device,
             ctx.physical_device,
@@ -90,7 +92,7 @@ impl GuiRenderer {
             instance,
             device,
             ctx,
-            &fallback,
+            fallback.image,
             &[255u8, 255, 255, 255],
             [1, 1],
             None,
@@ -137,31 +139,11 @@ impl GuiRenderer {
             buffers.destroy(device);
         }
 
-        for texture in self.textures.values() {
-            if texture.view != vk::ImageView::null() {
-                device.destroy_image_view(texture.view, None);
-            }
-            if texture.image != vk::Image::null() {
-                device.destroy_image(texture.image, None);
-            }
-            if texture.memory != vk::DeviceMemory::null() {
-                device.free_memory(texture.memory, None);
-            }
+        for (_, mut texture) in self.textures.drain() {
+            let _ = destroy_gui_texture(device, self.descriptor_pool, &mut texture);
         }
-        self.textures.clear();
 
-        if self.fallback.view != vk::ImageView::null() {
-            device.destroy_image_view(self.fallback.view, None);
-            self.fallback.view = vk::ImageView::null();
-        }
-        if self.fallback.image != vk::Image::null() {
-            device.destroy_image(self.fallback.image, None);
-            self.fallback.image = vk::Image::null();
-        }
-        if self.fallback.memory != vk::DeviceMemory::null() {
-            device.free_memory(self.fallback.memory, None);
-            self.fallback.memory = vk::DeviceMemory::null();
-        }
+        let _ = destroy_gui_texture(device, self.descriptor_pool, &mut self.fallback);
 
         if self.descriptor_pool != vk::DescriptorPool::null() {
             device.destroy_descriptor_pool(self.descriptor_pool, None);

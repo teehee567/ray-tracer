@@ -75,8 +75,7 @@ pub unsafe fn create_image_view_2d(
     Ok(device.create_image_view(&info, None)?)
 }
 
-/// Record an image layout transition into an existing command buffer.
-/// Covers every transition the codebase actually performs.
+// record image layout transition into existing command buffer
 pub unsafe fn cmd_transition_image_layout(
     device: &Device,
     command_buffer: vk::CommandBuffer,

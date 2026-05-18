@@ -24,7 +24,7 @@ impl Default for GuiTexture {
     }
 }
 
-pub unsafe fn create_texture_resource(
+pub unsafe fn create_gui_texture(
     instance: &Instance,
     device: &Device,
     physical_device: vk::PhysicalDevice,
@@ -83,4 +83,28 @@ pub unsafe fn create_texture_resource(
         descriptor_set,
         size,
     })
+}
+
+pub unsafe fn destroy_gui_texture(
+    device: &Device,
+    pool: vk::DescriptorPool,
+    texture: &mut GuiTexture,
+) -> Result<()> {
+    if texture.view != vk::ImageView::null() {
+        device.destroy_image_view(texture.view, None);
+        texture.view = vk::ImageView::null();
+    }
+    if texture.image != vk::Image::null() {
+        device.destroy_image(texture.image, None);
+        texture.image = vk::Image::null();
+    }
+    if texture.memory != vk::DeviceMemory::null() {
+        device.free_memory(texture.memory, None);
+        texture.memory = vk::DeviceMemory::null();
+    }
+    if texture.descriptor_set != vk::DescriptorSet::null() {
+        device.free_descriptor_sets(pool, &[texture.descriptor_set])?;
+        texture.descriptor_set = vk::DescriptorSet::null();
+    }
+    Ok(())
 }

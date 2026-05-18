@@ -16,28 +16,28 @@ use winit::window::Window;
 use crate::gui;
 use crate::scene::Scene;
 use crate::types::{AUVec2, Au32, CameraBufferObject};
-use crate::vulkan::accumulate_image::{create_image, transition_image_layout};
-use crate::vulkan::buffers::{create_shader_buffers, create_uniform_buffer};
-use crate::vulkan::command_buffers::{
+use crate::app::accumulate_image::{create_image, transition_image_layout};
+use crate::app::command_buffers::{
     create_command_buffer, record_compute_commands, record_present_commands,
 };
-use crate::vulkan::command_pool::create_command_pool;
-use crate::vulkan::compute::ComputeResources;
-use crate::vulkan::context::VulkanContext;
-use crate::vulkan::descriptors::{
-    create_compute_descriptor_set_layout, create_descriptor_pool, create_descriptor_sets,
+use crate::app::compute_renderer::{
+    ComputeResources, create_compute_descriptor_set_layout,
+    create_path_tracer_descriptor_pool, create_path_tracer_descriptor_sets,
 };
+use crate::app::gui_renderer::GuiRenderer;
+use crate::app::scene_resources::SceneResources;
+use crate::vulkan::buffers::{create_shader_buffers, create_uniform_buffer};
+use crate::vulkan::command_pool::create_command_pool;
+use crate::vulkan::context::VulkanContext;
 use crate::vulkan::fps_counter::FPSCounter;
 use crate::vulkan::framebuffer::{
     create_framebuffer_images, create_swapchain_framebuffers, transition_framebuffer_images,
 };
-use crate::vulkan::gui_renderer::GuiRenderer;
 use crate::vulkan::instance::create_instance;
 use crate::vulkan::logical_device::create_logical_device;
 use crate::vulkan::physical_device::pick_physical_device;
 use crate::vulkan::pipeline::{create_compute_pipeline, create_render_pass};
 use crate::vulkan::sampler::create_sampler;
-use crate::vulkan::scene_resources::SceneResources;
 use crate::vulkan::swapchain::{create_swapchain, create_swapchain_image_views};
 use crate::vulkan::swapchain_data::SwapchainData;
 use crate::vulkan::sync::SyncState;
@@ -187,13 +187,13 @@ impl App {
             create_compute_descriptor_set_layout(&device, textures.len())?;
         let (compute_pipeline_layout, compute_pipeline) =
             create_compute_pipeline(&device, descriptor_set_layout)?;
-        let descriptor_pool = create_descriptor_pool(
+        let descriptor_pool = create_path_tracer_descriptor_pool(
             &device,
             framebuffer_image_views.len(),
             textures.len(),
         )?;
         let sampler = create_sampler(&device)?;
-        let descriptor_sets = create_descriptor_sets(
+        let descriptor_sets = create_path_tracer_descriptor_sets(
             &device,
             descriptor_set_layout,
             descriptor_pool,
