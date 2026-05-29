@@ -304,6 +304,8 @@ impl App {
 
         self.scene_res.scene.write_buffers(mapped_ptr);
 
+        self.device.unmap_memory(self.compute.ssbo_buffer_memory);
+
         println!(
             "sizes: bvh({}), mat({}), tri({}), lights({}), emissive_tris({}), cdf({})",
             sizes.0, sizes.1, sizes.2, sizes.3, sizes.4, sizes.5

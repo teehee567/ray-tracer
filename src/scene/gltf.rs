@@ -349,8 +349,8 @@ impl Scene {
         let transmission = Af32(
             material
                 .transmission()
-                .and_then(|ext| Some(ext.transmission_factor()))
-                .unwrap_or(1.0 - base_color[3]),
+                .map(|ext| ext.transmission_factor())
+                .unwrap_or(0.0),
         );
 
         // Get emissive strength from extension
@@ -443,14 +443,11 @@ impl Scene {
                 let transform = Mat4::from_cols_array_2d(&node.transform().matrix());
                 let position = transform.col(3).truncate();
 
-                self.components.camera.focal_length = Af32(persp.yfov().to_degrees());
-                self.components.camera.focus_distance = Af32(persp.znear());
-                self.components.camera.location =
-                    AVec3(Vec3::new(position.x, position.y, position.z));
+                let focal_length = 1.0 / (persp.yfov() * 0.5).tan();
+                self.components.camera.focal_length = Af32(focal_length);
+                self.components.camera.location = AVec3(position);
 
-                // Extract rotation from transform
-                self.components.camera.rotation =
-                    AMat4(Mat4::from_cols_array_2d(&node.transform().matrix()));
+                self.components.camera.rotation = AMat4(transform);
             }
             gltf::camera::Projection::Orthographic(_) => {
                 unimplemented!("ORTHOGAPHIC CAMERA NOT IMPLEMENTED")
