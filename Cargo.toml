@@ -28,3 +28,10 @@ winit = "0.29"
 
 [profile.release]
 debug = 2
+
+[dev-dependencies]
+criterion = "0.8.2"
+
+[[bench]]
+name = "bvh"
+harness = false
