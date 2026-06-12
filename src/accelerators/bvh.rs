@@ -1,5 +1,6 @@
 use glam::Vec3;
 
+use crate::accelerators::Accelerator;
 use crate::{AVec3, Au32, Material, Triangle};
 
 const MAX_VAL: AVec3 = AVec3(Vec3 {
@@ -127,6 +128,16 @@ impl BvhNode {
             let amt_ptr = max_ptr.add(12) as *const Au32;
             (*amt_ptr).0
         }
+    }
+}
+
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Bvh;
+
+impl Accelerator for Bvh {
+    fn build(&self, triangles: &mut Vec<Triangle>, materials: &mut Vec<Material>) -> Vec<BvhNode> {
+        BvhBuilder::new(triangles, materials).build_bvh()
     }
 }
 

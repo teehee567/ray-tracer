@@ -1,5 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-use raytracer::accelerators::bvh::BvhBuilder;
+use raytracer::accelerators::bvh::Bvh;
+use raytracer::accelerators::Accelerator;
 use raytracer::scene::Scene;
 use raytracer::Material;
 use std::hint::black_box;
@@ -19,8 +20,8 @@ fn bench_bvh_build(c: &mut Criterion) {
         b.iter(|| {
             let mut triangles = triangles.clone();
             let mut materials = vec![Material::default()];
-            let nodes = BvhBuilder::new(black_box(&mut triangles), black_box(&mut materials))
-                .build_bvh();
+            let nodes =
+                Bvh::default().build(black_box(&mut triangles), black_box(&mut materials));
             black_box(nodes.len())
         });
     });

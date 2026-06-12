@@ -3,7 +3,8 @@ use std::os::raw::c_void;
 use std::path::Path;
 use std::time::Instant;
 
-use crate::accelerators::bvh::BvhBuilder;
+use crate::accelerators::bvh::Bvh;
+use crate::accelerators::Accelerator;
 use crate::{Af32, Au32, CameraBufferObject, EmissiveTri, MeshLightSampler, SceneComponents};
 
 use anyhow::Result;
@@ -79,11 +80,11 @@ impl Scene {
         // let file = File::create("bvh.bin").unwrap();
         // let writer = BufWriter::new(file);
 
-        let builder = BvhBuilder::new(
+        let accelerator = Bvh::default();
+        self.components.bvh = accelerator.build(
             &mut self.components.triangles,
             &mut self.components.materials,
         );
-        self.components.bvh = builder.build_bvh();
 
         // serialize_into(writer, &self.components.bvh).unwrap();
         //
