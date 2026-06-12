@@ -3,6 +3,7 @@ use std::os::raw::c_void;
 use std::path::Path;
 use std::time::Instant;
 
+use crate::accelerators::bin_sah::BinSah;
 use crate::accelerators::bvh::Bvh;
 use crate::accelerators::Accelerator;
 use crate::{Af32, Au32, CameraBufferObject, EmissiveTri, MeshLightSampler, SceneComponents};
@@ -80,7 +81,7 @@ impl Scene {
         // let file = File::create("bvh.bin").unwrap();
         // let writer = BufWriter::new(file);
 
-        let accelerator = Bvh::default();
+        let accelerator = BinSah::spatial();
         self.components.bvh = accelerator.build(
             &mut self.components.triangles,
             &mut self.components.materials,

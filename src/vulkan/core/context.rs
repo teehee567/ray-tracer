@@ -8,7 +8,7 @@ use vulkanalia::loader::{LIBRARY, LibloadingLoader};
 use vulkanalia::window as vk_window;
 use vulkanalia::{
     prelude::v1_0::*,
-    vk::{ExtDebugUtilsExtension, InstanceV1_1, KhrSurfaceExtension},
+    vk::{ExtDebugUtilsExtension, KhrSurfaceExtension},
 };
 use winit::window::Window;
 
@@ -149,7 +149,7 @@ unsafe fn create_instance(
         .application_version(vk::make_version(1, 0, 0))
         .engine_name(b"No Engine\0")
         .engine_version(vk::make_version(1, 0, 0))
-        .api_version(vk::make_version(1, 0, 0));
+        .api_version(vk::make_version(1, 2, 0));
 
     // layers
 
@@ -326,13 +326,6 @@ unsafe fn create_logical_device(
         })
         .collect::<Vec<_>>();
 
-    // Layers
-    let layers = if VALIDATION_ENABLED {
-        vec![VALIDATION_LAYER.as_ptr()]
-    } else {
-        vec![]
-    };
-
     // Extensions
     let mut extensions = DEVICE_EXTENSIONS
         .iter()
@@ -362,17 +355,14 @@ unsafe fn create_logical_device(
         .descriptor_binding_variable_descriptor_count(true)
         .shader_sampled_image_array_non_uniform_indexing(true);
 
-    // Create
+    // Create. Note: device layers have been deprecated since Vulkan 1.0 — only instance
+    // layers are used (the validation layer is already enabled at instance creation), so we
+    // must not set enabled_layer_names here (enabledLayerCount must be 0).
     let info = vk::DeviceCreateInfo::builder()
         .push_next(&mut features12)
         .queue_create_infos(&queue_infos)
-        .enabled_layer_names(&layers)
         .enabled_extension_names(&extensions)
         .enabled_features(&features);
-
-    // Check device properties
-    let mut device_properties = vk::PhysicalDeviceProperties2::default();
-    instance.get_physical_device_properties2(physical_device, &mut device_properties);
 
     let device = instance.create_device(physical_device, &info, None)?;
     info!("Created Logical Device, {:?}", device);

@@ -148,25 +148,34 @@ fn render_loop(
         }
 
         if present_requested {
-            let gui_frame = if let Ok(mut state) = gui_shared.write() {
-                state.take_latest()
-            } else {
-                None
-            };
-            if let Some(new_frame) = ready.pop_back() {
+            // Pick the frame to present BEFORE taking the GUI frame: a taken
+            // GUI frame that never reaches present_frame loses its texture
+            // deltas (the font atlas is only ever uploaded once), so when
+            // there is nothing to present yet it must stay pending.
+            let target = if let Some(new_frame) = ready.pop_back() {
                 while let Some(stale) = ready.pop_front() {
                     available.push_back(stale);
                 }
+                Some((new_frame, true))
+            } else {
+                current_frame.map(|frame| (frame, false))
+            };
 
-                if let Err(err) = unsafe { renderer.present_frame(new_frame, gui_frame.clone()) } {
+            if let Some((frame_index, is_new)) = target {
+                let gui_frame = if let Ok(mut state) = gui_shared.write() {
+                    state.take_latest()
+                } else {
+                    None
+                };
+                if let Err(err) = unsafe { renderer.present_frame(frame_index, gui_frame) } {
                     error!("present error: {err:?}");
-                    available.push_back(new_frame);
-                } else if let Some(previous) = current_frame.replace(new_frame) {
-                    available.push_back(previous);
-                }
-            } else if let Some(current) = current_frame {
-                if let Err(err) = unsafe { renderer.present_frame(current, gui_frame.clone()) } {
-                    error!("present error: {err:?}");
+                    if is_new {
+                        available.push_back(frame_index);
+                    }
+                } else if is_new {
+                    if let Some(previous) = current_frame.replace(frame_index) {
+                        available.push_back(previous);
+                    }
                 }
             }
         }

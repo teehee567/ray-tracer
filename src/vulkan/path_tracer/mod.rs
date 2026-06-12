@@ -95,9 +95,10 @@ impl PathTracer {
         )?;
 
         let scene_sizes = buffer_sizes(scene);
+        // pad so the dummy descriptor ranges bound for empty regions
         let ssbo = Buffer::new_host(
             ctx,
-            scene_sizes.iter().sum(),
+            scene_sizes.iter().sum::<u64>() + 4,
             vk::BufferUsageFlags::STORAGE_BUFFER,
         )?;
 

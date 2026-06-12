@@ -36,7 +36,12 @@ impl VulkanRenderer {
         let ctx = VulkanContext::new(window)?;
         let swapchain = Swapchain::new(&ctx, window)?;
         let path_tracer = PathTracer::new(&ctx, &scene, swapchain.format, swapchain.extent)?;
-        let sync = SyncState::new(&ctx.device, ctx.command_pool, OFFSCREEN_FRAME_COUNT)?;
+        let sync = SyncState::new(
+            &ctx.device,
+            ctx.command_pool,
+            OFFSCREEN_FRAME_COUNT,
+            swapchain.images.len(),
+        )?;
 
         info!("Finished initialisation of Vulkan Resources");
         let render_resolution = scene.get_camera_controls().resolution.0;
@@ -112,6 +117,13 @@ impl VulkanRenderer {
     ) -> Result<()> {
         let device = &self.ctx.device;
 
+        device.wait_for_fences(&[self.sync.frame_fences[frame_index]], true, u64::MAX)?;
+
+        // the GUI update below may destroy and recreate vertex/index buffers
+        // and textures, so the previous present commands must have finished
+        device.wait_for_fences(&[self.sync.present_fence], true, u64::MAX)?;
+        device.reset_fences(&[self.sync.present_fence])?;
+
         if let Some(frame) = gui_frame.as_deref() {
             self.gui.update(&self.ctx, self.swapchain.extent, frame)?;
         }
@@ -120,11 +132,6 @@ impl VulkanRenderer {
 
         let render_extent = self.gui.render_extent();
         let panel_width = self.gui.panel_width();
-
-        device.wait_for_fences(&[self.sync.frame_fences[frame_index]], true, u64::MAX)?;
-
-        device.wait_for_fences(&[self.sync.present_fence], true, u64::MAX)?;
-        device.reset_fences(&[self.sync.present_fence])?;
 
         let result = device.acquire_next_image_khr(
             self.swapchain.swapchain,
@@ -157,7 +164,7 @@ impl VulkanRenderer {
 
         let wait_semaphores = &[self.sync.image_available_semaphore];
         let command_buffers = &[self.sync.present_command_buffer];
-        let signal_semaphores = &[self.sync.compute_finished_semaphore];
+        let signal_semaphores = &[self.sync.render_finished_semaphores[image_index]];
         let wait_stage_masks =
             [vk::PipelineStageFlags::TRANSFER | vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
         let submit_info = vk::SubmitInfo::builder()

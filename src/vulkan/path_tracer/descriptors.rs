@@ -83,7 +83,7 @@ pub(super) unsafe fn create_sets(
     let mut ssbo_infos = [vk::DescriptorBufferInfo::default(); 6];
     let mut offset = 0;
     for (info, &size) in ssbo_infos.iter_mut().zip(scene_sizes) {
-        *info = buffer_info(ssbo.buffer, offset, size);
+        *info = buffer_info(ssbo.buffer, offset, size.max(4));
         offset += size;
     }
     let [bvh, materials, triangles, lights, emissive, cdf] = ssbo_infos.map(|i| [i]);

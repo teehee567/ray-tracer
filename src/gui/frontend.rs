@@ -1,3 +1,4 @@
+use std::mem;
 use std::sync::{Arc, RwLock};
 
 use super::GuiData;
@@ -30,7 +31,9 @@ impl GuiState {
     fn update(&mut self, mut frame: GuiFrame) {
         if let Some(pending) = self.latest.take() {
             if let Ok(pending_frame) = Arc::try_unwrap(pending) {
-                frame.textures_delta.append(pending_frame.textures_delta);
+                let mut merged = pending_frame.textures_delta;
+                merged.append(mem::take(&mut frame.textures_delta));
+                frame.textures_delta = merged;
             } else {
                 // The render thread is already presenting the pending frame, so its
                 // texture uploads will be consumed directly from that clone.
