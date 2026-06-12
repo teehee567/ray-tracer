@@ -1,4 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use raytracer::accelerators::bin_sah::BinSah;
 use raytracer::accelerators::bvh::Bvh;
 use raytracer::accelerators::Accelerator;
 use raytracer::scene::Scene;
@@ -22,6 +23,16 @@ fn bench_bvh_build(c: &mut Criterion) {
             let mut materials = vec![Material::default()];
             let nodes =
                 Bvh::default().build(black_box(&mut triangles), black_box(&mut materials));
+            black_box(nodes.len())
+        });
+    });
+
+    group.bench_function("bin_sah/sponza", |b| {
+        b.iter(|| {
+            let mut triangles = triangles.clone();
+            let mut materials = vec![Material::default()];
+            let nodes =
+                BinSah::default().build(black_box(&mut triangles), black_box(&mut materials));
             black_box(nodes.len())
         });
     });

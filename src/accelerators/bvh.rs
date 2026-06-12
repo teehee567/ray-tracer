@@ -61,6 +61,42 @@ impl Default for BvhNode {
 }
 
 impl BvhNode {
+    pub(crate) fn leaf(min: Vec3, max: Vec3, idx: u32, amt: u32) -> Self {
+        let mut node = Self {
+            min_idx: MinIdxUnion { min: AVec3(min) },
+            max_amt: MaxAmtUnion { max: AVec3(max) },
+        };
+        node.set_idx(idx);
+        node.set_amt(amt);
+        node
+    }
+
+    pub(crate) fn interior(min: Vec3, max: Vec3, left: u32) -> Self {
+        let mut node = Self {
+            min_idx: MinIdxUnion { min: AVec3(min) },
+            max_amt: MaxAmtUnion { max: AVec3(max) },
+        };
+        node.set_idx(left);
+        node.set_amt(0);
+        node
+    }
+
+    fn set_idx(&mut self, idx: u32) {
+        unsafe {
+            let min_ptr = &mut self.min_idx.min as *mut AVec3 as *mut u8;
+            let idx_ptr = min_ptr.add(12) as *mut Au32;
+            *idx_ptr = Au32(idx);
+        }
+    }
+
+    fn set_amt(&mut self, amt: u32) {
+        unsafe {
+            let max_ptr = &mut self.max_amt.max as *mut AVec3 as *mut u8;
+            let amt_ptr = max_ptr.add(12) as *mut Au32;
+            *amt_ptr = Au32(amt);
+        }
+    }
+
     fn area(&self) -> f32 {
         unsafe {
             let min = self.min_idx.min.0;

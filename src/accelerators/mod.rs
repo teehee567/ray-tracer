@@ -5,6 +5,7 @@ use glam::Vec3;
 use crate::{Material, Triangle};
 
 pub mod aabb;
+pub mod bin_sah;
 pub mod bvh;
 
 pub trait Primitive: Send + Sync {
