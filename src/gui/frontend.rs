@@ -139,13 +139,20 @@ impl GuiFrontend {
                     }
                 }
             }
-            WindowEvent::MouseWheel { delta, .. } => {
+            WindowEvent::MouseWheel { delta, phase, .. } => {
                 if self.pointer_inside {
+                    let phase = match phase {
+                        winit::event::TouchPhase::Started => egui::TouchPhase::Start,
+                        winit::event::TouchPhase::Moved => egui::TouchPhase::Move,
+                        winit::event::TouchPhase::Ended => egui::TouchPhase::End,
+                        winit::event::TouchPhase::Cancelled => egui::TouchPhase::Cancel,
+                    };
                     match delta {
                         MouseScrollDelta::LineDelta(x, y) => {
                             self.raw_events.push(Event::MouseWheel {
                                 unit: MouseWheelUnit::Line,
                                 delta: vec2(*x, *y),
+                                phase,
                                 modifiers: self.modifiers,
                             });
                         }
@@ -153,6 +160,7 @@ impl GuiFrontend {
                             self.raw_events.push(Event::MouseWheel {
                                 unit: MouseWheelUnit::Point,
                                 delta: vec2(pos.x as f32, pos.y as f32),
+                                phase,
                                 modifiers: self.modifiers,
                             });
                         }
@@ -216,9 +224,9 @@ impl GuiFrontend {
         let pixels_per_point = self.pixels_per_point;
         let ui_fps = self.ui_fps_counter.get_fps();
 
-        let full_output = self.ctx.run(raw_input, |ctx| {
+        let full_output = self.ctx.run_ui(raw_input, |ui| {
             self.panels.draw(
-                ctx,
+                ui,
                 gui_data.as_ref(),
                 panel_height,
                 pixels_per_point,

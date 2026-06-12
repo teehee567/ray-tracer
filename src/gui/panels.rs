@@ -21,16 +21,16 @@ impl GuiPanels {
 
     pub fn draw(
         &mut self,
-        ctx: &egui::Context,
+        root_ui: &mut egui::Ui,
         gui_data: Option<&GuiData>,
         panel_height: u32,
         pixels_per_point: f32,
         ui_fps: f64,
     ) {
-        egui::SidePanel::left("control_panel")
+        egui::Panel::left("control_panel")
             .resizable(false)
-            .exact_width(PANEL_WIDTH_POINTS)
-            .show(ctx, |ui| {
+            .exact_size(PANEL_WIDTH_POINTS)
+            .show_inside(root_ui, |ui| {
                 ui.heading("Ray Tracer");
                 ui.label(format!("v{}", env!("CARGO_PKG_VERSION")));
                 ui.separator();
@@ -74,6 +74,6 @@ impl GuiPanels {
                 ui.label(format!("Resolution: {} × {} px", width_px, panel_height));
             });
 
-        egui::CentralPanel::default().show(ctx, |_| {});
+        egui::CentralPanel::default().show_inside(root_ui, |_| {});
     }
 }
