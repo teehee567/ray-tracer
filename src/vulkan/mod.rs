@@ -1,20 +1,13 @@
-pub mod bufferbuilder;
-pub mod buffers;
-pub mod command_pool;
-pub mod context;
-pub mod descriptors;
-pub mod fps_counter;
-pub mod framebuffer;
-pub mod image;
-pub mod instance;
-pub mod logical_device;
-pub mod physical_device;
-pub mod pipeline;
-pub mod sampler;
-pub mod single_time;
-pub mod swapchain;
-pub mod swapchain_data;
-pub mod sync;
-pub mod sync_objects;
-pub mod texture;
-pub mod utils;
+//! The Vulkan backend. The rest of the crate interacts with it solely
+//! through [`VulkanRenderer`] and [`OFFSCREEN_FRAME_COUNT`]; no vulkanalia
+//! types escape this module.
+
+pub mod constants;
+pub mod core;
+mod gui_renderer;
+mod path_tracer;
+mod present;
+mod renderer;
+
+pub use constants::OFFSCREEN_FRAME_COUNT;
+pub use renderer::VulkanRenderer;

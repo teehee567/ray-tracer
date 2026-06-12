@@ -4,17 +4,19 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::accelerators::bvh::BvhBuilder;
-use crate::{CameraBufferObject, SceneComponents, EmissiveTri, MeshLightSampler, Light, Material, Triangle, Au32, Af32, AVec3};
+use crate::{Af32, Au32, CameraBufferObject, EmissiveTri, MeshLightSampler, SceneComponents};
 
 use anyhow::Result;
-use glam::Vec3;
 
-const CONFIG_VERSION: &str = "0.2";
-
-use crate::vulkan::bufferbuilder::BufferBuilder;
+use bufferbuilder::BufferBuilder;
+pub mod bufferbuilder;
+// alternative scene loaders, kept around but not all wired up
+#[allow(dead_code)]
 pub mod gltf;
 pub mod loader;
+#[allow(dead_code)]
 pub mod weird;
+#[allow(dead_code)]
 pub mod yaml;
 
 #[derive(Clone, Copy, Debug)]

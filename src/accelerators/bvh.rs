@@ -83,7 +83,7 @@ impl BvhNode {
         }
     }
 
-    fn initialize(&mut self, triangles: &Vec<Triangle>, indices: &[u32], offset: u32) {
+    fn initialize(&mut self, triangles: &[Triangle], indices: &[u32], offset: u32) {
         for &i in indices {
             self.expand(&triangles[i as usize]);
         }
@@ -277,7 +277,7 @@ impl<'a> BvhBuilder<'a> {
     fn apply_ordering(items: &mut Vec<Triangle>, ordering: &[u32]) {
         let sorted: Vec<Triangle> = ordering
             .iter()
-            .map(|&i| items[i as usize].clone())
+            .map(|&i| items[i as usize])
             .collect();
         *items = sorted;
     }

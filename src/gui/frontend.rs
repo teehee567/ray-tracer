@@ -2,16 +2,15 @@ use std::sync::{Arc, RwLock};
 
 use super::GuiData;
 use crate::gui::panels::{GuiPanels, GuiTheme};
-use crate::vulkan::fps_counter::FPSCounter;
+use crate::fps_counter::FPSCounter;
 use crossbeam_channel::{Receiver, TryRecvError};
 use egui::epaint::ClippedPrimitive;
 use egui::{
-    self, ComboBox, Event, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2, Rect, Vec2,
-    ViewportId, ViewportInfo, pos2, vec2,
+    self, Event, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2, Rect, ViewportId,
+    ViewportInfo, pos2, vec2,
 };
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::keyboard::ModifiersState;
 use winit::keyboard::{Key as WinitKey, NamedKey};
 use winit::window::Window;
 
@@ -30,7 +29,7 @@ pub struct GuiState {
 impl GuiState {
     fn update(&mut self, mut frame: GuiFrame) {
         if let Some(pending) = self.latest.take() {
-            if let Ok(mut pending_frame) = Arc::try_unwrap(pending) {
+            if let Ok(pending_frame) = Arc::try_unwrap(pending) {
                 frame.textures_delta.append(pending_frame.textures_delta);
             } else {
                 // The render thread is already presenting the pending frame, so its
@@ -95,7 +94,7 @@ impl GuiFrontend {
             pointer_pos: None,
             pointer_inside: false,
             has_focus: true,
-            pixels_per_point: scale_factor as f32,
+            pixels_per_point: scale_factor,
             panel_height: size.height,
             generation: 0,
             gui_data_rx,
@@ -162,12 +161,8 @@ impl GuiFrontend {
                     self.raw_events.push(key_event);
                 }
             }
-            WindowEvent::Ime(ime) => {
-                if let winit::event::Ime::Commit(text) = ime {
-                    if !text.is_empty() {
-                        self.raw_events.push(Event::Text(text.clone()));
-                    }
-                }
+            WindowEvent::Ime(winit::event::Ime::Commit(text)) if !text.is_empty() => {
+                self.raw_events.push(Event::Text(text.clone()));
             }
             _ => {}
         }
@@ -188,11 +183,13 @@ impl GuiFrontend {
             self.panel_height as f32 / self.pixels_per_point
         };
 
-        let mut raw_input = egui::RawInput::default();
-        raw_input.screen_rect = Some(Rect::from_min_size(
-            pos2(0.0, 0.0),
-            vec2(width_points, height_points.max(0.0)),
-        ));
+        let mut raw_input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                pos2(0.0, 0.0),
+                vec2(width_points, height_points.max(0.0)),
+            )),
+            ..Default::default()
+        };
         raw_input.viewports.insert(
             ViewportId::ROOT,
             ViewportInfo {
@@ -201,7 +198,7 @@ impl GuiFrontend {
             },
         );
         raw_input.modifiers = self.modifiers;
-        raw_input.events.extend(self.raw_events.drain(..));
+        raw_input.events.append(&mut self.raw_events);
         raw_input.focused = self.has_focus;
 
         if let Some(pos) = self.pointer_pos {
@@ -210,7 +207,7 @@ impl GuiFrontend {
             raw_input.events.push(Event::PointerGone);
         }
 
-        let mut theme = self.panels.theme;
+        let theme = self.panels.theme;
         let gui_data = self.latest_gui_data;
         let panel_height = self.panel_height;
         let pixels_per_point = self.pixels_per_point;
@@ -360,8 +357,4 @@ impl GuiFrontend {
             GuiTheme::Light => self.ctx.set_visuals(egui::Visuals::light()),
         }
     }
-}
-
-fn is_printable(ch: char) -> bool {
-    !ch.is_control()
 }

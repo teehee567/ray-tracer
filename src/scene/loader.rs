@@ -51,7 +51,7 @@ impl Scene {
                 let name = name.as_str().unwrap();
 
                 let material: Material = serde_yaml::from_value(mat_data.clone())
-                    .expect(&format!("Failed to deserialize material '{}'", name));
+                    .unwrap_or_else(|_| panic!("Failed to deserialize material '{}'", name));
 
                 let material_index = scene.materials.len();
                 material_name_to_index.insert(name.to_string(), material_index);
@@ -69,7 +69,7 @@ impl Scene {
                         .as_str()
                         .expect("Material not specified");
                     let material_index = material_name_to_index[material_name];
-                    let smooth = surface["smooth"].as_bool().unwrap_or(false);
+                    let _smooth = surface["smooth"].as_bool().unwrap_or(false);
 
                     // Load the OBJ file
                     let obj_result = tobj::load_obj(

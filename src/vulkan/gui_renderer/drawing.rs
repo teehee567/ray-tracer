@@ -5,69 +5,32 @@ use egui::TextureId;
 use egui::epaint::{ClippedPrimitive, Primitive};
 use vulkanalia::prelude::v1_0::*;
 
-use crate::vulkan::context::VulkanContext;
-use crate::vulkan::utils::create_buffer;
+use crate::vulkan::core::buffer::Buffer;
+use crate::vulkan::core::context::VulkanContext;
 
 use super::GuiRenderer;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(super) struct GuiFrameBuffers {
-    pub vertex_buffer: vk::Buffer,
-    pub vertex_memory: vk::DeviceMemory,
-    pub vertex_capacity: vk::DeviceSize,
-    pub index_buffer: vk::Buffer,
-    pub index_memory: vk::DeviceMemory,
-    pub index_capacity: vk::DeviceSize,
+    pub vertex: Buffer,
+    pub index: Buffer,
     pub uploaded_generation: Option<u64>,
-}
-
-impl Default for GuiFrameBuffers {
-    fn default() -> Self {
-        Self {
-            vertex_buffer: vk::Buffer::null(),
-            vertex_memory: vk::DeviceMemory::null(),
-            vertex_capacity: 0,
-            index_buffer: vk::Buffer::null(),
-            index_memory: vk::DeviceMemory::null(),
-            index_capacity: 0,
-            uploaded_generation: None,
-        }
-    }
 }
 
 impl GuiFrameBuffers {
     pub(super) unsafe fn destroy(&mut self, device: &Device) {
-        if self.vertex_buffer != vk::Buffer::null() {
-            device.destroy_buffer(self.vertex_buffer, None);
-            self.vertex_buffer = vk::Buffer::null();
-        }
-        if self.vertex_memory != vk::DeviceMemory::null() {
-            device.free_memory(self.vertex_memory, None);
-            self.vertex_memory = vk::DeviceMemory::null();
-        }
-        if self.index_buffer != vk::Buffer::null() {
-            device.destroy_buffer(self.index_buffer, None);
-            self.index_buffer = vk::Buffer::null();
-        }
-        if self.index_memory != vk::DeviceMemory::null() {
-            device.free_memory(self.index_memory, None);
-            self.index_memory = vk::DeviceMemory::null();
-        }
-        self.vertex_capacity = 0;
-        self.index_capacity = 0;
+        self.vertex.destroy(device);
+        self.index.destroy(device);
         self.uploaded_generation = None;
     }
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct GuiDrawData {
+pub(super) struct GuiDrawData {
     pub generation: u64,
     pub vertices: Vec<GuiVertex>,
     pub indices: Vec<u32>,
     pub draws: Vec<GuiDraw>,
-    pub panel_width: u32,
-    pub panel_height: u32,
-    pub pixels_per_point: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -90,8 +53,6 @@ pub struct GuiVertex {
 impl GuiRenderer {
     pub(crate) unsafe fn update(
         &mut self,
-        instance: &Instance,
-        device: &Device,
         ctx: &VulkanContext,
         swap_extent: vk::Extent2D,
         frame: &crate::gui::GuiFrame,
@@ -106,14 +67,12 @@ impl GuiRenderer {
         self.panel_width = frame.panel_width.min(swap_width).min(max_panel_width);
         self.update_render_extent(swap_width, swap_height);
 
-        self.apply_textures(instance, device, ctx, &frame.textures_delta)?;
+        self.apply_textures(ctx, &frame.textures_delta)?;
         self.draw_data = self.build_draw_data(
             &frame.clipped_primitives,
             frame.pixels_per_point,
             frame.panel_width,
             frame.panel_height,
-            swap_width,
-            swap_height,
             frame.generation,
         );
 
@@ -127,9 +86,7 @@ impl GuiRenderer {
 
     pub(crate) unsafe fn prepare_frame(
         &mut self,
-        instance: &Instance,
-        device: &Device,
-        physical_device: vk::PhysicalDevice,
+        ctx: &VulkanContext,
         frame_index: usize,
     ) -> Result<()> {
         let buffers = self
@@ -152,30 +109,16 @@ impl GuiRenderer {
         }
 
         let vertex_size = (draw_data.vertices.len() * size_of::<GuiVertex>()) as vk::DeviceSize;
-        ensure_host_buffer(
-            instance,
-            device,
-            physical_device,
-            &mut buffers.vertex_buffer,
-            &mut buffers.vertex_memory,
-            &mut buffers.vertex_capacity,
-            vertex_size,
-            vk::BufferUsageFlags::VERTEX_BUFFER,
-        )?;
-        write_mapped(device, buffers.vertex_memory, vertex_size, &draw_data.vertices)?;
+        buffers
+            .vertex
+            .ensure_capacity(ctx, vertex_size, vk::BufferUsageFlags::VERTEX_BUFFER)?;
+        buffers.vertex.write(&ctx.device, &draw_data.vertices)?;
 
         let index_size = (draw_data.indices.len() * size_of::<u32>()) as vk::DeviceSize;
-        ensure_host_buffer(
-            instance,
-            device,
-            physical_device,
-            &mut buffers.index_buffer,
-            &mut buffers.index_memory,
-            &mut buffers.index_capacity,
-            index_size,
-            vk::BufferUsageFlags::INDEX_BUFFER,
-        )?;
-        write_mapped(device, buffers.index_memory, index_size, &draw_data.indices)?;
+        buffers
+            .index
+            .ensure_capacity(ctx, index_size, vk::BufferUsageFlags::INDEX_BUFFER)?;
+        buffers.index.write(&ctx.device, &draw_data.indices)?;
 
         buffers.uploaded_generation = Some(draw_data.generation);
         Ok(())
@@ -232,12 +175,12 @@ impl GuiRenderer {
             push_bytes,
         );
 
-        let vertex_buffers = [buffers.vertex_buffer];
+        let vertex_buffers = [buffers.vertex.buffer];
         let offsets = [0u64];
         device.cmd_bind_vertex_buffers(command_buffer, 0, &vertex_buffers, &offsets);
         device.cmd_bind_index_buffer(
             command_buffer,
-            buffers.index_buffer,
+            buffers.index.buffer,
             0,
             vk::IndexType::UINT32,
         );
@@ -274,8 +217,6 @@ impl GuiRenderer {
         pixels_per_point: f32,
         panel_width: u32,
         panel_height: u32,
-        swap_width: u32,
-        swap_height: u32,
         generation: u64,
     ) -> Option<GuiDrawData> {
         if panel_width == 0 || panel_height == 0 {
@@ -353,9 +294,6 @@ impl GuiRenderer {
                 vertices,
                 indices,
                 draws,
-                panel_width: panel_width.min(swap_width),
-                panel_height: panel_height.min(swap_height),
-                pixels_per_point,
             })
         }
     }
@@ -381,51 +319,4 @@ impl GuiRenderer {
             },
         })
     }
-}
-
-unsafe fn ensure_host_buffer(
-    instance: &Instance,
-    device: &Device,
-    physical_device: vk::PhysicalDevice,
-    buffer: &mut vk::Buffer,
-    memory: &mut vk::DeviceMemory,
-    capacity: &mut vk::DeviceSize,
-    needed: vk::DeviceSize,
-    usage: vk::BufferUsageFlags,
-) -> Result<()> {
-    if *buffer != vk::Buffer::null() && *capacity >= needed {
-        return Ok(());
-    }
-    if *buffer != vk::Buffer::null() {
-        device.destroy_buffer(*buffer, None);
-        *buffer = vk::Buffer::null();
-    }
-    if *memory != vk::DeviceMemory::null() {
-        device.free_memory(*memory, None);
-        *memory = vk::DeviceMemory::null();
-    }
-    let (new_buffer, new_memory) = create_buffer(
-        instance,
-        device,
-        physical_device,
-        needed.max(1),
-        usage,
-        vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-    )?;
-    *buffer = new_buffer;
-    *memory = new_memory;
-    *capacity = needed.max(1);
-    Ok(())
-}
-
-unsafe fn write_mapped<T: Copy>(
-    device: &Device,
-    memory: vk::DeviceMemory,
-    size: vk::DeviceSize,
-    src: &[T],
-) -> Result<()> {
-    let ptr = device.map_memory(memory, 0, size, vk::MemoryMapFlags::empty())? as *mut T;
-    ptr.copy_from_nonoverlapping(src.as_ptr(), src.len());
-    device.unmap_memory(memory);
-    Ok(())
 }

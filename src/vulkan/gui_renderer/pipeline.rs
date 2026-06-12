@@ -3,51 +3,52 @@ use std::mem::size_of;
 use anyhow::Result;
 use vulkanalia::prelude::v1_0::*;
 
-use crate::vulkan::pipeline::{GraphicsPipelineConfig, create_graphics_pipeline, create_shader_module};
+use crate::vulkan::core::descriptors::{
+    binding, create_descriptor_pool, create_descriptor_set_layout, pool_size,
+};
+use crate::vulkan::core::pipeline::{
+    GraphicsPipelineConfig, create_graphics_pipeline, create_shader_module,
+};
+use crate::vulkan::core::sampler::{SamplerDesc, create_sampler};
 
 use super::drawing::GuiVertex;
 
 pub(super) const MAX_GUI_TEXTURES: u32 = 64;
 
 pub(super) unsafe fn create_gui_sampler(device: &Device) -> Result<vk::Sampler> {
-    let info = vk::SamplerCreateInfo::builder()
-        .mag_filter(vk::Filter::LINEAR)
-        .min_filter(vk::Filter::LINEAR)
-        .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
-        .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-        .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-        .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-        .border_color(vk::BorderColor::FLOAT_OPAQUE_WHITE)
-        .unnormalized_coordinates(false)
-        .min_lod(0.0)
-        .max_lod(0.0);
-    Ok(device.create_sampler(&info, None)?)
+    create_sampler(
+        device,
+        &SamplerDesc {
+            filter: vk::Filter::LINEAR,
+            address_mode: vk::SamplerAddressMode::CLAMP_TO_EDGE,
+            max_anisotropy: None,
+        },
+    )
 }
 
 pub(super) unsafe fn create_gui_descriptor_set_layout(
     device: &Device,
 ) -> Result<vk::DescriptorSetLayout> {
-    let binding = vk::DescriptorSetLayoutBinding::builder()
-        .binding(0)
-        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-        .build();
-    let bindings = [binding];
-    let info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
-    Ok(device.create_descriptor_set_layout(&info, None)?)
+    let bindings = [binding(
+        0,
+        vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+        1,
+        vk::ShaderStageFlags::FRAGMENT,
+    )];
+    create_descriptor_set_layout(device, &bindings)
 }
 
 pub(super) unsafe fn create_gui_descriptor_pool(device: &Device) -> Result<vk::DescriptorPool> {
-    let pool_sizes = [vk::DescriptorPoolSize::builder()
-        .type_(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(MAX_GUI_TEXTURES)
-        .build()];
-    let info = vk::DescriptorPoolCreateInfo::builder()
-        .pool_sizes(&pool_sizes)
-        .max_sets(MAX_GUI_TEXTURES)
-        .flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET);
-    Ok(device.create_descriptor_pool(&info, None)?)
+    let pool_sizes = [pool_size(
+        vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+        MAX_GUI_TEXTURES,
+    )];
+    create_descriptor_pool(
+        device,
+        &pool_sizes,
+        MAX_GUI_TEXTURES,
+        vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET,
+    )
 }
 
 pub(super) unsafe fn create_gui_pipeline_layout(

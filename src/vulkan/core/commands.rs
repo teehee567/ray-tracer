@@ -1,16 +1,24 @@
 use anyhow::Result;
 use vulkanalia::prelude::v1_0::*;
 
+pub unsafe fn allocate_command_buffers(
+    device: &Device,
+    command_pool: vk::CommandPool,
+    count: u32,
+) -> Result<Vec<vk::CommandBuffer>> {
+    let info = vk::CommandBufferAllocateInfo::builder()
+        .command_pool(command_pool)
+        .level(vk::CommandBufferLevel::PRIMARY)
+        .command_buffer_count(count);
+
+    Ok(device.allocate_command_buffers(&info)?)
+}
+
 pub unsafe fn begin_single_time_commands(
     device: &Device,
     command_pool: vk::CommandPool,
 ) -> Result<vk::CommandBuffer> {
-    let info = vk::CommandBufferAllocateInfo::builder()
-        .level(vk::CommandBufferLevel::PRIMARY)
-        .command_pool(command_pool)
-        .command_buffer_count(1);
-
-    let command_buffer = device.allocate_command_buffers(&info)?[0];
+    let command_buffer = allocate_command_buffers(device, command_pool, 1)?[0];
 
     let begin_info =
         vk::CommandBufferBeginInfo::builder().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);

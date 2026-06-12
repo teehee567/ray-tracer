@@ -26,7 +26,7 @@ fn parse_rgb(hex: &str) -> Vec3 {
 }
 impl Scene {
     pub fn from_weird(path: &'static str) -> Result<Self> {
-        let file = File::open(path)?;
+        let _file = File::open(path)?;
         let mut scene = Scene {
             root: serde_yaml::Value::default(),
             components: SceneComponents::default(),
@@ -179,7 +179,7 @@ impl Scene {
                         .as_str()
                         .expect("Material not specified");
                     let material_index = material_name_to_index[material_name];
-                    let smooth = surface["smooth"].as_bool().unwrap_or(false);
+                    let _smooth = surface["smooth"].as_bool().unwrap_or(false);
 
                     // Load the OBJ file
                     let obj_result = tobj::load_obj(

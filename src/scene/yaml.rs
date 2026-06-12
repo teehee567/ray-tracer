@@ -200,7 +200,7 @@ impl Scene {
             .get("transmission")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0) as f32;
-        let motion_blur: [f32; 3] = node
+        let _motion_blur: [f32; 3] = node
             .get("motion_blur")
             .and_then(|v| serde_yaml::from_value(v.clone()).ok())
             .unwrap_or(def);

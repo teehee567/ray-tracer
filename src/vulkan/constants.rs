@@ -15,4 +15,3 @@ pub const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[
 pub const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 pub const TILE_SIZE: u32 = 8;
 pub const OFFSCREEN_FRAME_COUNT: usize = 3;
-pub(crate) const TO_SAVE: usize = 100;

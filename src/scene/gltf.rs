@@ -1,39 +1,14 @@
 use glam::{Mat4, UVec2, Vec2, Vec3, Vec4};
 use serde_yaml::Value;
-use vulkanalia::vk;
 
 use crate::{
     AMat4, AUVec2, AVec2, AVec3, Af32, Au32, CameraBufferObject, Material, SceneComponents,
     Triangle,
 };
 
-const CONFIG_VERSION: &str = "0.2";
-
 use anyhow::{Result, anyhow};
 
 use super::{Scene, TextureData, TextureFormat};
-
-impl TextureFormat {
-    fn from_gltf(format: gltf::image::Format) -> Self {
-        match format {
-            gltf::image::Format::R8 => TextureFormat::R8,
-            gltf::image::Format::R8G8 => TextureFormat::R8G8,
-            gltf::image::Format::R8G8B8 => TextureFormat::R8G8B8,
-            gltf::image::Format::R8G8B8A8 => TextureFormat::R8G8B8A8,
-            _ => unimplemented!(),
-        }
-    }
-
-    fn to_vulkan(&self) -> vk::Format {
-        match self {
-            TextureFormat::R8 => vk::Format::R8_UNORM,
-            TextureFormat::R8G8 => vk::Format::R8G8_UNORM,
-            TextureFormat::R8G8B8 => vk::Format::R8G8B8_SRGB,
-            TextureFormat::R8G8B8A8 => vk::Format::R8G8B8A8_SRGB,
-            _ => unimplemented!(),
-        }
-    }
-}
 
 fn camera_lake() -> CameraBufferObject {
     let mut ubo = CameraBufferObject {
@@ -113,7 +88,7 @@ fn camera_mclaren() -> CameraBufferObject {
         ..Default::default()
     };
     let resolution = UVec2::new(1920, 1080);
-    let rotation = Vec3::new(-2.5, 210., -0.);
+    let _rotation = Vec3::new(-2.5, 210., -0.);
 
     let look_at = Vec3::new(0.0, 0.0, 0.0);
     ubo.rotation = AMat4(Mat4::look_at_rh(ubo.location.0, look_at, Vec3::Y).transpose());
@@ -317,7 +292,7 @@ impl Scene {
     fn process_material(
         &self,
         material: &gltf::Material,
-        images: &[gltf::image::Data],
+        _images: &[gltf::image::Data],
     ) -> Result<Material> {
         let pbr = material.pbr_metallic_roughness();
 
@@ -356,17 +331,15 @@ impl Scene {
         // Get emissive strength from extension
         let emissive_strength = material.emissive_strength().unwrap_or(0.0);
 
-        let specular = material
-            .specular()
-            .and_then(|ext| Some(ext.specular_factor()))
+        let _specular = material
+            .specular().map(|ext| ext.specular_factor())
             .unwrap_or(0.);
-        let specular_colour = Vec3::from(
+        let _specular_colour = Vec3::from(
             material
-                .specular()
-                .and_then(|ext| Some(ext.specular_color_factor()))
+                .specular().map(|ext| ext.specular_color_factor())
                 .unwrap_or([0.; 3]),
         );
-        let specular_tex = material
+        let _specular_tex = material
             .specular()
             .and_then(|spec| spec.specular_texture())
             .map(|tex| tex.texture().source().index() as u32)
@@ -387,7 +360,7 @@ impl Scene {
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0) as f32;
 
-        let clearcoat_texture = clearcoat
+        let _clearcoat_texture = clearcoat
             .and_then(|c| c.get("clearcoatTexture"))
             .and_then(|t| t.as_object())
             .and_then(|t| t.get("index"))
@@ -395,7 +368,7 @@ impl Scene {
             .map(|i| i as u32)
             .unwrap_or(u32::MAX);
 
-        let clearcoat_roughness_texture = clearcoat
+        let _clearcoat_roughness_texture = clearcoat
             .and_then(|c| c.get("clearcoatRoughnessTexture"))
             .and_then(|t| t.as_object())
             .and_then(|t| t.get("index"))

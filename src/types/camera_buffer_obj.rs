@@ -105,7 +105,7 @@ impl<'de> Deserialize<'de> for CameraBufferObject {
 
         struct CameraBufferObjectVisitor;
 
-        const FIELDS: &'static [&'static str] = &[
+        const FIELDS: &[&str] = &[
             "resolution",
             "focal_length",
             "focus_distance",

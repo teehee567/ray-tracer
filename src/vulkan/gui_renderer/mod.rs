@@ -10,44 +10,42 @@ use egui::TextureId;
 use glam::UVec2;
 use vulkanalia::prelude::v1_0::*;
 
-use crate::vulkan::context::VulkanContext;
-
-use super::constants::OFFSCREEN_FRAME_COUNT;
+use crate::vulkan::constants::OFFSCREEN_FRAME_COUNT;
+use crate::vulkan::core::context::VulkanContext;
+use crate::vulkan::core::image::upload_pixels;
 
 use drawing::GuiFrameBuffers;
-pub(crate) use drawing::{GuiDrawData, GuiVertex};
 use gui_texture::{GuiTexture, create_gui_texture, destroy_gui_texture};
 use pipeline::{
     create_gui_descriptor_pool, create_gui_descriptor_set_layout, create_gui_pipeline,
     create_gui_pipeline_layout, create_gui_sampler,
 };
 
-#[derive(Clone, Debug)]
-pub(crate) struct GuiRenderer {
-    pub(super) base_extent: UVec2,
-    pub(super) render_extent: UVec2,
-    pub(super) panel_width: u32,
-    pub(super) last_generation: Option<u64>,
-    pub(super) textures: HashMap<TextureId, GuiTexture>,
-    pub(super) sampler: vk::Sampler,
-    pub(super) descriptor_set_layout: vk::DescriptorSetLayout,
-    pub(super) descriptor_pool: vk::DescriptorPool,
-    pub(super) pipeline_layout: vk::PipelineLayout,
-    pub(super) pipeline: vk::Pipeline,
-    pub(super) frames: Vec<GuiFrameBuffers>,
-    pub(super) draw_data: Option<GuiDrawData>,
-    pub(super) fallback: GuiTexture,
+/// Renders egui draw lists on top of the path traced image.
+pub struct GuiRenderer {
+    base_extent: UVec2,
+    render_extent: UVec2,
+    panel_width: u32,
+    last_generation: Option<u64>,
+    textures: HashMap<TextureId, GuiTexture>,
+    sampler: vk::Sampler,
+    descriptor_set_layout: vk::DescriptorSetLayout,
+    descriptor_pool: vk::DescriptorPool,
+    pipeline_layout: vk::PipelineLayout,
+    pipeline: vk::Pipeline,
+    frames: Vec<GuiFrameBuffers>,
+    draw_data: Option<drawing::GuiDrawData>,
+    fallback: GuiTexture,
 }
 
 impl GuiRenderer {
     pub(crate) unsafe fn new(
-        instance: &Instance,
-        device: &Device,
         ctx: &VulkanContext,
         render_pass: vk::RenderPass,
         swap_extent: vk::Extent2D,
         base_extent: UVec2,
     ) -> Result<Self> {
+        let device = &ctx.device;
         let clamped_width = base_extent.x.min(swap_extent.width);
         let clamped_height = base_extent.y.min(swap_extent.height);
         let render_extent = UVec2::new(clamped_width, clamped_height);
@@ -58,12 +56,21 @@ impl GuiRenderer {
         let pipeline = create_gui_pipeline(device, pipeline_layout, render_pass)?;
         let descriptor_pool = create_gui_descriptor_pool(device)?;
 
-        let mut frames = Vec::with_capacity(OFFSCREEN_FRAME_COUNT);
-        for _ in 0..OFFSCREEN_FRAME_COUNT {
-            frames.push(GuiFrameBuffers::default());
-        }
+        let frames = vec![GuiFrameBuffers::default(); OFFSCREEN_FRAME_COUNT];
 
-        let mut renderer = Self {
+        let fallback =
+            create_gui_texture(ctx, descriptor_set_layout, descriptor_pool, sampler, [1, 1])?;
+        upload_pixels(
+            ctx,
+            fallback.image.image,
+            &[255u8, 255, 255, 255],
+            [1, 1],
+            [0, 0],
+            1,
+            vk::ImageLayout::UNDEFINED,
+        )?;
+
+        Ok(Self {
             base_extent,
             render_extent,
             panel_width: 0,
@@ -76,31 +83,8 @@ impl GuiRenderer {
             pipeline,
             frames,
             draw_data: None,
-            fallback: GuiTexture::default(),
-        };
-
-        let fallback = create_gui_texture(
-            instance,
-            device,
-            ctx.physical_device,
-            renderer.descriptor_set_layout,
-            renderer.descriptor_pool,
-            renderer.sampler,
-            [1, 1],
-        )?;
-        Self::upload_pixels(
-            instance,
-            device,
-            ctx,
-            fallback.image,
-            &[255u8, 255, 255, 255],
-            [1, 1],
-            None,
-            true,
-        )?;
-        renderer.fallback = fallback;
-
-        Ok(renderer)
+            fallback,
+        })
     }
 
     pub(crate) fn render_extent(&self) -> UVec2 {
@@ -145,25 +129,10 @@ impl GuiRenderer {
 
         let _ = destroy_gui_texture(device, self.descriptor_pool, &mut self.fallback);
 
-        if self.descriptor_pool != vk::DescriptorPool::null() {
-            device.destroy_descriptor_pool(self.descriptor_pool, None);
-            self.descriptor_pool = vk::DescriptorPool::null();
-        }
-        if self.descriptor_set_layout != vk::DescriptorSetLayout::null() {
-            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
-            self.descriptor_set_layout = vk::DescriptorSetLayout::null();
-        }
-        if self.pipeline != vk::Pipeline::null() {
-            device.destroy_pipeline(self.pipeline, None);
-            self.pipeline = vk::Pipeline::null();
-        }
-        if self.pipeline_layout != vk::PipelineLayout::null() {
-            device.destroy_pipeline_layout(self.pipeline_layout, None);
-            self.pipeline_layout = vk::PipelineLayout::null();
-        }
-        if self.sampler != vk::Sampler::null() {
-            device.destroy_sampler(self.sampler, None);
-            self.sampler = vk::Sampler::null();
-        }
+        device.destroy_descriptor_pool(self.descriptor_pool, None);
+        device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+        device.destroy_pipeline(self.pipeline, None);
+        device.destroy_pipeline_layout(self.pipeline_layout, None);
+        device.destroy_sampler(self.sampler, None);
     }
 }

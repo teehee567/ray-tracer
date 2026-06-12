@@ -1,0 +1,147 @@
+use anyhow::Result;
+use log::info;
+use vulkanalia::prelude::v1_0::*;
+
+use crate::types::CameraBufferObject;
+use crate::vulkan::core::buffer::Buffer;
+use crate::vulkan::core::descriptors::{
+    allocate_descriptor_sets, binding, buffer_info, buffer_write, create_descriptor_pool,
+    create_descriptor_set_layout, image_info, image_write, pool_size,
+};
+use crate::vulkan::core::image::Image;
+
+// 11 bindings for path tracer compute shader
+pub(super) unsafe fn create_layout(
+    device: &Device,
+    texture_count: usize,
+) -> Result<vk::DescriptorSetLayout> {
+    let stage = vk::ShaderStageFlags::COMPUTE;
+    let bindings = [
+        binding(0, vk::DescriptorType::UNIFORM_BUFFER, 1, stage), // camera ubo
+        binding(1, vk::DescriptorType::STORAGE_BUFFER, 1, stage), // bvh
+        binding(2, vk::DescriptorType::STORAGE_BUFFER, 1, stage), // materials
+        binding(3, vk::DescriptorType::STORAGE_BUFFER, 1, stage), // triangles
+        binding(4, vk::DescriptorType::STORAGE_IMAGE, 1, stage),  // accumulator
+        binding(5, vk::DescriptorType::STORAGE_IMAGE, 1, stage),  // framebuffer target
+        binding(
+            6,
+            vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+            texture_count as u32,
+            stage,
+        ), // textures
+        binding(7, vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1, stage), // skybox
+        binding(8, vk::DescriptorType::STORAGE_BUFFER, 1, stage), // lights
+        binding(9, vk::DescriptorType::STORAGE_BUFFER, 1, stage), // emissive triangles
+        binding(10, vk::DescriptorType::STORAGE_BUFFER, 1, stage), // cdf
+    ];
+    create_descriptor_set_layout(device, &bindings)
+}
+
+pub(super) unsafe fn create_pool(
+    device: &Device,
+    set_count: usize,
+    texture_count: usize,
+) -> Result<vk::DescriptorPool> {
+    let max_sets = set_count as u32;
+    let pool_sizes = [
+        pool_size(vk::DescriptorType::UNIFORM_BUFFER, max_sets),
+        pool_size(vk::DescriptorType::STORAGE_BUFFER, 6 * max_sets),
+        pool_size(vk::DescriptorType::STORAGE_IMAGE, 2 * max_sets),
+        pool_size(
+            vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+            max_sets * (texture_count as u32 + 1),
+        ),
+    ];
+    create_descriptor_pool(
+        device,
+        &pool_sizes,
+        max_sets,
+        vk::DescriptorPoolCreateFlags::empty(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) unsafe fn create_sets(
+    device: &Device,
+    layout: vk::DescriptorSetLayout,
+    pool: vk::DescriptorPool,
+    framebuffer_images: &[Image],
+    uniform_buffer: &Buffer,
+    ssbo: &Buffer,
+    scene_sizes: &[u64; 6],
+    accumulator_view: vk::ImageView,
+    textures: &[Image],
+    texture_sampler: vk::Sampler,
+    skybox_view: vk::ImageView,
+    skybox_sampler: vk::Sampler,
+) -> Result<Vec<vk::DescriptorSet>> {
+    let sets = allocate_descriptor_sets(device, pool, layout, framebuffer_images.len())?;
+    info!("Allocated Descriptor sets len {}", sets.len());
+
+    // ssbo regions for bindings 1, 2, 3, 8, 9, 10 (bvh, materials,
+    // triangles, lights, emissive triangles, cdf), packed contiguously
+    let mut ssbo_infos = [vk::DescriptorBufferInfo::default(); 6];
+    let mut offset = 0;
+    for (info, &size) in ssbo_infos.iter_mut().zip(scene_sizes) {
+        *info = buffer_info(ssbo.buffer, offset, size);
+        offset += size;
+    }
+    let [bvh, materials, triangles, lights, emissive, cdf] = ssbo_infos.map(|i| [i]);
+
+    let uniform = [buffer_info(
+        uniform_buffer.buffer,
+        0,
+        std::mem::size_of::<CameraBufferObject>() as u64,
+    )];
+    let accumulator = [image_info(
+        vk::Sampler::null(),
+        accumulator_view,
+        vk::ImageLayout::GENERAL,
+    )];
+    let texture_infos: Vec<_> = textures
+        .iter()
+        .map(|tex| {
+            image_info(
+                texture_sampler,
+                tex.view,
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            )
+        })
+        .collect();
+    let skybox = [image_info(
+        skybox_sampler,
+        skybox_view,
+        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+    )];
+
+    for (set, framebuffer) in sets.iter().zip(framebuffer_images) {
+        let target = [image_info(
+            vk::Sampler::null(),
+            framebuffer.view,
+            vk::ImageLayout::GENERAL,
+        )];
+
+        let writes = [
+            buffer_write(*set, 0, vk::DescriptorType::UNIFORM_BUFFER, &uniform),
+            buffer_write(*set, 1, vk::DescriptorType::STORAGE_BUFFER, &bvh),
+            buffer_write(*set, 2, vk::DescriptorType::STORAGE_BUFFER, &materials),
+            buffer_write(*set, 3, vk::DescriptorType::STORAGE_BUFFER, &triangles),
+            image_write(*set, 4, vk::DescriptorType::STORAGE_IMAGE, &accumulator),
+            image_write(*set, 5, vk::DescriptorType::STORAGE_IMAGE, &target),
+            image_write(
+                *set,
+                6,
+                vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                &texture_infos,
+            ),
+            image_write(*set, 7, vk::DescriptorType::COMBINED_IMAGE_SAMPLER, &skybox),
+            buffer_write(*set, 8, vk::DescriptorType::STORAGE_BUFFER, &lights),
+            buffer_write(*set, 9, vk::DescriptorType::STORAGE_BUFFER, &emissive),
+            buffer_write(*set, 10, vk::DescriptorType::STORAGE_BUFFER, &cdf),
+        ];
+
+        device.update_descriptor_sets(&writes, &[] as &[vk::CopyDescriptorSet]);
+    }
+
+    Ok(sets)
+}

@@ -1,13 +1,6 @@
-#![allow(warnings)]
-#![allow(
-    dead_code,
-    unused_variables,
-    clippy::manual_slice_size_calculation,
-    clippy::too_many_arguments,
-    clippy::unnecessary_wraps
-)]
-
-use std::time::{Duration, Instant};
+// Vulkan code is wall-to-wall unsafe calls inside unsafe fns; per-call
+// unsafe blocks (edition 2024 style) would add noise without clarity.
+#![allow(unsafe_op_in_unsafe_fn)]
 
 use anyhow::Result;
 use scene::Scene;
@@ -16,52 +9,31 @@ use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
+// BVH/AABB helpers not all wired up yet; kept for accelerator development
+#[allow(dead_code)]
 mod accelerators;
 mod app;
+mod fps_counter;
 mod gui;
 mod scene;
 mod types;
 mod vulkan;
 
-pub use app::{
-    App, DEVICE_EXTENSIONS, OFFSCREEN_FRAME_COUNT, PORTABILITY_MACOS_VERSION,
-    QueueFamilyIndices, RenderCommand, RenderController, SwapchainSupport, TILE_SIZE,
-    VALIDATION_ENABLED, VALIDATION_LAYER,
-};
-
-use gui::GuiData;
 pub use types::*;
 
-macro_rules! print_size {
-    ($t:ty) => {
-        println!(
-            "Size of {}: {} bytes",
-            stringify!($t),
-            std::mem::size_of::<$t>()
-        );
-    };
-}
+use app::RenderController;
+use vulkan::VulkanRenderer;
 
-#[rustfmt::skip]
 fn main() -> Result<()> {
     pretty_env_logger::init();
-
-    print_size!(CameraBufferObject);
-    print_size!(Triangle);
-    print_size!(Material);
-    print_size!(SceneComponents);
-    print_size!(Sphere);
 
     let scene = Scene::from_new("./scenes/nice/test_scene.yaml")?;
     let render_resolution = scene.get_camera_controls().resolution.0;
 
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
-        .with_title("Vulkan Tutorial (Rust)")
-        .with_inner_size(PhysicalSize::new(
-            render_resolution.x,
-            render_resolution.y,
-        ))
+        .with_title("ray-tracer")
+        .with_inner_size(PhysicalSize::new(render_resolution.x, render_resolution.y))
         .build(&event_loop)?;
 
     let scale_factor = window.scale_factor() as f32;
@@ -71,13 +43,13 @@ fn main() -> Result<()> {
         let _ = window.request_inner_size(PhysicalSize::new(total_width, render_resolution.y));
     }
 
-    let mut app = unsafe { App::create(&window, scene)? };
+    let mut renderer = unsafe { VulkanRenderer::create(&window, scene)? };
     unsafe {
-        app.upload_scene()?;
+        renderer.upload_scene()?;
     }
 
     let gui_shared = gui::create_shared_state();
-    let mut render_controller = RenderController::spawn(app, gui_shared.clone())?;
+    let mut render_controller = RenderController::spawn(renderer, gui_shared.clone())?;
     let gui_data_rx = render_controller.gui_data_receiver();
     let mut gui = gui::GuiFrontend::new(&window, gui_shared.clone(), gui_data_rx);
 

@@ -1,6 +1,5 @@
 use std::{ffi::c_void, mem};
 
-use anyhow::{Result, anyhow};
 
 const INITIAL_SIZE: usize = 16;
 
@@ -38,33 +37,6 @@ impl BufferBuilder {
         let value_bytes =
             unsafe { std::slice::from_raw_parts((&value as *const T) as *const u8, size) };
         self.buffer.extend_from_slice(value_bytes);
-    }
-
-    pub fn append_with_size<T: Copy>(&mut self, value: T, size: usize) {
-        let type_size = mem::size_of::<T>();
-        let value_bytes =
-            unsafe { std::slice::from_raw_parts((&value as *const T) as *const u8, type_size) };
-        self.buffer.extend_from_slice(value_bytes);
-        if size > type_size {
-            self.buffer
-                .resize(self.buffer.len() + (size - type_size), 0);
-        } else if size < type_size {
-            let new_len = self.buffer.len() - (type_size - size);
-            self.buffer.truncate(new_len);
-        }
-    }
-
-    pub fn get_relative_offset<T>(&self) -> Result<usize> {
-        let type_size = mem::size_of::<T>();
-        if self.buffer.len() == 0 {
-            return Ok(0);
-        }
-        if self.buffer.len() % type_size != 0 {
-            return Err(anyhow!(
-                "Trying to get offset with regards to type not granular enough"
-            ));
-        }
-        Ok(self.buffer.len() / type_size)
     }
 
     pub unsafe fn write(&self, output: *mut c_void) {
