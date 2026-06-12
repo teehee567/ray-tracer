@@ -24,7 +24,7 @@ serde_yaml = "0.9.34"
 thiserror = "1"
 tobj = { version = "3", features = ["log"] }
 vulkanalia = { version = "0.25.0", features = ["libloading", "provisional", "window"] }
-winit = "0.29"
+winit = "0.30"
 
 [profile.release]
 debug = 2
