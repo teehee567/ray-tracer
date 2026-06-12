@@ -1,5 +1,5 @@
 use log::info;
-use vulkanalia::{prelude::v1_0::*, vk::KhrSwapchainExtension};
+use vulkanalia::{prelude::v1_0::*, vk::KhrSwapchainExtensionDeviceCommands};
 use winit::window::Window;
 
 use anyhow::{Result, anyhow};

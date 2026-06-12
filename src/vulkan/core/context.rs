@@ -8,7 +8,7 @@ use vulkanalia::loader::{LIBRARY, LibloadingLoader};
 use vulkanalia::window as vk_window;
 use vulkanalia::{
     prelude::v1_0::*,
-    vk::{ExtDebugUtilsExtension, KhrSurfaceExtension},
+    vk::{ExtDebugUtilsExtensionInstanceCommands, KhrSurfaceExtensionInstanceCommands},
 };
 use winit::window::Window;
 

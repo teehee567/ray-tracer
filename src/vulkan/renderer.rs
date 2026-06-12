@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use log::info;
 use vulkanalia::prelude::v1_0::*;
-use vulkanalia::vk::KhrSwapchainExtension;
+use vulkanalia::vk::KhrSwapchainExtensionDeviceCommands;
 use winit::window::Window;
 
 use crate::gui;
