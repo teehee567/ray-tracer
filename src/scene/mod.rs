@@ -246,9 +246,6 @@ impl Scene {
             total_power,
         };
 
-        // For now, we don't have explicit point lights in the scene format
-        // This can be extended later if needed
-        self.components.lights.clear();
 
         println!("Lights built in :{:.4}s", start.elapsed().as_secs_f32());
         println!("Found {} emissive triangles", self.components.mesh_light_sampler.tris.len());

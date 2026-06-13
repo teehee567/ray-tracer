@@ -9,7 +9,7 @@ echo %VULKAN_SDK%
 :: Set GLSLC path and compile shaders
 set GLSLC_PATH=%VULKAN_SDK%\Bin\glslc.exe
 
-%GLSLC_PATH% ./src/shaders/main.comp -o ./src/shaders/main.comp.spv
-%GLSLC_PATH% ./src/shaders/gui.vert -o ./src/shaders/gui.vert.spv
-%GLSLC_PATH% ./src/shaders/gui.frag -o ./src/shaders/gui.frag.spv
+%GLSLC_PATH% ./src/shaders/main.comp -o ./src/shaders/main.comp.spv || exit /b 1
+%GLSLC_PATH% ./src/shaders/gui.vert -o ./src/shaders/gui.vert.spv || exit /b 1
+%GLSLC_PATH% ./src/shaders/gui.frag -o ./src/shaders/gui.frag.spv || exit /b 1
 
