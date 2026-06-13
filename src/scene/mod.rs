@@ -233,11 +233,12 @@ impl Scene {
         }
 
         // Build CDF (cumulative distribution function)
+        // store unnormalized
         let mut cdf = Vec::new();
         let mut cumulative = 0.0;
         for emissive_tri in &emissive_tris {
             cumulative += emissive_tri.power.0;
-            cdf.push(cumulative / total_power);
+            cdf.push(cumulative);
         }
 
         self.components.mesh_light_sampler = MeshLightSampler {

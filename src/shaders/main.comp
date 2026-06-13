@@ -126,7 +126,11 @@ vec3 ray_color(Ray ray, inout uint mesh_tests) {
     BsdfSampleRec bsdfSampleRec;
 
     numOfLights = lights.get.length() + emissive_tris.get.length();
-    
+
+    // Solid-angle pdf of the BSDF sample that produced the current ray, carried
+    // across bounces so an emitter hit can be MIS-weighted against NEE (Phase 3).
+    float bsdfPdf = 0.0;
+
     for(int bounce = 0; bounce < BOUNCES; bounce++) {
         HitRecord hit = hit_meshes(ray, mesh_tests, false);
         
@@ -159,7 +163,19 @@ vec3 ray_color(Ray ray, inout uint mesh_tests) {
             hit.material.roughness = max(hit.material.roughness, 0.001);
             hit.eta = dot(hit.normal, hit.ffnormal) > 0.0 ? (1.0 / hit.material.ior) : hit.material.ior;
 
-        radiance += hit.material.emission.xyz * throughput;
+        // Emitter hit: MIS-weight against the NEE (DirectLight) strategy so the
+        // same emissive triangle isn't counted by both. The camera ray
+        // (bounce 0) has no competing NEE estimator and gets full weight; a
+        // non-emitter / non-NEE-samplable surface returns lightPdf 0 -> weight 1.
+        {
+            float misWeight = 1.0;
+            if (bounce > 0) {
+                float lightPdf = MeshLightPdf(hit, ray.direction);
+                if (lightPdf > 0.0)
+                    misWeight = PowerHeuristic(bsdfPdf, lightPdf);
+            }
+            radiance += misWeight * hit.material.emission.xyz * throughput;
+        }
 
         //vec3 surface_normal = calculate_surface_normal(hit, hit.triangle);
 
@@ -176,7 +192,10 @@ vec3 ray_color(Ray ray, inout uint mesh_tests) {
         } else {
             break;
         }
-        
+
+        // Carry this bounce's pdf so the next hit can MIS-weight emitter hits.
+        bsdfPdf = bsdfSampleRec.pdf;
+
         // Russian Roulette
         
         if(bounce > 2) {

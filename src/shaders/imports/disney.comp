@@ -263,25 +263,70 @@ void SampleMeshLight(in EmissiveTri emissive_tri, in float selectProb, in vec3 s
     lightSampleRec.pdf = selectProb * areaPdf;
 }
 
-// Pick an emissive triangle by power via the normalized CDF (real binary
-// search). Returns its index and the per-triangle selection probability
-// power_i / total_power == cdf[i] - cdf[i-1].
+// Pick an emissive triangle by power via the CDF (real binary search). The CDF
+// is stored UN-normalized (cdf[last] == total power), so we sample against
+// r * total. Returns the triangle index and the per-triangle selection
+// probability power_i / total_power.
 int SampleMeshCDF(in float r, out float triProb)
 {
     int n = cdf.get.length();
+    float total = cdf.get[n - 1];
+    float target = r * total;
     int lo = 0;
     int hi = n - 1;
     while (lo < hi)
     {
         int mid = (lo + hi) >> 1;
-        if (cdf.get[mid] < r)
+        if (cdf.get[mid] < target)
             lo = mid + 1;
         else
             hi = mid;
     }
     float prev = lo > 0 ? cdf.get[lo - 1] : 0.0;
-    triProb = cdf.get[lo] - prev;
+    triProb = (cdf.get[lo] - prev) / total;
     return lo;
+}
+
+// Solid-angle pdf that NEE (DirectLight) would have used to sample the emissive
+// triangle a BSDF ray just landed on. Used to MIS-weight emitter hits and kill
+// the double counting between the BSDF and NEE strategies (Phase 3). Returns 0
+// when the surface is not a NEE-samplable mesh light (so the hit gets full
+// weight). Mirrors SampleMeshLight's pdf and the selector in DirectLight:
+//   pdf = (num_mesh / numOfLights) * (power_i / total_power) * dist^2 / (area * cos)
+// with power_i = area_i * Luminance(emission), so the area term cancels.
+float MeshLightPdf(in HitRecord hit, in vec3 rayDir)
+{
+    int num_mesh = emissive_tris.get.length();
+    if (num_mesh == 0 || numOfLights == 0)
+        return 0.0;
+
+    float total_power = cdf.get[num_mesh - 1]; // un-normalized CDF: last == total
+    if (total_power <= 0.0)
+        return 0.0;
+
+    // Use the un-textured material emission to match the CPU power computation
+    // that built the CDF.
+    vec3 emission = materials.get[hit.triangle.material_idx].emission.rgb;
+    float lum = Luminance(emission);
+    if (lum <= 0.0)
+        return 0.0;
+
+    // Geometric (face) normal + area, matching SampleMeshLight.
+    vec3 e1 = hit.triangle.vertices[1] - hit.triangle.vertices[0];
+    vec3 e2 = hit.triangle.vertices[2] - hit.triangle.vertices[0];
+    vec3 ln = cross(e1, e2);
+    float area = 0.5 * length(ln);
+    if (area <= 0.0)
+        return 0.0;
+    ln /= (2.0 * area);
+
+    float cosTheta = abs(dot(ln, rayDir));
+    if (cosTheta <= 0.0)
+        return 0.0;
+
+    float selectProb = (float(num_mesh) / float(numOfLights)) * ((area * lum) / total_power);
+    float dist = hit.hit_dist;
+    return selectProb * (dist * dist) / (area * cosTheta);
 }
 
 void SampleOneLight(in Light light, in vec3 surfacePos, inout LightSampleRec lightSampleRec)
@@ -616,6 +661,11 @@ vec3 DirectLight(in Ray r, in HitRecord rec, inout uint mesh_tests)
         int num_point_lights = lights.get.length();
         int num_mesh_lights = emissive_tris.get.length();
 
+        // Delta lights (point/distant/spot) can never be hit by a random BSDF
+        // ray, so they have no competing BSDF estimator and must NOT be
+        // MIS-weighted (weight 1.0). Area/mesh lights do get MIS.
+        bool isDeltaLight = false;
+
         if (numOfLights > 0) {
             // Pick a light to sample. Analytic lights occupy buckets
             // [0, num_point_lights); the mesh set is the final bucket, chosen
@@ -626,6 +676,7 @@ vec3 DirectLight(in Ray r, in HitRecord rec, inout uint mesh_tests)
             if (light_index < num_point_lights) {
                 // Sample analytic light, selected uniformly among the buckets.
                 Light light = lights.get[light_index];
+                isDeltaLight = (int(light.type) == POINT_LIGHT);
                 SampleOneLight(light, surfacePos, lightSampleRec);
                 // Fold the selection probability (1 / numOfLights) into the pdf.
                 lightSampleRec.pdf *= float(numOfLights);
@@ -652,8 +703,10 @@ vec3 DirectLight(in Ray r, in HitRecord rec, inout uint mesh_tests)
                 if (!inShadow) {
                     bsdfSampleRec.f = DisneyEval(rec, -r.direction, rec.ffnormal, lightSampleRec.direction, bsdfSampleRec.pdf);
 
+                    // MIS for area/mesh lights; weight 1.0 for delta lights
+                    // (a BSDF ray can never randomly hit them).
                     float weight = 1.0;
-                    if (lightSampleRec.pdf > 0.0) // Use MIS for area lights
+                    if (!isDeltaLight && lightSampleRec.pdf > 0.0)
                         weight = PowerHeuristic(lightSampleRec.pdf, bsdfSampleRec.pdf);
 
                     if (bsdfSampleRec.pdf > 0.0)
