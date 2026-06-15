@@ -3,10 +3,14 @@ use std::os::raw::c_void;
 use std::path::Path;
 use std::time::Instant;
 
-use crate::accelerators::bin_sah::BinSah;
-use crate::accelerators::bvh::Bvh;
+
 use crate::accelerators::Accelerator;
 use crate::{Af32, Au32, CameraBufferObject, EmissiveTri, MeshLightSampler, SceneComponents};
+
+#[allow(unused)]
+use crate::accelerators::bin_sah::BinSah;
+#[allow(unused)]
+use crate::accelerators::bvh::Bvh;
 
 use anyhow::Result;
 
