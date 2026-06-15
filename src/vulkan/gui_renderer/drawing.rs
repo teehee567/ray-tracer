@@ -275,7 +275,9 @@ impl GuiRenderer {
             }
 
             let first_index = indices.len() as u32;
-            indices.extend(mesh.indices.iter().map(|i| i + base_vertex));
+
+            // no need o add vertex offfcet because gpu adds it
+            indices.extend(mesh.indices.iter().copied());
 
             draws.push(GuiDraw {
                 clip_rect: clip,
