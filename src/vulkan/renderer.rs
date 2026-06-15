@@ -1,7 +1,8 @@
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
-use log::info;
+use log::{error, info};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::KhrSwapchainExtensionDeviceCommands;
 use winit::window::Window;
@@ -9,6 +10,7 @@ use winit::window::Window;
 use crate::gui;
 use crate::scene::Scene;
 use crate::types::{AUVec2, Au32};
+use crate::vulkan::utils::save_frame::SaveImage;
 
 use super::constants::OFFSCREEN_FRAME_COUNT;
 use super::core::context::VulkanContext;
@@ -127,6 +129,7 @@ impl VulkanRenderer {
         &mut self,
         frame_index: usize,
         gui_frame: Option<Arc<gui::GuiFrame>>,
+        save_image: Option<&Path>,
     ) -> Result<()> {
         let device = &self.ctx.device;
 
@@ -163,6 +166,12 @@ impl VulkanRenderer {
             vk::CommandBufferResetFlags::empty(),
         )?;
 
+        let save_image_buffer = if save_image.is_some() {
+            Some(SaveImage::new(&self.ctx, render_extent.x, render_extent.y)?)
+        } else {
+            None
+        };
+
         record_present_commands(
             device,
             &mut self.swapchain,
@@ -173,6 +182,7 @@ impl VulkanRenderer {
             frame_index,
             panel_width,
             render_extent,
+            save_image_buffer.as_ref(),
         )?;
 
         let wait_semaphores = &[self.sync.image_available_semaphore];
@@ -191,6 +201,13 @@ impl VulkanRenderer {
             &[submit_info],
             self.sync.present_fence,
         )?;
+
+        if let Some(mut staging) = save_image_buffer {
+            device.wait_for_fences(&[self.sync.present_fence], true, u64::MAX)?;
+            if let Err(err) = staging.save_frame(&self.ctx, save_image.unwrap()) {
+                error!("failed to save frame: {err:?}");
+            }
+        }
 
         let swapchains = &[self.swapchain.swapchain];
         let image_indices = &[image_index as u32];

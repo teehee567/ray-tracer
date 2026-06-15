@@ -2,6 +2,8 @@ use anyhow::Result;
 use glam::UVec2;
 use vulkanalia::prelude::v1_0::*;
 
+use crate::vulkan::utils::save_frame::SaveImage;
+
 use super::core::image::{cmd_image_barrier, image_barrier, subresource_range};
 use super::core::swapchain::Swapchain;
 use super::gui_renderer::GuiRenderer;
@@ -19,6 +21,7 @@ pub(super) unsafe fn record_present_commands(
     frame_index: usize,
     panel_width: u32,
     render_extent: UVec2,
+    save_image: Option<&SaveImage>,
 ) -> Result<()> {
     let swapchain_image = swapchain.images[swapchain_index];
     let begin_info = vk::CommandBufferBeginInfo::builder();
@@ -127,6 +130,36 @@ pub(super) unsafe fn record_present_commands(
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             &[copy_region],
         );
+
+        if let Some(save_image) = save_image {
+            let copy_region = vk::BufferImageCopy::builder()
+                .buffer_offset(0)
+                .buffer_row_length(0)
+                .buffer_image_height(0)
+                .image_subresource(
+                    vk::ImageSubresourceLayers::builder()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .mip_level(0)
+                        .base_array_layer(0)
+                        .layer_count(1)
+                        .build(),
+                )
+                .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+                .image_extent(vk::Extent3D {
+                    width: render_extent.x,
+                    height: render_extent.y,
+                    depth: 1,
+                })
+                .build();
+
+            device.cmd_copy_image_to_buffer(
+                command_buffer,
+                framebuffer_image,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                save_image.buffer.buffer,
+                &[copy_region],
+            );
+        }
     }
 
     // optionally draw the GUI on top via the render pass

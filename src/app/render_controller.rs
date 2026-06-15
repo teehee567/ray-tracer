@@ -173,7 +173,8 @@ fn render_loop(
                 } else {
                     None
                 };
-                if let Err(err) = unsafe { renderer.present_frame(frame_index, gui_frame) } {
+
+                if let Err(err) = unsafe { renderer.present_frame(frame_index, gui_frame, None) } {
                     error!("present error: {err:?}");
                     if is_new {
                         available.push_back(frame_index);
