@@ -17,6 +17,7 @@ use super::core::sync::SyncState;
 use super::gui_renderer::GuiRenderer;
 use super::path_tracer::PathTracer;
 use super::present::record_present_commands;
+use super::utils::gpu_timer::GpuTimer;
 
 /// The Vulkan backend. Everything Vulkan lives behind this type; the
 /// render thread drives it through this API only.
@@ -29,6 +30,7 @@ pub struct VulkanRenderer {
     scene: Scene,
     frame: usize,
     resized: bool,
+    timer: GpuTimer,
 }
 
 impl VulkanRenderer {
@@ -43,6 +45,8 @@ impl VulkanRenderer {
             swapchain.images.len(),
         )?;
 
+        let timer = GpuTimer::new(&ctx, OFFSCREEN_FRAME_COUNT)?;
+
         info!("Finished initialisation of Vulkan Resources");
         let render_resolution = scene.get_camera_controls().resolution.0;
         let gui = GuiRenderer::new(&ctx, swapchain.render_pass, swapchain.extent, render_resolution)?;
@@ -56,6 +60,7 @@ impl VulkanRenderer {
             scene,
             frame: 0,
             resized: false,
+            timer,
         })
     }
 
@@ -74,7 +79,11 @@ impl VulkanRenderer {
         self.resized = true;
     }
 
-    /// Whether the compute work for `frame_index` has finished.
+    pub fn last_compute_ms(&self) -> f64 {
+        self.timer.last_ms
+    }
+
+    // is frame_index work complete
     pub unsafe fn frame_complete(&self, frame_index: usize) -> Result<bool> {
         let status = self
             .ctx
@@ -87,12 +96,16 @@ impl VulkanRenderer {
         let device = &self.ctx.device;
         let command_buffer = self.sync.compute_command_buffers[frame_index];
 
+        if self.frame >= OFFSCREEN_FRAME_COUNT {
+            self.timer.read_slot(device, frame_index)?;
+        }
+
         device.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())?;
 
         self.update_uniform_buffer()?;
         let render_extent = self.gui.render_extent();
         self.path_tracer
-            .record_dispatch(device, command_buffer, frame_index, render_extent)?;
+            .record_dispatch(device, command_buffer, frame_index, render_extent, self.timer.query_pool)?;
 
         device.reset_fences(&[self.sync.frame_fences[frame_index]])?;
 
@@ -213,6 +226,7 @@ impl VulkanRenderer {
         let device = &self.ctx.device;
         device.device_wait_idle().unwrap();
 
+        self.timer.destroy(device);
         self.gui.destroy(device);
         self.path_tracer.destroy(device);
         self.sync.destroy(device, self.ctx.command_pool);

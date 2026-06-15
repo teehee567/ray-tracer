@@ -222,10 +222,21 @@ impl PathTracer {
         command_buffer: vk::CommandBuffer,
         frame_index: usize,
         render_extent: UVec2,
+        query_pool: vk::QueryPool,
     ) -> Result<()> {
         let info = vk::CommandBufferBeginInfo::builder();
 
         device.begin_command_buffer(command_buffer, &info)?;
+
+        // for timing how long frame stays on gpu
+        let first_query = frame_index as u32 * 2;
+        device.cmd_reset_query_pool(command_buffer, query_pool, first_query, 2);
+        device.cmd_write_timestamp(
+            command_buffer,
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+            query_pool,
+            first_query,
+        );
 
         if render_extent.x > 0 && render_extent.y > 0 {
             device.cmd_bind_pipeline(
@@ -246,6 +257,14 @@ impl PathTracer {
             let groups_y = render_extent.y.div_ceil(TILE_SIZE);
             device.cmd_dispatch(command_buffer, groups_x.max(1), groups_y.max(1), 1);
         }
+
+        // end time
+        device.cmd_write_timestamp(
+            command_buffer,
+            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+            query_pool,
+            first_query + 1,
+        );
 
         device.end_command_buffer(command_buffer)?;
 
