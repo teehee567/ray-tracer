@@ -1,6 +1,9 @@
-use super::GuiData;
+use crate::gui::components::perf_graph::draw_perf_graph;
+
 use super::frontend::{PANEL_WIDTH_POINTS, panel_width_pixels};
+use super::{GuiData, PerfHistory};
 use egui::{self, ComboBox};
+
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GuiTheme {
@@ -23,6 +26,7 @@ impl GuiPanels {
         &mut self,
         root_ui: &mut egui::Ui,
         gui_data: Option<&GuiData>,
+        perf_history: &PerfHistory,
         panel_height: u32,
         pixels_per_point: f32,
         ui_fps: f64,
@@ -60,9 +64,14 @@ impl GuiPanels {
                     } else {
                         ui.label("Frame time: ∞");
                     }
+                    ui.label(format!("Compute (GPU): {:.2} ms", gui_data.compute_ms));
                 } else {
                     ui.label("Waiting for renderer…");
                 }
+
+                ui.separator();
+                ui.heading("Frame timing");
+                draw_perf_graph(ui, perf_history);
 
                 ui.separator();
                 ui.heading("UI");

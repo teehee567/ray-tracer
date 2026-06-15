@@ -29,6 +29,17 @@ impl FPSCounter {
         self.get_fps()
     }
 
+    pub fn last_frame_ms(&self) -> f64 {
+        let len = self.frame_times.len();
+        if len < 2 {
+            return 0.0;
+        }
+        self.frame_times[len - 1]
+            .duration_since(self.frame_times[len - 2])
+            .as_secs_f64()
+            * 1000.0
+    }
+
     pub fn get_fps(&self) -> f64 {
         if self.frame_times.len() < 2 {
             return 0.0;

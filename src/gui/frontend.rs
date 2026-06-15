@@ -1,7 +1,8 @@
 use std::mem;
 use std::sync::{Arc, RwLock};
 
-use super::GuiData;
+use super::{GuiData, PerfHistory};
+use crate::gui::components::perf_graph::PERF_HISTORY_LEN;
 use crate::gui::panels::{GuiPanels, GuiTheme};
 use crate::fps_counter::FPSCounter;
 use crossbeam_channel::{Receiver, TryRecvError};
@@ -79,6 +80,7 @@ pub struct GuiFrontend {
     generation: u64,
     gui_data_rx: Receiver<GuiData>,
     latest_gui_data: Option<GuiData>,
+    perf_history: PerfHistory,
 
     panels: GuiPanels,
     ui_fps_counter: FPSCounter,
@@ -102,6 +104,7 @@ impl GuiFrontend {
             generation: 0,
             gui_data_rx,
             latest_gui_data: None,
+            perf_history: PerfHistory::new(PERF_HISTORY_LEN),
 
             panels: GuiPanels::new(),
             ui_fps_counter: FPSCounter::new(60),
@@ -223,11 +226,13 @@ impl GuiFrontend {
         let panel_height = self.panel_height;
         let pixels_per_point = self.pixels_per_point;
         let ui_fps = self.ui_fps_counter.get_fps();
+        let perf_history = &self.perf_history;
 
         let full_output = self.ctx.run_ui(raw_input, |ui| {
             self.panels.draw(
                 ui,
                 gui_data.as_ref(),
+                perf_history,
                 panel_height,
                 pixels_per_point,
                 ui_fps,
@@ -355,7 +360,11 @@ impl GuiFrontend {
     fn poll_gui_data(&mut self) {
         loop {
             match self.gui_data_rx.try_recv() {
-                Ok(gui_data) => self.latest_gui_data = Some(gui_data),
+                Ok(gui_data) => {
+                    self.perf_history
+                        .push(gui_data.frame_ms as f32, gui_data.compute_ms as f32);
+                    self.latest_gui_data = Some(gui_data);
+                }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => break,
             }

@@ -144,7 +144,13 @@ fn render_loop(
         for index in completed {
             ready.push_back(index);
             let fps = fps_counter.tick();
-            let _ = gui_data_tx.try_send(GuiData { fps });
+            let frame_ms = fps_counter.last_frame_ms();
+            let compute_ms = renderer.last_compute_ms();
+            let _ = gui_data_tx.try_send(GuiData {
+                fps,
+                frame_ms,
+                compute_ms,
+            });
         }
 
         if present_requested {
