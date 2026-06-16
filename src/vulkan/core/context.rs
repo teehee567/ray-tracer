@@ -13,7 +13,8 @@ use vulkanalia::{
 use winit::window::Window;
 
 use crate::vulkan::constants::{
-    DEVICE_EXTENSIONS, PORTABILITY_MACOS_VERSION, VALIDATION_ENABLED, VALIDATION_LAYER,
+    DEVICE_EXTENSIONS, PORTABILITY_MACOS_VERSION, VALIDATION_BEST_PRACTICES, VALIDATION_DEBUG_PRINTF,
+    VALIDATION_ENABLED, VALIDATION_GPU_ASSISTED, VALIDATION_LAYER, VALIDATION_SYNC,
 };
 
 #[derive(Debug, Error)]
@@ -169,6 +170,26 @@ unsafe fn create_instance(
         Vec::new()
     };
 
+    let mut validation_enables: Vec<*const u8> = Vec::new();
+    if VALIDATION_ENABLED {
+        if VALIDATION_SYNC {
+            validation_enables
+                .push(b"VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT\0".as_ptr());
+        }
+        if VALIDATION_BEST_PRACTICES {
+            validation_enables.push(b"VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT\0".as_ptr());
+        }
+        if VALIDATION_GPU_ASSISTED {
+            validation_enables.push(b"VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT\0".as_ptr());
+            validation_enables.push(
+                b"VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT\0".as_ptr(),
+            );
+        }
+        if VALIDATION_DEBUG_PRINTF {
+            validation_enables.push(b"VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT\0".as_ptr());
+        }
+    }
+
     // extensions
 
     let mut extensions = vk_window::get_required_instance_extensions(window)
@@ -192,6 +213,9 @@ unsafe fn create_instance(
 
     if VALIDATION_ENABLED {
         extensions.push(vk::EXT_DEBUG_UTILS_EXTENSION.name.as_ptr());
+        if !validation_enables.is_empty() {
+            extensions.push(vk::EXT_LAYER_SETTINGS_EXTENSION.name.as_ptr());
+        }
     }
 
     // create
@@ -211,8 +235,19 @@ unsafe fn create_instance(
         )
         .user_callback(Some(debug_callback));
 
+    let validation_settings = [vk::LayerSettingEXT::builder()
+        .layer_name(b"VK_LAYER_KHRONOS_validation\0")
+        .setting_name(b"enables\0")
+        .values_string(&validation_enables)
+        .build()];
+    let mut layer_settings_info =
+        vk::LayerSettingsCreateInfoEXT::builder().settings(&validation_settings);
+
     if VALIDATION_ENABLED {
         info = info.push_next(&mut debug_info);
+        if !validation_enables.is_empty() {
+            info = info.push_next(&mut layer_settings_info);
+        }
     }
 
     let instance = entry.create_instance(&info, None)?;
