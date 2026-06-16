@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Instant;
 
 use anyhow::{Result, anyhow};
 use crossbeam_channel::Sender;
@@ -8,7 +7,6 @@ use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::{KhrSwapchainExtensionDeviceCommands, SuccessCode};
 use winit::window::Window;
 
-use crate::fps_counter::FPSCounter;
 use crate::gui::{self, PushRender, PushGui};
 use crate::scene::Scene;
 use crate::types::{AUVec2, Au32};
@@ -37,7 +35,6 @@ pub struct VulkanRenderer {
     compute_timer: GpuTimer,
     present_timer: GpuTimer,
     gui_sender: Option<Sender<PushGui>>,
-    fps_counter: FPSCounter,
 }
 
 impl VulkanRenderer {
@@ -59,8 +56,6 @@ impl VulkanRenderer {
         let render_resolution = scene.get_camera_controls().resolution.0;
         let gui = GuiRenderer::new(&ctx, swapchain.render_pass, swapchain.extent, render_resolution)?;
 
-        let fps_counter = FPSCounter::new(60);
-
         Ok(Self {
             ctx,
             swapchain,
@@ -73,7 +68,6 @@ impl VulkanRenderer {
             compute_timer,
             present_timer,
             gui_sender: None,
-            fps_counter,
         })
     }
 
@@ -96,8 +90,13 @@ impl VulkanRenderer {
         self.resized = true;
     }
 
-    pub fn last_timer_ms(&self) -> (f64, f64) {
-        (self.compute_timer.last_ms, self.present_timer.last_ms)
+    pub fn last_timer_perf(&self) -> (f64, f64, f64, f64) {
+        (
+            self.compute_timer.fps(),
+            self.compute_timer.last_ms(),
+            self.present_timer.fps(),
+            self.present_timer.last_ms(),
+        )
     }
 
     // is frame_index work complete
@@ -135,7 +134,7 @@ impl VulkanRenderer {
         self.update_uniform_buffer()?;
         let render_extent = self.gui.render_extent();
         self.path_tracer
-            .record_dispatch(device, command_buffer, frame_index, render_extent, self.compute_timer.query_pool)?;
+            .record_dispatch(device, command_buffer, frame_index, render_extent, self.compute_timer.query_pool())?;
 
         device.reset_fences(&[self.sync.frame_fences[frame_index]])?;
 
@@ -169,21 +168,12 @@ impl VulkanRenderer {
     ) -> Result<()> {
         let device = &self.ctx.device;
 
-        let start = Instant::now();
         // device.wait_for_fences(&[self.sync.frame_fences[frame_index]], true, u64::MAX)?;
 
         // render loop sonly calls this function after present_ready() is true otherwise death
 
         // device.wait_for_fences(&[self.sync.present_fence], true, u64::MAX)?;
         // device.reset_fences(&[self.sync.present_fence])?;
-
-        let end = start.elapsed();
-
-        self.fps_counter.tick();
-        if let Some(sender) = &self.gui_sender {
-            let _ = sender.try_send(PushGui::Fps(self.fps_counter.get_fps()));
-            let _ = sender.try_send(PushGui::PresentWaitTime(end.as_millis() as f64));
-        }
 
 
         if let Some(frame) = gui_frame.as_deref() {
@@ -231,7 +221,7 @@ impl VulkanRenderer {
             panel_width,
             render_extent,
             save_image_buffer.as_ref(),
-            self.present_timer.query_pool
+            self.present_timer.query_pool()
         )?;
 
         let wait_semaphores = &[self.sync.image_available_semaphore, self.sync.compute_timeline];

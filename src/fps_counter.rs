@@ -1,59 +1,39 @@
 use std::collections::VecDeque;
-use std::time::Instant;
 
 #[derive(Clone, Debug)]
 pub struct FPSCounter {
-    frame_times: VecDeque<Instant>,
+    frame_ms: VecDeque<f64>,
     max_samples: usize,
 }
 
 impl FPSCounter {
     pub fn new(max_samples: usize) -> Self {
         Self {
-            frame_times: VecDeque::with_capacity(max_samples),
+            frame_ms: VecDeque::with_capacity(max_samples),
             max_samples,
         }
     }
 
-    pub fn update(&mut self) {
-        let now = Instant::now();
-        self.frame_times.push_back(now);
+    pub fn push_ms(&mut self, ms: f64) {
+        self.frame_ms.push_back(ms);
 
-        if self.frame_times.len() > self.max_samples {
-            self.frame_times.pop_front();
+        if self.frame_ms.len() > self.max_samples {
+            self.frame_ms.pop_front();
         }
-    }
-
-    pub fn tick(&mut self) -> f64 {
-        self.update();
-        self.get_fps()
     }
 
     pub fn last_frame_ms(&self) -> f64 {
-        let len = self.frame_times.len();
-        if len < 2 {
-            return 0.0;
-        }
-        self.frame_times[len - 1]
-            .duration_since(self.frame_times[len - 2])
-            .as_secs_f64()
-            * 1000.0
+        self.frame_ms.back().copied().unwrap_or(0.0)
     }
 
     pub fn get_fps(&self) -> f64 {
-        if self.frame_times.len() < 2 {
+        if self.frame_ms.is_empty() {
             return 0.0;
         }
 
-        let duration = self
-            .frame_times
-            .back()
-            .unwrap()
-            .duration_since(*self.frame_times.front().unwrap());
-        let frame_count = (self.frame_times.len() - 1) as f64;
-
-        if duration.as_secs_f64() > 0.0 {
-            frame_count / duration.as_secs_f64()
+        let total_ms: f64 = self.frame_ms.iter().sum();
+        if total_ms > 0.0 {
+            self.frame_ms.len() as f64 / (total_ms / 1000.0)
         } else {
             0.0
         }

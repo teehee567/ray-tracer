@@ -6,7 +6,6 @@ use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
 use log::error;
 
-use crate::fps_counter::FPSCounter;
 use crate::gui::{self, PushGui};
 use crate::gui::GuiData;
 use crate::gui::PushRender;
@@ -149,10 +148,8 @@ fn render_loop(
 
         for index in completed {
             ready.push_back(index);
-            // let fps = fps_counter.tick();
-            let (compute_ms, present_ms) = renderer.last_timer_ms();
-            // let _  = gui_data_tx.try_send(GuiRequest::Fps(fps));
-            let _  = gui_data_tx.try_send(PushGui::PerfUpdate{compute_ms, present_ms});
+            let (compute_fps, compute_ms, present_fps, present_ms) = renderer.last_timer_perf();
+            let _  = gui_data_tx.try_send(PushGui::PerfUpdate{compute_fps, compute_ms, present_fps, present_ms});
         }
 
 

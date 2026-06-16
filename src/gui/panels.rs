@@ -71,18 +71,16 @@ impl GuiPanels {
                     // } else {
                     //     ui.label("Frame time: ∞");
                     // }
-                    ui.label(format!("Compute (GPU): {:.2} ms", gui_data.compute_ms));
-                    ui.label(format!("Present (GPU): {:.2} ms", gui_data.present_ms));
 
-                    ui.label(format!("Time waiting on present: {:.2} ms", gui_data.present_wait_time));
+                    ui.label(format!("Compute: {:.2}", gui_data.compute_fps));
+                    ui.label(format!("Compute (GPU): {:.2} ms", gui_data.compute_ms));
+
+                    ui.label(format!("Present FPS: {:.2}", gui_data.present_fps));
+                    ui.label(format!("Present: {:.2} ms", gui_data.present_ms));
 
                     ui.separator();
                     ui.heading("Frame timing");
                     draw_perf_graph(ui, &gui_data.perf_history);
-
-                    ui.separator();
-                    ui.heading("UI");
-                    ui.label(format!("UI FPS: {:.2}", gui_data.fps));
 
                     ui.separator();
                     ui.heading("Panel");

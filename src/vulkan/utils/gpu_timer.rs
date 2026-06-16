@@ -1,5 +1,6 @@
 use vulkanalia::prelude::v1_0::*;
 
+use crate::fps_counter::FPSCounter;
 use crate::vulkan::core::commands::with_single_time;
 use crate::vulkan::core::context::VulkanContext;
 
@@ -9,9 +10,9 @@ pub struct GpuTimer {
     // how long for timestamp tick, this comes from vulkan
     period: f32,
 
-    pub query_pool: vk::QueryPool,
+    query_pool: vk::QueryPool,
     // most recent time
-    pub last_ms: f64,
+    fps_counter: FPSCounter,
 }
 
 impl GpuTimer {
@@ -34,7 +35,23 @@ impl GpuTimer {
             Ok(())
         })?;
 
-        Ok(Self { query_pool, period, last_ms: 0.0 })
+        Ok(Self {
+            query_pool,
+            period,
+            fps_counter: FPSCounter::new(frame_count.max(1) * 2),
+        })
+    }
+
+    pub fn fps(&self) -> f64 {
+        self.fps_counter.get_fps()
+    }
+
+    pub fn last_ms(&self) -> f64 {
+        self.fps_counter.last_frame_ms()
+    }
+
+    pub fn query_pool(&self) -> vk::QueryPool {
+        self.query_pool
     }
 
     // reads a frame time
@@ -55,7 +72,8 @@ impl GpuTimer {
         }
         let start = u64::from_ne_bytes(data[0..8].try_into().unwrap());
         let end = u64::from_ne_bytes(data[8..16].try_into().unwrap());
-        self.last_ms = end.wrapping_sub(start) as f64 * self.period as f64 / 1_000_000.0;
+        let ms = end.wrapping_sub(start) as f64 * self.period as f64 / 1_000_000.0;
+        self.fps_counter.push_ms(ms);
         Ok(())
     }
 

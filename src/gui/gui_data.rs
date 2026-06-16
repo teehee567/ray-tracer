@@ -8,21 +8,16 @@ pub enum PushRender {
 }
 
 pub enum PushGui {
-    Fps(f64),
-    PerfUpdate{compute_ms: f64, present_ms: f64},
-    PresentWaitTime(f64),
+    PerfUpdate{compute_fps: f64, compute_ms: f64, present_fps: f64, present_ms: f64},
 }
 
 #[derive(Debug, Default)]
 pub struct GuiData {
-    pub fps: f64,
-    // frame calculated with intervat from last frame
-    pub frame_ms: f64,
-    // how long it takes to fully finish on the gpu
+    pub compute_fps: f64,
     pub compute_ms: f64,
-    pub present_ms: f64,
 
-    pub present_wait_time: f64,
+    pub present_fps: f64,
+    pub present_ms: f64,
 
     pub save_file_path: String,
     pub perf_history: PerfHistory,

@@ -6,7 +6,6 @@ use crate::app::render_controller::RenderCommand;
 use crate::gui::PushGui;
 use crate::gui::components::perf_graph::PERF_HISTORY_LEN;
 use crate::gui::panels::{GuiPanels, GuiTheme};
-use crate::fps_counter::FPSCounter;
 use crossbeam_channel::{Receiver, TryRecvError, Sender};
 use egui::epaint::ClippedPrimitive;
 use egui::{
@@ -354,13 +353,13 @@ impl GuiFrontend {
             match self.gui_data_rx.try_recv() {
                 Ok(req) => {
                     match req {
-                        PushGui::Fps(x) => self.gui_data.fps = x,
-                        PushGui::PerfUpdate { compute_ms, present_ms } => {
+                        PushGui::PerfUpdate { compute_fps, compute_ms, present_fps, present_ms } => {
+                            self.gui_data.compute_fps = compute_fps;
                             self.gui_data.compute_ms = compute_ms;
+                            self.gui_data.present_fps = present_fps;
                             self.gui_data.present_ms = present_ms;
                             self.gui_data.perf_history.push(compute_ms as f32, present_ms as f32);
                         },
-                        PushGui::PresentWaitTime(x) => self.gui_data.present_wait_time = x,
                     }
                 }
                 Err(TryRecvError::Empty) => break,
