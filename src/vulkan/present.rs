@@ -22,10 +22,21 @@ pub(super) unsafe fn record_present_commands(
     panel_width: u32,
     render_extent: UVec2,
     save_image: Option<&SaveImage>,
+    // for timing present timer
+    query_pool: vk::QueryPool,
 ) -> Result<()> {
     let swapchain_image = swapchain.images[swapchain_index];
     let begin_info = vk::CommandBufferBeginInfo::builder();
     device.begin_command_buffer(command_buffer, &begin_info)?;
+
+    let first_query = frame_index as u32 * 2;
+    device.cmd_reset_query_pool(command_buffer, query_pool, first_query, 2);
+    device.cmd_write_timestamp(
+        command_buffer,
+        vk::PipelineStageFlags::TOP_OF_PIPE,
+        query_pool,
+        first_query,
+    );
 
     // path traced frame: compute output -> transfer source
     cmd_image_barrier(
@@ -246,6 +257,14 @@ pub(super) unsafe fn record_present_commands(
     if let Some(layout) = swapchain.image_layouts.get_mut(swapchain_index) {
         *layout = vk::ImageLayout::PRESENT_SRC_KHR;
     }
+
+    // end time
+    device.cmd_write_timestamp(
+        command_buffer,
+        vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+        query_pool,
+        first_query + 1,
+    );
 
     device.end_command_buffer(command_buffer)?;
 

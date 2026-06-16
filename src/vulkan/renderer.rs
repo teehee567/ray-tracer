@@ -33,7 +33,8 @@ pub struct VulkanRenderer {
     scene: Scene,
     frame: usize,
     resized: bool,
-    timer: GpuTimer,
+    compute_timer: GpuTimer,
+    present_timer: GpuTimer,
     gui_sender: Option<Sender<PushGui>>,
     fps_counter: FPSCounter,
 }
@@ -50,7 +51,8 @@ impl VulkanRenderer {
             swapchain.images.len(),
         )?;
 
-        let timer = GpuTimer::new(&ctx, OFFSCREEN_FRAME_COUNT)?;
+        let compute_timer = GpuTimer::new(&ctx, OFFSCREEN_FRAME_COUNT)?;
+        let present_timer = GpuTimer::new(&ctx, OFFSCREEN_FRAME_COUNT)?;
 
         info!("Finished initialisation of Vulkan Resources");
         let render_resolution = scene.get_camera_controls().resolution.0;
@@ -67,7 +69,8 @@ impl VulkanRenderer {
             scene,
             frame: 0,
             resized: false,
-            timer,
+            compute_timer,
+            present_timer,
             gui_sender: None,
             fps_counter,
         })
@@ -92,8 +95,8 @@ impl VulkanRenderer {
         self.resized = true;
     }
 
-    pub fn last_compute_ms(&self) -> f64 {
-        self.timer.last_ms
+    pub fn last_timer_ms(&self) -> (f64, f64) {
+        (self.compute_timer.last_ms, self.present_timer.last_ms)
     }
 
     // is frame_index work complete
@@ -110,7 +113,7 @@ impl VulkanRenderer {
         let command_buffer = self.sync.compute_command_buffers[frame_index];
 
         if self.frame >= OFFSCREEN_FRAME_COUNT {
-            self.timer.read_slot(device, frame_index)?;
+            self.compute_timer.read_slot(device, frame_index)?;
         }
 
         device.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())?;
@@ -118,7 +121,7 @@ impl VulkanRenderer {
         self.update_uniform_buffer()?;
         let render_extent = self.gui.render_extent();
         self.path_tracer
-            .record_dispatch(device, command_buffer, frame_index, render_extent, self.timer.query_pool)?;
+            .record_dispatch(device, command_buffer, frame_index, render_extent, self.compute_timer.query_pool)?;
 
         device.reset_fences(&[self.sync.frame_fences[frame_index]])?;
 
@@ -176,6 +179,10 @@ impl VulkanRenderer {
             Err(e) => return Err(anyhow!(e)),
         };
 
+        if self.frame >= OFFSCREEN_FRAME_COUNT {
+            self.present_timer.read_slot(device, frame_index)?;
+        }
+
         device.reset_command_buffer(
             self.sync.present_command_buffer,
             vk::CommandBufferResetFlags::empty(),
@@ -198,6 +205,7 @@ impl VulkanRenderer {
             panel_width,
             render_extent,
             save_image_buffer.as_ref(),
+            self.present_timer.query_pool
         )?;
 
         let wait_semaphores = &[self.sync.image_available_semaphore];
@@ -259,7 +267,7 @@ impl VulkanRenderer {
         let device = &self.ctx.device;
         device.device_wait_idle().unwrap();
 
-        self.timer.destroy(device);
+        self.compute_timer.destroy(device);
         self.gui.destroy(device);
         self.path_tracer.destroy(device);
         self.sync.destroy(device, self.ctx.command_pool);

@@ -159,6 +159,7 @@ impl Scene {
     // }
 
     /// Writes all buffers into the given memory (dummy implementation).
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn write_buffers(&self, memory: *mut c_void) {
         let mut memory_buf = BufferBuilder::new();
         for node in &self.components.bvh {

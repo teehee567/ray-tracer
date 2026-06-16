@@ -72,6 +72,7 @@ impl GuiPanels {
                     //     ui.label("Frame time: ∞");
                     // }
                     ui.label(format!("Compute (GPU): {:.2} ms", gui_data.compute_ms));
+                    ui.label(format!("Present (GPU): {:.2} ms", gui_data.present_ms));
 
                     ui.separator();
                     ui.heading("Frame timing");

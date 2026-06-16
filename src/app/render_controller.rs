@@ -150,10 +150,9 @@ fn render_loop(
         for index in completed {
             ready.push_back(index);
             // let fps = fps_counter.tick();
-            // let frame_ms = fps_counter.last_frame_ms();
-            // let compute_ms = renderer.last_compute_ms();
+            let (compute_ms, present_ms) = renderer.last_timer_ms();
             // let _  = gui_data_tx.try_send(GuiRequest::Fps(fps));
-            // let _  = gui_data_tx.try_send(GuiRequest::PerfUpdate{frame_ms, compute_ms});
+            let _  = gui_data_tx.try_send(PushGui::PerfUpdate{compute_ms, present_ms});
         }
 
         if present_requested {

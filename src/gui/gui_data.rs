@@ -9,7 +9,7 @@ pub enum PushRender {
 
 pub enum PushGui {
     Fps(f64),
-    PerfUpdate{frame_ms: f64, compute_ms: f64}
+    PerfUpdate{compute_ms: f64, present_ms: f64}
 }
 
 #[derive(Debug, Default)]
@@ -19,6 +19,8 @@ pub struct GuiData {
     pub frame_ms: f64,
     // how long it takes to fully finish on the gpu
     pub compute_ms: f64,
+    pub present_ms: f64,
+
     pub save_file_path: String,
     pub perf_history: PerfHistory,
 }
@@ -35,7 +37,7 @@ impl GuiData {
 
 #[derive(Debug, Default)]
 pub struct PerfHistory {
-    pub frame_ms: VecDeque<f32>,
+    pub present_ms: VecDeque<f32>,
     pub compute_ms: VecDeque<f32>,
     capacity: usize,
 }
@@ -43,21 +45,21 @@ pub struct PerfHistory {
 impl PerfHistory {
     pub fn new(capacity: usize) -> Self {
         Self {
-            frame_ms: VecDeque::with_capacity(capacity),
+            present_ms: VecDeque::with_capacity(capacity),
             compute_ms: VecDeque::with_capacity(capacity),
             capacity,
         }
     }
 
-    pub fn push(&mut self, frame_ms: f32, compute_ms: f32) {
-        if self.frame_ms.len() >= self.capacity {
-            self.frame_ms.pop_front();
+    pub fn push(&mut self, compute_ms: f32, present_ms: f32) {
+        if self.present_ms.len() >= self.capacity {
+            self.present_ms.pop_front();
         }
         if self.compute_ms.len() >= self.capacity {
             self.compute_ms.pop_front();
         }
-        self.frame_ms.push_back(frame_ms);
-        self.compute_ms.push_back(compute_ms);
+        self.present_ms.push_back(compute_ms);
+        self.compute_ms.push_back(present_ms);
     }
 }
 

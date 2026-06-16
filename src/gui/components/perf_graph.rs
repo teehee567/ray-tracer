@@ -12,13 +12,13 @@ pub const PERF_HISTORY_LEN: usize = 200;
 
 // perf graph line graph of last render times, cpu and gpu times separate
 pub fn draw_perf_graph(ui: &mut egui::Ui, history: &PerfHistory) {
-    let frame_points: PlotPoints = history
-        .frame_ms
+    let present_points: PlotPoints = history
+        .present_ms
         .iter()
         .enumerate()
         .map(|(i, &v)| [i as f64, v as f64])
         .collect();
-    let gpu_points: PlotPoints = history
+    let compute_points: PlotPoints = history
         .compute_ms
         .iter()
         .enumerate()
@@ -38,12 +38,12 @@ pub fn draw_perf_graph(ui: &mut egui::Ui, history: &PerfHistory) {
         .show(ui, |plot_ui| {
             plot_ui.set_plot_bounds_y(y_min..=y_max);
             plot_ui.line(
-                Line::new("Frame (CPU+GPU)", frame_points)
+                Line::new("Frame (CPU+GPU)", present_points)
                     .color(FRAME_COLOR)
                     .width(1.5),
             );
             plot_ui.line(
-                Line::new("GPU compute", gpu_points)
+                Line::new("GPU compute", compute_points)
                     .color(GPU_COLOR)
                     .width(1.5),
             );
@@ -54,7 +54,7 @@ pub fn draw_perf_graph(ui: &mut egui::Ui, history: &PerfHistory) {
 fn perf_y_bounds(history: &PerfHistory) -> (f64, f64) {
     let mut lowest = f32::INFINITY;
     let mut highest = f32::NEG_INFINITY;
-    for &v in history.frame_ms.iter().chain(&history.compute_ms) {
+    for &v in history.present_ms.iter().chain(&history.compute_ms) {
         lowest = lowest.min(v);
         highest = highest.max(v);
     }

@@ -355,8 +355,10 @@ impl GuiFrontend {
                 Ok(req) => {
                     match req {
                         PushGui::Fps(x) => self.gui_data.fps = x,
-                        PushGui::PerfUpdate { frame_ms, compute_ms } => {
-                            self.gui_data.perf_history.push(frame_ms as f32, compute_ms as f32);
+                        PushGui::PerfUpdate { compute_ms, present_ms } => {
+                            self.gui_data.compute_ms = compute_ms;
+                            self.gui_data.present_ms = present_ms;
+                            self.gui_data.perf_history.push(compute_ms as f32, present_ms as f32);
                         },
                     }
                 }
