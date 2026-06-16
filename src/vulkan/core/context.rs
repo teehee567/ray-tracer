@@ -354,7 +354,7 @@ unsafe fn create_logical_device(
     unique_indices.insert(indices.graphics);
     unique_indices.insert(indices.present);
 
-    let queue_priorities = &[1.0];
+    let queue_priorities = &[1.0, 0.5];
     let queue_infos = unique_indices
         .iter()
         .map(|i| {
@@ -406,10 +406,10 @@ unsafe fn create_logical_device(
     info!("Created Logical Device, {:?}", device);
 
     // Queues
-    let compute_queue = device.get_device_queue(indices.compute, 0);
-    info!("Created Compute Queue: {:?}", compute_queue);
     let present_queue = device.get_device_queue(indices.present, 0);
     info!("Created Present Queue: {:?}", present_queue);
+    let compute_queue = device.get_device_queue(indices.compute, if indices.queue_count >= 2 { 1 } else { 0 });
+    info!("Created Compute Queue: {:?}", compute_queue);
 
     Ok((device, compute_queue, present_queue))
 }
