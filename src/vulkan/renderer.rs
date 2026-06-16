@@ -7,6 +7,7 @@ use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::{KhrSwapchainExtensionDeviceCommands, SuccessCode};
 use winit::window::Window;
 
+use crate::fps_counter::FPSCounter;
 use crate::gui::{self, PushRender, PushGui};
 use crate::scene::Scene;
 use crate::types::{AUVec2, Au32};
@@ -34,6 +35,7 @@ pub struct VulkanRenderer {
     resized: bool,
     compute_timer: GpuTimer,
     present_timer: GpuTimer,
+    present_rate: FPSCounter,
     gui_sender: Option<Sender<PushGui>>,
 }
 
@@ -67,6 +69,7 @@ impl VulkanRenderer {
             resized: false,
             compute_timer,
             present_timer,
+            present_rate: FPSCounter::new(60),
             gui_sender: None,
         })
     }
@@ -94,7 +97,7 @@ impl VulkanRenderer {
         (
             self.compute_timer.fps(),
             self.compute_timer.last_ms(),
-            self.present_timer.fps(),
+            self.present_rate.get_fps(),
             self.present_timer.last_ms(),
         )
     }
@@ -175,6 +178,7 @@ impl VulkanRenderer {
         // device.wait_for_fences(&[self.sync.present_fence], true, u64::MAX)?;
         // device.reset_fences(&[self.sync.present_fence])?;
 
+        self.present_rate.tick();
 
         if let Some(frame) = gui_frame.as_deref() {
             self.gui.update(&self.ctx, self.swapchain.extent, frame)?;
