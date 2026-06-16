@@ -1,8 +1,9 @@
 use anyhow::Result;
 use log::info;
-use vulkanalia::prelude::v1_0::*;
+use vulkanalia::{prelude::v1_0::*, vk::SemaphoreType};
 
 use super::commands::allocate_command_buffers;
+use crate::vulkan::constants::OFFSCREEN_FRAME_COUNT;
 
 /// Per-frame command buffers, semaphores and fences for the
 /// compute-dispatch / present loop.
@@ -14,6 +15,10 @@ pub struct SyncState {
     pub render_finished_semaphores: Vec<vk::Semaphore>,
     pub frame_fences: Vec<vk::Fence>,
     pub present_fence: vk::Fence,
+
+    pub compute_timeline: vk::Semaphore,
+    pub slot_timeline_values: [u64; OFFSCREEN_FRAME_COUNT],
+    pub timeline_counter: u64,
 }
 
 impl SyncState {
@@ -34,6 +39,13 @@ impl SyncState {
             render_finished_semaphores.push(device.create_semaphore(&semaphore_info, None)?);
         }
 
+        let mut timeline_type_info = vk::SemaphoreTypeCreateInfo::builder()
+            .semaphore_type(SemaphoreType::TIMELINE)
+            .initial_value(0);
+        let timeline_info =
+            vk::SemaphoreCreateInfo::builder().push_next(&mut timeline_type_info);
+        let compute_semaphore = device.create_semaphore(&timeline_info, None)?;
+
         let fence_info = vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
         let mut frame_fences = Vec::with_capacity(frame_count);
         for _ in 0..frame_count {
@@ -50,6 +62,9 @@ impl SyncState {
             render_finished_semaphores,
             frame_fences,
             present_fence,
+            compute_timeline: compute_semaphore,
+            slot_timeline_values: [0; OFFSCREEN_FRAME_COUNT],
+            timeline_counter: 0,
         })
     }
 
@@ -68,6 +83,7 @@ impl SyncState {
         for &semaphore in &self.render_finished_semaphores {
             device.destroy_semaphore(semaphore, None);
         }
+        device.destroy_semaphore(self.compute_timeline, None);
         self.render_finished_semaphores.clear();
     }
 }

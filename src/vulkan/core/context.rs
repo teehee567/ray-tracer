@@ -391,7 +391,8 @@ unsafe fn create_logical_device(
         .descriptor_binding_sampled_image_update_after_bind(true)
         .descriptor_binding_partially_bound(true)
         .descriptor_binding_variable_descriptor_count(true)
-        .shader_sampled_image_array_non_uniform_indexing(true);
+        .shader_sampled_image_array_non_uniform_indexing(true)
+        .timeline_semaphore(true);
 
     // Create. Note: device layers have been deprecated since Vulkan 1.0 — only instance
     // layers are used (the validation layer is already enabled at instance creation), so we

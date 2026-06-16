@@ -121,6 +121,11 @@ impl VulkanRenderer {
 
     pub unsafe fn dispatch_compute(&mut self, frame_index: usize) -> Result<()> {
         let device = &self.ctx.device;
+
+        self.sync.timeline_counter += 1;
+        let timeline_value = self.sync.timeline_counter;
+        self.sync.slot_timeline_values[frame_index] = timeline_value;
+
         let command_buffer = self.sync.compute_command_buffers[frame_index];
 
         self.compute_timer.read_slot(device, frame_index)?;
@@ -135,7 +140,15 @@ impl VulkanRenderer {
         device.reset_fences(&[self.sync.frame_fences[frame_index]])?;
 
         let command_buffers = &[command_buffer];
-        let submit_info = vk::SubmitInfo::builder().command_buffers(command_buffers);
+
+        let signal_semaphores = &[self.sync.compute_timeline];
+        let signal_values = &[timeline_value];
+        let mut timeline_info =
+            vk::TimelineSemaphoreSubmitInfo::builder().signal_semaphore_values(signal_values);
+        let submit_info = vk::SubmitInfo::builder()
+            .command_buffers(command_buffers)
+            .signal_semaphores(signal_semaphores)
+            .push_next(&mut timeline_info);
 
         device.queue_submit(
             self.ctx.compute_queue,
@@ -157,7 +170,7 @@ impl VulkanRenderer {
         let device = &self.ctx.device;
 
         let start = Instant::now();
-        device.wait_for_fences(&[self.sync.frame_fences[frame_index]], true, u64::MAX)?;
+        // device.wait_for_fences(&[self.sync.frame_fences[frame_index]], true, u64::MAX)?;
 
         // render loop sonly calls this function after present_ready() is true otherwise death
 
@@ -221,16 +234,22 @@ impl VulkanRenderer {
             self.present_timer.query_pool
         )?;
 
-        let wait_semaphores = &[self.sync.image_available_semaphore];
+        let wait_semaphores = &[self.sync.image_available_semaphore, self.sync.compute_timeline];
         let command_buffers = &[self.sync.present_command_buffer];
         let signal_semaphores = &[self.sync.render_finished_semaphores[image_index]];
-        let wait_stage_masks =
-            [vk::PipelineStageFlags::TRANSFER | vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+        let wait_stage_masks = [
+            vk::PipelineStageFlags::TRANSFER | vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            vk::PipelineStageFlags::TRANSFER,
+        ];
+        let wait_values = &[0, self.sync.slot_timeline_values[frame_index]];
+        let mut timeline_info =
+            vk::TimelineSemaphoreSubmitInfo::builder().wait_semaphore_values(wait_values);
         let submit_info = vk::SubmitInfo::builder()
             .wait_semaphores(wait_semaphores)
             .wait_dst_stage_mask(&wait_stage_masks)
             .command_buffers(command_buffers)
-            .signal_semaphores(signal_semaphores);
+            .signal_semaphores(signal_semaphores)
+            .push_next(&mut timeline_info);
 
         // Reset immediately before submit so an early return above doesnt kill
         device.reset_fences(&[self.sync.present_fence])?;
@@ -283,6 +302,7 @@ impl VulkanRenderer {
         let device = &self.ctx.device;
         device.device_wait_idle().unwrap();
 
+        self.present_timer.destroy(device);
         self.compute_timer.destroy(device);
         self.gui.destroy(device);
         self.path_tracer.destroy(device);
