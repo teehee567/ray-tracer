@@ -36,7 +36,6 @@ impl GuiPanels {
         gui_data: &mut GuiData,
         panel_height: u32,
         pixels_per_point: f32,
-        ui_fps: f64,
     ) {
         egui::Panel::left("control_panel")
             .resizable(false)
@@ -61,17 +60,17 @@ impl GuiPanels {
 
                     ui.heading("Renderer");
 
-                    ui.label(format!("FPS: {:.2}", gui_data.fps));
-                    let frame_ms = if gui_data.fps > f64::EPSILON {
-                        1000.0 / gui_data.fps
-                    } else {
-                        f64::INFINITY
-                    };
-                    if frame_ms.is_finite() {
-                        ui.label(format!("Frame time: {:.2} ms", frame_ms));
-                    } else {
-                        ui.label("Frame time: ∞");
-                    }
+                    // ui.label(format!("FPS: {:.2}", gui_data.fps));
+                    // let frame_ms = if gui_data.fps > f64::EPSILON {
+                    //     1000.0 / gui_data.fps
+                    // } else {
+                    //     f64::INFINITY
+                    // };
+                    // if frame_ms.is_finite() {
+                    //     ui.label(format!("Frame time: {:.2} ms", frame_ms));
+                    // } else {
+                    //     ui.label("Frame time: ∞");
+                    // }
                     ui.label(format!("Compute (GPU): {:.2} ms", gui_data.compute_ms));
 
                     ui.separator();
@@ -80,7 +79,7 @@ impl GuiPanels {
 
                     ui.separator();
                     ui.heading("UI");
-                    ui.label(format!("UI FPS: {:.2}", ui_fps));
+                    ui.label(format!("UI FPS: {:.2}", gui_data.fps));
 
                     ui.separator();
                     ui.heading("Panel");

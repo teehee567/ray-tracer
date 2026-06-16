@@ -19,11 +19,12 @@ pub struct RenderController {
 }
 
 impl RenderController {
-    pub fn spawn(renderer: VulkanRenderer, gui_shared: gui::GuiShared) -> Result<Self> {
+    pub fn spawn(mut renderer: VulkanRenderer, gui_shared: gui::GuiShared) -> Result<Self> {
         let (command_tx, command_rx) = bounded(128);
         let (gui_data_tx, gui_data_rx) = bounded(128);
 
         let render_gui_shared = gui_shared.clone();
+        renderer.set_gui_sender(gui_data_tx.clone());
         let handle = thread::Builder::new()
             .name("render-thread".into())
             .spawn(move || render_loop(renderer, render_gui_shared, command_rx, gui_data_tx))
@@ -90,7 +91,6 @@ fn render_loop(
 ) {
     let mut paused = false;
     let mut running = true;
-    let mut fps_counter = FPSCounter::new(15);
     let mut available: VecDeque<usize> = (0..OFFSCREEN_FRAME_COUNT).collect();
     let mut in_flight: Vec<usize> = Vec::with_capacity(OFFSCREEN_FRAME_COUNT);
     let mut ready: VecDeque<usize> = VecDeque::with_capacity(OFFSCREEN_FRAME_COUNT);
@@ -149,11 +149,11 @@ fn render_loop(
 
         for index in completed {
             ready.push_back(index);
-            let fps = fps_counter.tick();
-            let frame_ms = fps_counter.last_frame_ms();
-            let compute_ms = renderer.last_compute_ms();
-            let _  = gui_data_tx.try_send(GuiRequest::Fps(fps));
-            let _  = gui_data_tx.try_send(GuiRequest::PerfUpdate{frame_ms, compute_ms});
+            // let fps = fps_counter.tick();
+            // let frame_ms = fps_counter.last_frame_ms();
+            // let compute_ms = renderer.last_compute_ms();
+            // let _  = gui_data_tx.try_send(GuiRequest::Fps(fps));
+            // let _  = gui_data_tx.try_send(GuiRequest::PerfUpdate{frame_ms, compute_ms});
         }
 
         if present_requested {

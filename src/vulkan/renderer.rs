@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
+use crossbeam_channel::Sender;
 use log::info;
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::KhrSwapchainExtensionDeviceCommands;
 use winit::window::Window;
 
-use crate::gui::{self, BackendRequest};
+use crate::fps_counter::FPSCounter;
+use crate::gui::{self, BackendRequest, GuiRequest};
 use crate::scene::Scene;
 use crate::types::{AUVec2, Au32};
 use crate::vulkan::utils::save_frame::SaveImage;
@@ -32,6 +34,8 @@ pub struct VulkanRenderer {
     frame: usize,
     resized: bool,
     timer: GpuTimer,
+    gui_sender: Option<Sender<GuiRequest>>,
+    fps_counter: FPSCounter,
 }
 
 impl VulkanRenderer {
@@ -52,6 +56,8 @@ impl VulkanRenderer {
         let render_resolution = scene.get_camera_controls().resolution.0;
         let gui = GuiRenderer::new(&ctx, swapchain.render_pass, swapchain.extent, render_resolution)?;
 
+        let fps_counter = FPSCounter::new(60);
+
         Ok(Self {
             ctx,
             swapchain,
@@ -62,11 +68,17 @@ impl VulkanRenderer {
             frame: 0,
             resized: false,
             timer,
+            gui_sender: None,
+            fps_counter,
         })
     }
 
     pub unsafe fn upload_scene(&mut self) -> Result<()> {
         self.path_tracer.upload_scene(&self.ctx.device, &self.scene)
+    }
+
+    pub fn set_gui_sender(&mut self, sender: Sender<GuiRequest>) {
+        self.gui_sender = Some(sender);
     }
 
     pub fn handle_resize(&mut self, width: u32, height: u32) {
@@ -138,6 +150,10 @@ impl VulkanRenderer {
         // and textures, so the previous present commands must have finished
         device.wait_for_fences(&[self.sync.present_fence], true, u64::MAX)?;
         device.reset_fences(&[self.sync.present_fence])?;
+        self.fps_counter.tick();
+        if let Some(sender) = &self.gui_sender {
+            let _ = sender.try_send(GuiRequest::Fps(self.fps_counter.get_fps()));
+        }
 
         if let Some(frame) = gui_frame.as_deref() {
             self.gui.update(&self.ctx, self.swapchain.extent, frame)?;

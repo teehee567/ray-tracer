@@ -85,7 +85,6 @@ pub struct GuiFrontend {
 
     gui_data: GuiData,
     panels: GuiPanels,
-    ui_fps_counter: FPSCounter,
 }
 
 impl GuiFrontend {
@@ -110,7 +109,6 @@ impl GuiFrontend {
             gui_data: GuiData::new(),
 
             panels: GuiPanels::new(render_sender),
-            ui_fps_counter: FPSCounter::new(60),
         }
     }
 
@@ -185,10 +183,6 @@ impl GuiFrontend {
         }
     }
 
-    pub fn tick_ui_fps(&mut self) {
-        self.ui_fps_counter.tick();
-    }
-
     pub fn run_frame(&mut self, _window: &Window) {
         self.poll_gui_data();
         self.apply_theme();
@@ -227,7 +221,6 @@ impl GuiFrontend {
         let theme = self.panels.theme;
         let panel_height = self.panel_height;
         let pixels_per_point = self.pixels_per_point;
-        let ui_fps = self.ui_fps_counter.get_fps();
 
         let full_output = self.ctx.run_ui(raw_input, |ui| {
             self.panels.draw(
@@ -235,7 +228,6 @@ impl GuiFrontend {
                 &mut self.gui_data,
                 panel_height,
                 pixels_per_point,
-                ui_fps,
             );
         });
 

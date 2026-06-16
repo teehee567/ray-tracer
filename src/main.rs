@@ -113,7 +113,6 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 state.gui.run_frame(&state.window);
                 if state.render_controller.present() {
-                    state.gui.tick_ui_fps();
                 }
             }
             WindowEvent::Resized(size) => {
