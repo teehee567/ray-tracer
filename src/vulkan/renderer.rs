@@ -98,7 +98,7 @@ impl VulkanRenderer {
             self.compute_timer.fps(),
             self.compute_timer.last_ms(),
             self.present_rate.get_fps(),
-            self.present_timer.last_ms(),
+            self.present_rate.last_frame_ms(),
         )
     }
 
