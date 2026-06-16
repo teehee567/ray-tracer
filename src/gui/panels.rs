@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::app::render_controller::RenderCommand;
 use crate::gui::components::perf_graph::draw_perf_graph;
-use crate::gui::gui_data::BackendRequest;
+use crate::gui::gui_data::PushRender;
 
 use super::frontend::{PANEL_WIDTH_POINTS, panel_width_pixels};
 use super::{GuiData, PerfHistory};
@@ -89,7 +89,7 @@ impl GuiPanels {
                     ui.text_edit_singleline(&mut gui_data.save_file_path);
 
                     if ui.button("Save Current Frame").clicked() {
-                        let _ = self.send(BackendRequest::SaveFrame(PathBuf::from(&gui_data.save_file_path)));
+                        let _ = self.send(PushRender::SaveFrame(PathBuf::from(&gui_data.save_file_path)));
                     }
                 });
             });
@@ -97,7 +97,7 @@ impl GuiPanels {
         egui::CentralPanel::default().show_inside(root_ui, |_| {});
     }
 
-    pub fn send(&self, req: BackendRequest) -> Result<()> {
+    pub fn send(&self, req: PushRender) -> Result<()> {
         self.render_sender.try_send(RenderCommand::BackendCommand(req))?;
         Ok(())
     }

@@ -7,14 +7,14 @@ use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
 use log::error;
 
 use crate::fps_counter::FPSCounter;
-use crate::gui::{self, GuiRequest};
+use crate::gui::{self, PushGui};
 use crate::gui::GuiData;
-use crate::gui::BackendRequest;
+use crate::gui::PushRender;
 use crate::vulkan::{OFFSCREEN_FRAME_COUNT, VulkanRenderer};
 
 pub struct RenderController {
     command_tx: Sender<RenderCommand>,
-    gui_data_rx: Receiver<GuiRequest>,
+    gui_data_rx: Receiver<PushGui>,
     handle: Option<thread::JoinHandle<()>>,
 }
 
@@ -62,7 +62,7 @@ impl RenderController {
         }
     }
 
-    pub fn gui_channels(&self) -> (Receiver<GuiRequest>, Sender<RenderCommand>) {
+    pub fn gui_channels(&self) -> (Receiver<PushGui>, Sender<RenderCommand>) {
         (self.gui_data_rx.clone(), self.command_tx.clone())
     }
 }
@@ -80,14 +80,14 @@ pub enum RenderCommand {
     Resize { width: u32, height: u32 },
     Present,
     Shutdown,
-    BackendCommand(BackendRequest),
+    BackendCommand(PushRender),
 }
 
 fn render_loop(
     mut renderer: VulkanRenderer,
     gui_shared: gui::GuiShared,
     command_rx: Receiver<RenderCommand>,
-    gui_data_tx: Sender<GuiRequest>,
+    gui_data_tx: Sender<PushGui>,
 ) {
     let mut paused = false;
     let mut running = true;
@@ -99,7 +99,7 @@ fn render_loop(
     while running {
         let mut present_requested = false;
         let mut pending_resize: Option<(u32, u32)> = None;
-        let mut pending_backend_command: Option<BackendRequest> = None;
+        let mut pending_backend_command: Option<PushRender> = None;
 
         loop {
             match command_rx.try_recv() {

@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 
 use super::{GuiData, PerfHistory};
 use crate::app::render_controller::RenderCommand;
-use crate::gui::GuiRequest;
+use crate::gui::PushGui;
 use crate::gui::components::perf_graph::PERF_HISTORY_LEN;
 use crate::gui::panels::{GuiPanels, GuiTheme};
 use crate::fps_counter::FPSCounter;
@@ -80,7 +80,7 @@ pub struct GuiFrontend {
     pixels_per_point: f32,
     panel_height: u32,
     generation: u64,
-    gui_data_rx: Receiver<GuiRequest>,
+    gui_data_rx: Receiver<PushGui>,
     render_sender: Sender<RenderCommand>,
 
     gui_data: GuiData,
@@ -88,7 +88,7 @@ pub struct GuiFrontend {
 }
 
 impl GuiFrontend {
-    pub fn new(window: &Window, shared: GuiShared, gui_data_rx: Receiver<GuiRequest>, render_sender: Sender<RenderCommand>) -> Self {
+    pub fn new(window: &Window, shared: GuiShared, gui_data_rx: Receiver<PushGui>, render_sender: Sender<RenderCommand>) -> Self {
         let ctx = egui::Context::default();
         let scale_factor = window.scale_factor() as f32;
         let size = window.inner_size();
@@ -354,8 +354,8 @@ impl GuiFrontend {
             match self.gui_data_rx.try_recv() {
                 Ok(req) => {
                     match req {
-                        GuiRequest::Fps(x) => self.gui_data.fps = x,
-                        GuiRequest::PerfUpdate { frame_ms, compute_ms } => {
+                        PushGui::Fps(x) => self.gui_data.fps = x,
+                        PushGui::PerfUpdate { frame_ms, compute_ms } => {
                             self.gui_data.perf_history.push(frame_ms as f32, compute_ms as f32);
                         },
                     }

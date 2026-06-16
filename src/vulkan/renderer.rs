@@ -8,7 +8,7 @@ use vulkanalia::vk::KhrSwapchainExtensionDeviceCommands;
 use winit::window::Window;
 
 use crate::fps_counter::FPSCounter;
-use crate::gui::{self, BackendRequest, GuiRequest};
+use crate::gui::{self, PushRender, PushGui};
 use crate::scene::Scene;
 use crate::types::{AUVec2, Au32};
 use crate::vulkan::utils::save_frame::SaveImage;
@@ -34,7 +34,7 @@ pub struct VulkanRenderer {
     frame: usize,
     resized: bool,
     timer: GpuTimer,
-    gui_sender: Option<Sender<GuiRequest>>,
+    gui_sender: Option<Sender<PushGui>>,
     fps_counter: FPSCounter,
 }
 
@@ -77,7 +77,7 @@ impl VulkanRenderer {
         self.path_tracer.upload_scene(&self.ctx.device, &self.scene)
     }
 
-    pub fn set_gui_sender(&mut self, sender: Sender<GuiRequest>) {
+    pub fn set_gui_sender(&mut self, sender: Sender<PushGui>) {
         self.gui_sender = Some(sender);
     }
 
@@ -140,7 +140,7 @@ impl VulkanRenderer {
         &mut self,
         frame_index: usize,
         gui_frame: Option<Arc<gui::GuiFrame>>,
-        save_image: Option<BackendRequest>,
+        save_image: Option<PushRender>,
     ) -> Result<()> {
         let device = &self.ctx.device;
 
@@ -152,7 +152,7 @@ impl VulkanRenderer {
         device.reset_fences(&[self.sync.present_fence])?;
         self.fps_counter.tick();
         if let Some(sender) = &self.gui_sender {
-            let _ = sender.try_send(GuiRequest::Fps(self.fps_counter.get_fps()));
+            let _ = sender.try_send(PushGui::Fps(self.fps_counter.get_fps()));
         }
 
         if let Some(frame) = gui_frame.as_deref() {
@@ -219,7 +219,7 @@ impl VulkanRenderer {
 
         if let Some(mut staging) = save_image_buffer {
             device.wait_for_fences(&[self.sync.present_fence], true, u64::MAX)?;
-            if let Some(BackendRequest::SaveFrame(path)) = save_image {
+            if let Some(PushRender::SaveFrame(path)) = save_image {
                 let _ = staging.save_frame(&self.ctx, path);
                 staging.destroy(&self.ctx.device);
             }

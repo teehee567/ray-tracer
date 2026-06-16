@@ -3,11 +3,11 @@ use std::{collections::VecDeque, default, path::{Path, PathBuf}};
 use crate::gui::components::perf_graph::PERF_HISTORY_LEN;
 
 #[derive(Clone, Debug)]
-pub enum BackendRequest {
+pub enum PushRender {
     SaveFrame(PathBuf),
 }
 
-pub enum GuiRequest {
+pub enum PushGui {
     Fps(f64),
     PerfUpdate{frame_ms: f64, compute_ms: f64}
 }
