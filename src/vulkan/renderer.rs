@@ -5,7 +5,7 @@ use anyhow::{Result, anyhow};
 use crossbeam_channel::Sender;
 use log::info;
 use vulkanalia::prelude::v1_0::*;
-use vulkanalia::vk::KhrSwapchainExtensionDeviceCommands;
+use vulkanalia::vk::{KhrSwapchainExtensionDeviceCommands, SuccessCode};
 use winit::window::Window;
 
 use crate::fps_counter::FPSCounter;
@@ -109,6 +109,16 @@ impl VulkanRenderer {
         Ok(status == vk::SuccessCode::SUCCESS)
     }
 
+    pub unsafe fn present_ready(&self) -> Result<bool> {
+        let device = &self.ctx.device;
+
+        match device.get_fence_status(self.sync.present_fence)? {
+            SuccessCode::SUCCESS => Ok(true),
+            SuccessCode::NOT_READY => Ok(false),
+            _ => unreachable!()
+        }
+    }
+
     pub unsafe fn dispatch_compute(&mut self, frame_index: usize) -> Result<()> {
         let device = &self.ctx.device;
         let command_buffer = self.sync.compute_command_buffers[frame_index];
@@ -150,17 +160,18 @@ impl VulkanRenderer {
 
         let start = Instant::now();
         device.wait_for_fences(&[self.sync.frame_fences[frame_index]], true, u64::MAX)?;
-    
 
-        // the GUI update below may destroy and recreate vertex/index buffers
-        // and textures, so the previous present commands must have finished
-        device.wait_for_fences(&[self.sync.present_fence], true, u64::MAX)?;
-        device.reset_fences(&[self.sync.present_fence])?;
+        // render loop sonly calls this function after present_ready() is true otherwise death
+
+        // device.wait_for_fences(&[self.sync.present_fence], true, u64::MAX)?;
+        // device.reset_fences(&[self.sync.present_fence])?;
+
         let end = start.elapsed();
+
         self.fps_counter.tick();
         if let Some(sender) = &self.gui_sender {
             let _ = sender.try_send(PushGui::Fps(self.fps_counter.get_fps()));
-            let _ = sender .try_send(PushGui::PresentWaitTime(end.as_millis() as f64));
+            let _ = sender.try_send(PushGui::PresentWaitTime(end.as_millis() as f64));
         }
 
 
@@ -224,6 +235,9 @@ impl VulkanRenderer {
             .wait_dst_stage_mask(&wait_stage_masks)
             .command_buffers(command_buffers)
             .signal_semaphores(signal_semaphores);
+
+        // Reset immediately before submit so an early return above doesnt kill
+        device.reset_fences(&[self.sync.present_fence])?;
 
         device.queue_submit(
             self.ctx.present_queue,

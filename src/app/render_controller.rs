@@ -155,7 +155,16 @@ fn render_loop(
             let _  = gui_data_tx.try_send(PushGui::PerfUpdate{compute_ms, present_ms});
         }
 
-        if present_requested {
+
+        let present_ready = match unsafe { renderer.present_ready() } {
+                Ok(ready) => ready,
+                Err(err) => {
+                    error!("present-ready error: {err:?}");
+                    false
+                }
+            };
+
+        if present_requested && present_ready {
             // Pick the frame to present BEFORE taking the GUI frame: a taken
             // GUI frame that never reaches present_frame loses its texture
             // deltas (the font atlas is only ever uploaded once), so when
