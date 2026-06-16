@@ -82,6 +82,7 @@ pub struct QueueFamilyIndices {
     pub graphics: u32,
     pub compute: u32,
     pub present: u32,
+    pub queue_count: u32,
 }
 
 impl QueueFamilyIndices {
@@ -91,14 +92,15 @@ impl QueueFamilyIndices {
         physical_device: vk::PhysicalDevice,
     ) -> Result<Self> {
         let properties = instance.get_physical_device_queue_family_properties(physical_device);
-        if let Some(index) = properties.iter().enumerate().find_map(|(i, p)| {
+        if let Some((index, queue_count)) = properties.iter().enumerate().find_map(|(i, p)| {
+            println!("{:#?}", p);
             if p.queue_flags.contains(vk::QueueFlags::GRAPHICS)
                 && p.queue_flags.contains(vk::QueueFlags::COMPUTE)
                 && instance
                     .get_physical_device_surface_support_khr(physical_device, i as u32, surface)
                     .unwrap_or(false)
             {
-                Some(i as u32)
+                Some((i as u32, p.queue_count))
             } else {
                 None
             }
@@ -107,6 +109,7 @@ impl QueueFamilyIndices {
                 graphics: index,
                 compute: index,
                 present: index,
+                queue_count,
             })
         } else {
             Err(anyhow!(SuitabilityError(
