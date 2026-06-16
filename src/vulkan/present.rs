@@ -61,20 +61,6 @@ pub(super) unsafe fn record_present_commands(
         .copied()
         .unwrap_or(vk::ImageLayout::UNDEFINED);
 
-    let (swap_src_stage, swap_src_access) = match current_layout {
-        vk::ImageLayout::UNDEFINED => (
-            vk::PipelineStageFlags::TOP_OF_PIPE,
-            vk::AccessFlags::empty(),
-        ),
-        vk::ImageLayout::PRESENT_SRC_KHR => (
-            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-            vk::AccessFlags::MEMORY_READ,
-        ),
-        _ => (
-            vk::PipelineStageFlags::ALL_COMMANDS,
-            vk::AccessFlags::empty(),
-        ),
-    };
 
     cmd_image_barrier(
         device,
@@ -83,11 +69,12 @@ pub(super) unsafe fn record_present_commands(
             swapchain_image,
             current_layout,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            swap_src_access,
+            vk::AccessFlags::empty(),
             vk::AccessFlags::TRANSFER_WRITE,
             1,
         ),
-        swap_src_stage,
+        // the src stage must be the same as the semaphore
+        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT | vk::PipelineStageFlags::TRANSFER,
         vk::PipelineStageFlags::TRANSFER,
     );
 
@@ -103,6 +90,23 @@ pub(super) unsafe fn record_present_commands(
     );
 
     if render_extent.x > 0 && render_extent.y > 0 {
+        // clear writes the showl swapchaing image and copy writes the
+        // subregion inside it, both transfer so clear before the copy
+        cmd_image_barrier(
+            device,
+            command_buffer,
+            image_barrier(
+                swapchain_image,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::AccessFlags::TRANSFER_WRITE,
+                vk::AccessFlags::TRANSFER_WRITE,
+                1,
+            ),
+            vk::PipelineStageFlags::TRANSFER,
+            vk::PipelineStageFlags::TRANSFER,
+        );
+
         let copy_region = vk::ImageCopy::builder()
             .src_subresource(
                 vk::ImageSubresourceLayers::builder()
@@ -185,7 +189,8 @@ pub(super) unsafe fn record_present_commands(
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 vk::AccessFlags::TRANSFER_WRITE,
-                vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                // loadop writes and reads for some reason
+                vk::AccessFlags::COLOR_ATTACHMENT_WRITE | vk::AccessFlags::COLOR_ATTACHMENT_READ,
                 1,
             ),
             vk::PipelineStageFlags::TRANSFER,

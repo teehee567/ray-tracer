@@ -123,9 +123,7 @@ impl VulkanRenderer {
         let device = &self.ctx.device;
         let command_buffer = self.sync.compute_command_buffers[frame_index];
 
-        if self.frame >= OFFSCREEN_FRAME_COUNT {
-            self.compute_timer.read_slot(device, frame_index)?;
-        }
+        self.compute_timer.read_slot(device, frame_index)?;
 
         device.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())?;
 
@@ -196,9 +194,7 @@ impl VulkanRenderer {
             Err(e) => return Err(anyhow!(e)),
         };
 
-        if self.frame >= OFFSCREEN_FRAME_COUNT {
-            self.present_timer.read_slot(device, frame_index)?;
-        }
+        self.present_timer.read_slot(device, frame_index)?;
 
         device.reset_command_buffer(
             self.sync.present_command_buffer,
