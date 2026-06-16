@@ -65,8 +65,8 @@ impl App {
 
         let gui_shared = gui::create_shared_state();
         let render_controller = RenderController::spawn(renderer, gui_shared.clone())?;
-        let gui_data_rx = render_controller.gui_data_receiver();
-        let gui = gui::GuiFrontend::new(&window, gui_shared, gui_data_rx);
+        let (gui_data_rx, render_sender) = render_controller.gui_channels();
+        let gui = gui::GuiFrontend::new(&window, gui_shared, gui_data_rx, render_sender);
 
         Ok(AppState {
             window,

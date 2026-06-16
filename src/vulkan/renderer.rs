@@ -1,13 +1,12 @@
-use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
-use log::{error, info};
+use log::info;
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::KhrSwapchainExtensionDeviceCommands;
 use winit::window::Window;
 
-use crate::gui;
+use crate::gui::{self, BackendRequest};
 use crate::scene::Scene;
 use crate::types::{AUVec2, Au32};
 use crate::vulkan::utils::save_frame::SaveImage;
@@ -129,7 +128,7 @@ impl VulkanRenderer {
         &mut self,
         frame_index: usize,
         gui_frame: Option<Arc<gui::GuiFrame>>,
-        save_image: Option<&Path>,
+        save_image: Option<BackendRequest>,
     ) -> Result<()> {
         let device = &self.ctx.device;
 
@@ -204,8 +203,9 @@ impl VulkanRenderer {
 
         if let Some(mut staging) = save_image_buffer {
             device.wait_for_fences(&[self.sync.present_fence], true, u64::MAX)?;
-            if let Err(err) = staging.save_frame(&self.ctx, save_image.unwrap()) {
-                error!("failed to save frame: {err:?}");
+            if let Some(BackendRequest::SaveFrame(path)) = save_image {
+                let _ = staging.save_frame(&self.ctx, path);
+                staging.destroy(&self.ctx.device);
             }
         }
 

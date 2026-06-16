@@ -2,10 +2,12 @@ use std::mem;
 use std::sync::{Arc, RwLock};
 
 use super::{GuiData, PerfHistory};
+use crate::app::render_controller::RenderCommand;
+use crate::gui::GuiRequest;
 use crate::gui::components::perf_graph::PERF_HISTORY_LEN;
 use crate::gui::panels::{GuiPanels, GuiTheme};
 use crate::fps_counter::FPSCounter;
-use crossbeam_channel::{Receiver, TryRecvError};
+use crossbeam_channel::{Receiver, TryRecvError, Sender};
 use egui::epaint::ClippedPrimitive;
 use egui::{
     self, Event, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2, Rect, ViewportId,
@@ -78,16 +80,16 @@ pub struct GuiFrontend {
     pixels_per_point: f32,
     panel_height: u32,
     generation: u64,
-    gui_data_rx: Receiver<GuiData>,
-    latest_gui_data: Option<GuiData>,
-    perf_history: PerfHistory,
+    gui_data_rx: Receiver<GuiRequest>,
+    render_sender: Sender<RenderCommand>,
 
+    gui_data: GuiData,
     panels: GuiPanels,
     ui_fps_counter: FPSCounter,
 }
 
 impl GuiFrontend {
-    pub fn new(window: &Window, shared: GuiShared, gui_data_rx: Receiver<GuiData>) -> Self {
+    pub fn new(window: &Window, shared: GuiShared, gui_data_rx: Receiver<GuiRequest>, render_sender: Sender<RenderCommand>) -> Self {
         let ctx = egui::Context::default();
         let scale_factor = window.scale_factor() as f32;
         let size = window.inner_size();
@@ -103,10 +105,11 @@ impl GuiFrontend {
             panel_height: size.height,
             generation: 0,
             gui_data_rx,
-            latest_gui_data: None,
-            perf_history: PerfHistory::new(PERF_HISTORY_LEN),
+            render_sender: render_sender.clone(),
 
-            panels: GuiPanels::new(),
+            gui_data: GuiData::new(),
+
+            panels: GuiPanels::new(render_sender),
             ui_fps_counter: FPSCounter::new(60),
         }
     }
@@ -222,17 +225,14 @@ impl GuiFrontend {
         }
 
         let theme = self.panels.theme;
-        let gui_data = self.latest_gui_data;
         let panel_height = self.panel_height;
         let pixels_per_point = self.pixels_per_point;
         let ui_fps = self.ui_fps_counter.get_fps();
-        let perf_history = &self.perf_history;
 
         let full_output = self.ctx.run_ui(raw_input, |ui| {
             self.panels.draw(
                 ui,
-                gui_data.as_ref(),
-                perf_history,
+                &mut self.gui_data,
                 panel_height,
                 pixels_per_point,
                 ui_fps,
@@ -360,10 +360,13 @@ impl GuiFrontend {
     fn poll_gui_data(&mut self) {
         loop {
             match self.gui_data_rx.try_recv() {
-                Ok(gui_data) => {
-                    self.perf_history
-                        .push(gui_data.frame_ms as f32, gui_data.compute_ms as f32);
-                    self.latest_gui_data = Some(gui_data);
+                Ok(req) => {
+                    match req {
+                        GuiRequest::Fps(x) => self.gui_data.fps = x,
+                        GuiRequest::PerfUpdate { frame_ms, compute_ms } => {
+                            self.gui_data.perf_history.push(frame_ms as f32, compute_ms as f32);
+                        },
+                    }
                 }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => break,

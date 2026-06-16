@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{env, path::PathBuf, slice};
 
 use anyhow::Result;
 use vulkanalia::prelude::v1_0::*;
@@ -24,12 +24,22 @@ impl SaveImage {
         })
     }
 
-    pub unsafe fn save_frame(&self, ctx: &VulkanContext, path: &Path) -> Result<()> {
+    pub unsafe fn save_frame(&self, ctx: &VulkanContext, path: PathBuf) -> Result<()> {
+        let path = if path.is_absolute() {
+            path
+        } else {
+            let exe_dir = env::current_exe()?
+                .parent()
+                .ok_or_else(|| anyhow::anyhow!("executable has no parent directory"))?
+                .to_path_buf();
+            exe_dir.join(path)
+        };
+
         let size = self.buffer.size;
         let mapped = ctx
             .device
             .map_memory(self.buffer.memory, 0, size, vk::MemoryMapFlags::empty())?;
-        let bgra = std::slice::from_raw_parts(mapped.cast::<u8>(), size as usize);
+        let bgra = slice::from_raw_parts(mapped.cast::<u8>(), size as usize);
 
         let mut rgba = vec![0_u8; bgra.len()];
         for (dst, src) in rgba.chunks_exact_mut(4).zip(bgra.chunks_exact(4)) {
@@ -55,4 +65,5 @@ impl SaveImage {
     pub unsafe fn destroy(&mut self, device: &Device) {
         self.buffer.destroy(device);
     }
+
 }

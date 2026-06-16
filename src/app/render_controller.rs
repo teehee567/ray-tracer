@@ -7,20 +7,21 @@ use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
 use log::error;
 
 use crate::fps_counter::FPSCounter;
-use crate::gui;
+use crate::gui::{self, GuiRequest};
 use crate::gui::GuiData;
+use crate::gui::BackendRequest;
 use crate::vulkan::{OFFSCREEN_FRAME_COUNT, VulkanRenderer};
 
 pub struct RenderController {
     command_tx: Sender<RenderCommand>,
-    gui_data_rx: Receiver<GuiData>,
+    gui_data_rx: Receiver<GuiRequest>,
     handle: Option<thread::JoinHandle<()>>,
 }
 
 impl RenderController {
     pub fn spawn(renderer: VulkanRenderer, gui_shared: gui::GuiShared) -> Result<Self> {
-        let (command_tx, command_rx) = bounded(16);
-        let (gui_data_tx, gui_data_rx) = bounded(32);
+        let (command_tx, command_rx) = bounded(128);
+        let (gui_data_tx, gui_data_rx) = bounded(128);
 
         let render_gui_shared = gui_shared.clone();
         let handle = thread::Builder::new()
@@ -60,8 +61,8 @@ impl RenderController {
         }
     }
 
-    pub fn gui_data_receiver(&self) -> Receiver<GuiData> {
-        self.gui_data_rx.clone()
+    pub fn gui_channels(&self) -> (Receiver<GuiRequest>, Sender<RenderCommand>) {
+        (self.gui_data_rx.clone(), self.command_tx.clone())
     }
 }
 
@@ -71,20 +72,21 @@ impl Drop for RenderController {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum RenderCommand {
     Pause,
     Resume,
     Resize { width: u32, height: u32 },
     Present,
     Shutdown,
+    BackendCommand(BackendRequest),
 }
 
 fn render_loop(
     mut renderer: VulkanRenderer,
     gui_shared: gui::GuiShared,
     command_rx: Receiver<RenderCommand>,
-    gui_data_tx: Sender<GuiData>,
+    gui_data_tx: Sender<GuiRequest>,
 ) {
     let mut paused = false;
     let mut running = true;
@@ -97,6 +99,7 @@ fn render_loop(
     while running {
         let mut present_requested = false;
         let mut pending_resize: Option<(u32, u32)> = None;
+        let mut pending_backend_command: Option<BackendRequest> = None;
 
         loop {
             match command_rx.try_recv() {
@@ -110,6 +113,9 @@ fn render_loop(
                     RenderCommand::Shutdown => {
                         running = false;
                         break;
+                    }
+                    RenderCommand::BackendCommand(command) => {
+                        pending_backend_command = Some(command);
                     }
                 },
                 Err(TryRecvError::Empty) => break,
@@ -146,11 +152,8 @@ fn render_loop(
             let fps = fps_counter.tick();
             let frame_ms = fps_counter.last_frame_ms();
             let compute_ms = renderer.last_compute_ms();
-            let _ = gui_data_tx.try_send(GuiData {
-                fps,
-                frame_ms,
-                compute_ms,
-            });
+            let _  = gui_data_tx.try_send(GuiRequest::Fps(fps));
+            let _  = gui_data_tx.try_send(GuiRequest::PerfUpdate{frame_ms, compute_ms});
         }
 
         if present_requested {
@@ -174,7 +177,7 @@ fn render_loop(
                     None
                 };
 
-                if let Err(err) = unsafe { renderer.present_frame(frame_index, gui_frame, None) } {
+                if let Err(err) = unsafe { renderer.present_frame(frame_index, gui_frame, pending_backend_command) } {
                     error!("present error: {err:?}");
                     if is_new {
                         available.push_back(frame_index);

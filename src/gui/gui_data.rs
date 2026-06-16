@@ -1,14 +1,39 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, default, path::{Path, PathBuf}};
 
-#[derive(Clone, Copy, Debug)]
+use crate::gui::components::perf_graph::PERF_HISTORY_LEN;
+
+#[derive(Clone, Debug)]
+pub enum BackendRequest {
+    SaveFrame(PathBuf),
+}
+
+pub enum GuiRequest {
+    Fps(f64),
+    PerfUpdate{frame_ms: f64, compute_ms: f64}
+}
+
+#[derive(Debug, Default)]
 pub struct GuiData {
     pub fps: f64,
     // frame calculated with intervat from last frame
     pub frame_ms: f64,
     // how long it takes to fully finish on the gpu
     pub compute_ms: f64,
+    pub save_file_path: String,
+    pub perf_history: PerfHistory,
 }
 
+impl GuiData {
+    pub fn new() -> Self {
+
+        Self {
+            perf_history: PerfHistory::new(PERF_HISTORY_LEN),
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct PerfHistory {
     pub frame_ms: VecDeque<f32>,
     pub compute_ms: VecDeque<f32>,
@@ -35,3 +60,4 @@ impl PerfHistory {
         self.compute_ms.push_back(compute_ms);
     }
 }
+
