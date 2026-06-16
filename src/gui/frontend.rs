@@ -1,5 +1,6 @@
 use std::mem;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 
 use super::{GuiData, PerfHistory};
 use crate::app::render_controller::RenderCommand;
@@ -81,6 +82,7 @@ pub struct GuiFrontend {
     generation: u64,
     gui_data_rx: Receiver<PushGui>,
     render_sender: Sender<RenderCommand>,
+    start: Instant,
 
     gui_data: GuiData,
     panels: GuiPanels,
@@ -104,6 +106,7 @@ impl GuiFrontend {
             generation: 0,
             gui_data_rx,
             render_sender: render_sender.clone(),
+            start: Instant::now(),
 
             gui_data: GuiData::new(),
 
@@ -194,6 +197,7 @@ impl GuiFrontend {
         };
 
         let mut raw_input = egui::RawInput {
+            time: Some(self.start.elapsed().as_secs_f64()),
             screen_rect: Some(Rect::from_min_size(
                 pos2(0.0, 0.0),
                 vec2(width_points, height_points.max(0.0)),
