@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::{Result, anyhow};
 use crossbeam_channel::Sender;
@@ -147,16 +148,21 @@ impl VulkanRenderer {
     ) -> Result<()> {
         let device = &self.ctx.device;
 
+        let start = Instant::now();
         device.wait_for_fences(&[self.sync.frame_fences[frame_index]], true, u64::MAX)?;
+    
 
         // the GUI update below may destroy and recreate vertex/index buffers
         // and textures, so the previous present commands must have finished
         device.wait_for_fences(&[self.sync.present_fence], true, u64::MAX)?;
         device.reset_fences(&[self.sync.present_fence])?;
+        let end = start.elapsed();
         self.fps_counter.tick();
         if let Some(sender) = &self.gui_sender {
             let _ = sender.try_send(PushGui::Fps(self.fps_counter.get_fps()));
+            let _ = sender .try_send(PushGui::PresentWaitTime(end.as_millis() as f64));
         }
+
 
         if let Some(frame) = gui_frame.as_deref() {
             self.gui.update(&self.ctx, self.swapchain.extent, frame)?;

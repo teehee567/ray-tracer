@@ -9,7 +9,8 @@ pub enum PushRender {
 
 pub enum PushGui {
     Fps(f64),
-    PerfUpdate{compute_ms: f64, present_ms: f64}
+    PerfUpdate{compute_ms: f64, present_ms: f64},
+    PresentWaitTime(f64),
 }
 
 #[derive(Debug, Default)]
@@ -21,8 +22,11 @@ pub struct GuiData {
     pub compute_ms: f64,
     pub present_ms: f64,
 
+    pub present_wait_time: f64,
+
     pub save_file_path: String,
     pub perf_history: PerfHistory,
+
 }
 
 impl GuiData {

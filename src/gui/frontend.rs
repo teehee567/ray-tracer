@@ -360,6 +360,7 @@ impl GuiFrontend {
                             self.gui_data.present_ms = present_ms;
                             self.gui_data.perf_history.push(compute_ms as f32, present_ms as f32);
                         },
+                        PushGui::PresentWaitTime(x) => self.gui_data.present_wait_time = x,
                     }
                 }
                 Err(TryRecvError::Empty) => break,
