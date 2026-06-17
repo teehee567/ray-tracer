@@ -1,21 +1,15 @@
 use std::mem;
 use std::sync::{Arc, RwLock};
-use std::time::Instant;
 
 use super::{GuiData, PerfHistory};
 use crate::app::render_controller::RenderCommand;
 use crate::gui::PushGui;
 use crate::gui::components::perf_graph::PERF_HISTORY_LEN;
 use crate::gui::panels::{GuiPanels, GuiTheme};
-use crossbeam_channel::{Receiver, TryRecvError, Sender};
+use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use egui::epaint::ClippedPrimitive;
-use egui::{
-    self, Event, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2, Rect, ViewportId,
-    ViewportInfo, pos2, vec2,
-};
-use winit::dpi::PhysicalPosition;
-use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::keyboard::{Key as WinitKey, NamedKey};
+use egui::{self, Rect, ViewportId, pos2, vec2};
+use winit::event::WindowEvent;
 use winit::window::Window;
 
 // egui points
@@ -71,18 +65,12 @@ pub struct GuiFrame {
 /// Front-end responsible for building egui input and rasterising frames.
 pub struct GuiFrontend {
     ctx: egui::Context,
+    state: egui_winit::State,
     shared: GuiShared,
-    raw_events: Vec<Event>,
-    modifiers: Modifiers,
-    pointer_pos: Option<Pos2>,
-    pointer_inside: bool,
-    has_focus: bool,
     pixels_per_point: f32,
     panel_height: u32,
     generation: u64,
     gui_data_rx: Receiver<PushGui>,
-    render_sender: Sender<RenderCommand>,
-    start: Instant,
 
     gui_data: GuiData,
     panels: GuiPanels,
@@ -93,20 +81,22 @@ impl GuiFrontend {
         let ctx = egui::Context::default();
         let scale_factor = window.scale_factor() as f32;
         let size = window.inner_size();
+        let state = egui_winit::State::new(
+            ctx.clone(),
+            ViewportId::ROOT,
+            window,
+            Some(scale_factor),
+            None,
+            None,
+        );
         Self {
             ctx,
+            state,
             shared,
-            raw_events: Vec::new(),
-            modifiers: Modifiers::default(),
-            pointer_pos: None,
-            pointer_inside: false,
-            has_focus: true,
             pixels_per_point: scale_factor,
             panel_height: size.height,
             generation: 0,
             gui_data_rx,
-            render_sender: render_sender.clone(),
-            start: Instant::now(),
 
             gui_data: GuiData::new(),
 
@@ -114,80 +104,17 @@ impl GuiFrontend {
         }
     }
 
-    pub fn handle_event(&mut self, _window: &Window, event: &WindowEvent) {
-        match event {
-            WindowEvent::Resized(size) => {
-                self.panel_height = size.height;
-            }
-            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                self.pixels_per_point = *scale_factor as f32;
-            }
-            WindowEvent::Focused(focused) => {
-                self.has_focus = *focused;
-                if !focused {
-                    self.pointer_inside = false;
-                    self.pointer_pos = None;
-                    self.raw_events.push(Event::PointerGone);
-                }
-            }
-            WindowEvent::CursorLeft { .. } => {
-                self.pointer_inside = false;
-                self.pointer_pos = None;
-                self.raw_events.push(Event::PointerGone);
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                self.handle_cursor_moved(*position);
-            }
-            WindowEvent::MouseInput { state, button, .. } => {
-                if self.pointer_inside {
-                    if let Some(event) = self.translate_mouse_button(*button, *state) {
-                        self.raw_events.push(event);
-                    }
-                }
-            }
-            WindowEvent::MouseWheel { delta, phase, .. } => {
-                if self.pointer_inside {
-                    let phase = match phase {
-                        winit::event::TouchPhase::Started => egui::TouchPhase::Start,
-                        winit::event::TouchPhase::Moved => egui::TouchPhase::Move,
-                        winit::event::TouchPhase::Ended => egui::TouchPhase::End,
-                        winit::event::TouchPhase::Cancelled => egui::TouchPhase::Cancel,
-                    };
-                    match delta {
-                        MouseScrollDelta::LineDelta(x, y) => {
-                            self.raw_events.push(Event::MouseWheel {
-                                unit: MouseWheelUnit::Line,
-                                delta: vec2(*x, *y),
-                                phase,
-                                modifiers: self.modifiers,
-                            });
-                        }
-                        MouseScrollDelta::PixelDelta(pos) => {
-                            self.raw_events.push(Event::MouseWheel {
-                                unit: MouseWheelUnit::Point,
-                                delta: vec2(pos.x as f32, pos.y as f32),
-                                phase,
-                                modifiers: self.modifiers,
-                            });
-                        }
-                    }
-                }
-            }
-            WindowEvent::KeyboardInput { event, .. } => {
-                if let Some(key_event) = self.translate_key_event(event) {
-                    self.raw_events.push(key_event);
-                }
-            }
-            WindowEvent::Ime(winit::event::Ime::Commit(text)) if !text.is_empty() => {
-                self.raw_events.push(Event::Text(text.clone()));
-            }
-            _ => {}
-        }
+    pub fn handle_event(&mut self, window: &Window, event: &WindowEvent) {
+        let _ = self.state.on_window_event(window, event);
     }
 
-    pub fn run_frame(&mut self, _window: &Window) {
+    pub fn run_frame(&mut self, window: &Window) {
         self.poll_gui_data();
         self.apply_theme();
+
+        let size = window.inner_size();
+        self.panel_height = size.height;
+        self.pixels_per_point = window.scale_factor() as f32;
 
         let width_points = PANEL_WIDTH_POINTS;
         let height_points = if self.pixels_per_point <= f32::EPSILON {
@@ -196,30 +123,11 @@ impl GuiFrontend {
             self.panel_height as f32 / self.pixels_per_point
         };
 
-        let mut raw_input = egui::RawInput {
-            time: Some(self.start.elapsed().as_secs_f64()),
-            screen_rect: Some(Rect::from_min_size(
-                pos2(0.0, 0.0),
-                vec2(width_points, height_points.max(0.0)),
-            )),
-            ..Default::default()
-        };
-        raw_input.viewports.insert(
-            ViewportId::ROOT,
-            ViewportInfo {
-                native_pixels_per_point: Some(self.pixels_per_point),
-                ..Default::default()
-            },
-        );
-        raw_input.modifiers = self.modifiers;
-        raw_input.events.append(&mut self.raw_events);
-        raw_input.focused = self.has_focus;
-
-        if let Some(pos) = self.pointer_pos {
-            raw_input.events.push(Event::PointerMoved(pos));
-        } else {
-            raw_input.events.push(Event::PointerGone);
-        }
+        let mut raw_input = self.state.take_egui_input(window);
+        raw_input.screen_rect = Some(Rect::from_min_size(
+            pos2(0.0, 0.0),
+            vec2(width_points, height_points.max(0.0)),
+        ));
 
         let theme = self.panels.theme;
         let panel_height = self.panel_height;
@@ -233,6 +141,9 @@ impl GuiFrontend {
                 pixels_per_point,
             );
         });
+
+        self.state
+            .handle_platform_output(window, full_output.platform_output);
 
         if self.panels.theme != theme {
             self.apply_theme();
@@ -258,98 +169,6 @@ impl GuiFrontend {
         if let Ok(mut state) = self.shared.write() {
             state.update(frame);
         }
-    }
-
-    fn handle_cursor_moved(&mut self, position: PhysicalPosition<f64>) {
-        let panel_width = panel_width_pixels(self.pixels_per_point) as f64;
-        if position.x <= panel_width {
-            let pos = Pos2::new(
-                position.x as f32 / self.pixels_per_point,
-                position.y as f32 / self.pixels_per_point,
-            );
-            self.pointer_pos = Some(pos);
-            self.pointer_inside = true;
-        } else if self.pointer_inside {
-            self.pointer_inside = false;
-            self.pointer_pos = None;
-            self.raw_events.push(Event::PointerGone);
-        }
-    }
-
-    fn translate_mouse_button(&self, button: MouseButton, state: ElementState) -> Option<Event> {
-        let pressed = matches!(state, ElementState::Pressed);
-        let pointer_button = match button {
-            MouseButton::Left => PointerButton::Primary,
-            MouseButton::Right => PointerButton::Secondary,
-            MouseButton::Middle => PointerButton::Middle,
-            MouseButton::Back => PointerButton::Extra1,
-            MouseButton::Forward => PointerButton::Extra2,
-            _ => return None,
-        };
-
-        let pos = self.pointer_pos?;
-        Some(Event::PointerButton {
-            pos,
-            button: pointer_button,
-            pressed,
-            modifiers: self.modifiers,
-        })
-    }
-
-    fn translate_key_event(&self, event: &KeyEvent) -> Option<Event> {
-        let logical = &event.logical_key;
-        let key = match logical {
-            WinitKey::Named(named) => match named {
-                NamedKey::ArrowDown => Key::ArrowDown,
-                NamedKey::ArrowLeft => Key::ArrowLeft,
-                NamedKey::ArrowRight => Key::ArrowRight,
-                NamedKey::ArrowUp => Key::ArrowUp,
-                NamedKey::Backspace => Key::Backspace,
-                NamedKey::Delete => Key::Delete,
-                NamedKey::Enter => Key::Enter,
-                NamedKey::Escape => Key::Escape,
-                NamedKey::Tab => Key::Tab,
-                NamedKey::PageDown => Key::PageDown,
-                NamedKey::PageUp => Key::PageUp,
-                NamedKey::Home => Key::Home,
-                NamedKey::End => Key::End,
-                NamedKey::Space => Key::Space,
-                NamedKey::Insert => Key::Insert,
-                _ => return None,
-            },
-            WinitKey::Character(ch) => {
-                let c = ch.chars().next()?;
-                match c.to_ascii_lowercase() {
-                    'a' => Key::A,
-                    'c' => Key::C,
-                    'v' => Key::V,
-                    'x' => Key::X,
-                    'y' => Key::Y,
-                    'z' => Key::Z,
-                    '0' => Key::Num0,
-                    '1' => Key::Num1,
-                    '2' => Key::Num2,
-                    '3' => Key::Num3,
-                    '4' => Key::Num4,
-                    '5' => Key::Num5,
-                    '6' => Key::Num6,
-                    '7' => Key::Num7,
-                    '8' => Key::Num8,
-                    '9' => Key::Num9,
-                    _ => return None,
-                }
-            }
-            _ => return None,
-        };
-
-        let pressed = matches!(event.state, ElementState::Pressed);
-        Some(Event::Key {
-            key,
-            physical_key: None,
-            pressed,
-            repeat: event.repeat,
-            modifiers: self.modifiers,
-        })
     }
 
     fn poll_gui_data(&mut self) {

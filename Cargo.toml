@@ -10,6 +10,7 @@ anyhow = "1"
 bincode = "2"
 crossbeam-channel = "0.5.15"
 egui = "0.34"
+egui-winit = { version = "0.34", default-features = false, features = ["clipboard"] }
 egui_plot = "0.35"
 glam = { version = "0.33", features = ["serde"] }
 gltf = { version = "1.4", features = ["KHR_materials_emissive_strength", "KHR_materials_ior", "KHR_materials_specular", "KHR_materials_transmission", "KHR_texture_transform", "extensions"] }

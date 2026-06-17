@@ -51,6 +51,8 @@ impl SaveImage {
 
         ctx.device.unmap_memory(self.buffer.memory);
 
+        println!("Saved Image to:{}", path.display());
+
         image::save_buffer(
             path,
             &rgba,
