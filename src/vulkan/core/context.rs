@@ -354,7 +354,11 @@ unsafe fn create_logical_device(
     unique_indices.insert(indices.graphics);
     unique_indices.insert(indices.present);
 
-    let queue_priorities = &[1.0, 0.5];
+    let queue_priorities: &[f32] = if indices.queue_count >= 2 {
+        &[1.0, 0.5]
+    } else {
+        &[1.0]
+    };
     let queue_infos = unique_indices
         .iter()
         .map(|i| {
