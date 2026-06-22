@@ -1,16 +1,30 @@
-use std::ffi::c_void;
+use std::{ffi::c_void, mem, ptr};
 
 use anyhow::{Result, anyhow};
 use vulkanalia::prelude::v1_0::*;
 
 use super::context::VulkanContext;
 
-/// A buffer with its backing memory.
 #[derive(Clone, Debug, Default)]
 pub struct Buffer {
     pub buffer: vk::Buffer,
     pub memory: vk::DeviceMemory,
     pub size: vk::DeviceSize,
+}
+
+pub struct BufferOpts {
+    pub usage: vk::BufferUsageFlags,
+    pub properties: vk::MemoryPropertyFlags,
+}
+
+impl Default for BufferOpts {
+    fn default() -> Self {
+        Self {
+            usage: vk::BufferUsageFlags::VERTEX_BUFFER,
+            properties: vk::MemoryPropertyFlags::HOST_VISIBLE
+                | vk::MemoryPropertyFlags::HOST_COHERENT,
+        }
+    }
 }
 
 impl Buffer {
@@ -42,7 +56,14 @@ impl Buffer {
         })
     }
 
-    /// Create a host-visible, host-coherent buffer.
+    pub unsafe fn from_slice<T: Copy>(ctx: &VulkanContext, slice: &[T], opts: BufferOpts) -> Result<Self> {
+        let size = mem::size_of_val(slice) as u64;
+        let buffer = Self::new(ctx, size as u64, opts.usage, opts.properties)?;
+        buffer.write(&ctx.device, slice)?;
+
+        Ok(buffer)
+    }
+
     pub unsafe fn new_host(
         ctx: &VulkanContext,
         size: vk::DeviceSize,
@@ -56,7 +77,7 @@ impl Buffer {
         )
     }
 
-    /// Map `size` bytes, let `f` fill the mapping, then unmap.
+
     pub unsafe fn write_with<F>(&self, device: &Device, size: vk::DeviceSize, f: F) -> Result<()>
     where
         F: FnOnce(*mut c_void),
@@ -67,15 +88,15 @@ impl Buffer {
         Ok(())
     }
 
-    /// Copy `data` into the buffer (must be host-visible).
+    /// host visible
     pub unsafe fn write<T: Copy>(&self, device: &Device, data: &[T]) -> Result<()> {
-        let size = std::mem::size_of_val(data) as vk::DeviceSize;
+        let size = mem::size_of_val(data) as vk::DeviceSize;
         self.write_with(device, size, |mapped| {
-            std::ptr::copy_nonoverlapping(data.as_ptr(), mapped.cast(), data.len());
+            ptr::copy_nonoverlapping(data.as_ptr(), mapped.cast(), data.len());
         })
     }
 
-    /// Recreate the buffer (host-visible) if its capacity is below `needed`.
+    /// recreats buffer if lower than needed
     pub unsafe fn ensure_capacity(
         &mut self,
         ctx: &VulkanContext,
