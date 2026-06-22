@@ -9,6 +9,7 @@ mod path_tracer;
 mod present;
 mod renderer;
 mod utils;
+mod debug_renderer;
 
 pub use constants::OFFSCREEN_FRAME_COUNT;
 pub use renderer::VulkanRenderer;

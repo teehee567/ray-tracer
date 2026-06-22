@@ -7,6 +7,7 @@ use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::{KhrSwapchainExtensionDeviceCommands, SuccessCode};
 use winit::window::Window;
 
+use crate::accelerators::visualiser::AccelVis;
 use crate::fps_counter::FPSCounter;
 use crate::gui::{self, PushRender, PushGui};
 use crate::scene::Scene;
@@ -37,6 +38,7 @@ pub struct VulkanRenderer {
     present_timer: GpuTimer,
     present_rate: FPSCounter,
     gui_sender: Option<Sender<PushGui>>,
+    accel_vis: AccelVis,
 }
 
 impl VulkanRenderer {
@@ -58,6 +60,8 @@ impl VulkanRenderer {
         let render_resolution = scene.get_camera_controls().resolution.0;
         let gui = GuiRenderer::new(&ctx, swapchain.render_pass, swapchain.extent, render_resolution)?;
 
+        let accel_vis = AccelVis::from_flat_bvh(&scene.components.bvh);
+
         Ok(Self {
             ctx,
             swapchain,
@@ -71,6 +75,7 @@ impl VulkanRenderer {
             present_timer,
             present_rate: FPSCounter::new(60),
             gui_sender: None,
+            accel_vis,
         })
     }
 
@@ -159,6 +164,14 @@ impl VulkanRenderer {
         )?;
 
         self.frame += 1;
+
+        Ok(())
+    }
+
+    pub unsafe fn create_accel_vis(
+        &mut self,
+        frame_index: usize
+    ) -> Result<()> {
 
         Ok(())
     }
