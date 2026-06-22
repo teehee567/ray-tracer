@@ -1,9 +1,11 @@
-use glam::UVec2;
+use std::slice;
+
+use glam::{Mat4, UVec2};
 use log::info;
 use vulkanalia::prelude::v1_0::*;
 
 use crate::vulkan::core::{
-    context::VulkanContext, image::Image, pipeline::{create_graphics_pipeline, create_shader_module},
+    context::VulkanContext, descriptors::binding, image::Image, pipeline::{create_graphics_pipeline, create_shader_module}
 };
 use anyhow::Result;
 
@@ -42,6 +44,14 @@ impl DebugRenderer {
 
         let render_pass = Self::create_render_pass(device, vk::Format::R32_SFLOAT)?;
 
+        // framebuffer
+        let attachments = [image.view];
+        let frame_buffer = 
+
+        let pipeline_layout = Self::create_pipeline_layout(device, render_pass)?;
+
+        let pipeline = self.create_debug_pipeline(device, pipeline_layout)
+
         Ok(Self {
             debug_pass: render_pass,
             swapchain_pass,
@@ -49,10 +59,26 @@ impl DebugRenderer {
         })
     }
 
+    unsafe fn create_descriptor_set_layout(device: &Device) -> Result<vk::DescriptorSetLayout> {
+        let bindings = [binding(0, vk::Desc, count, stages)]
+    }
+
+    unsafe fn create_pipeline_layout(device: &Device) -> Result<vk::PipelineLayout> {
+        let push_constant = vk::PushConstantRange::builder()
+            .stage_flags(vk::ShaderStageFlags::VERTEX)
+            .offset(0)
+            .size(size_of::<Mat4>() as u32)
+            .build();
+
+        let info = vk::PipelineLayoutCreateInfo::builder()
+            .push_constant_ranges(slice::from_ref(&push_constant));
+        Ok(device.create_pipeline_layout(&info, None)?)
+    }
+
     unsafe fn create_debug_pipeline(
-        &self,
         device: &Device,
         layout: vk::PipelineLayout,
+        render_pass: vk::RenderPass,
     ) -> Result<vk::Pipeline> {
         let vert = create_shader_module(device, include_bytes!("../../shaders/debug.vert.spv"))?;
         let frag = create_shader_module(device, include_bytes!("../../shaders/debug.frag.spv"))?;
@@ -95,7 +121,7 @@ impl DebugRenderer {
                 blend_attachments: &blend_attachments,
                 dynamic_states: &dynamic_states,
                 layout,
-                render_pass: self.debug_pass,
+                render_pass,
                 subpass: 0,
                 topology: vk::PrimitiveTopology::TRIANGLE_LIST,
                 cull_mode: vk::CullModeFlags::FRONT,
