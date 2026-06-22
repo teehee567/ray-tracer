@@ -24,6 +24,19 @@ use super::path_tracer::PathTracer;
 use super::present::record_present_commands;
 use super::utils::gpu_timer::GpuTimer;
 
+const HEATMAP_ACTIVE: bool = true;
+
+/// Snapshot of the renderer's timing counters, handed to the GUI each frame.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TimerPerf {
+    pub compute_fps: f64,
+    pub compute_ms: f64,
+    pub present_fps: f64,
+    pub present_ms: f64,
+    pub heatmap_ms: f64,
+    pub compositor_ms: f64,
+}
+
 /// The Vulkan backend. Everything Vulkan lives behind this type; the
 /// render thread drives it through this API only.
 pub struct VulkanRenderer {
@@ -38,6 +51,8 @@ pub struct VulkanRenderer {
     resized: bool,
     compute_timer: GpuTimer,
     present_timer: GpuTimer,
+    heatmap_timer: GpuTimer,
+    compositor_timer: GpuTimer,
     present_rate: FPSCounter,
     gui_sender: Option<Sender<PushGui>>,
 }
@@ -56,12 +71,24 @@ impl VulkanRenderer {
 
         let compute_timer = GpuTimer::new(&ctx, OFFSCREEN_FRAME_COUNT)?;
         let present_timer = GpuTimer::new(&ctx, OFFSCREEN_FRAME_COUNT)?;
+        let heatmap_timer = GpuTimer::new(&ctx, OFFSCREEN_FRAME_COUNT)?;
+        let compositor_timer = GpuTimer::new(&ctx, OFFSCREEN_FRAME_COUNT)?;
 
         info!("Finished initialisation of Vulkan Resources");
         let render_resolution = scene.get_camera_controls().resolution.0;
         let gui = GuiRenderer::new(&ctx, swapchain.render_pass, swapchain.extent, render_resolution)?;
 
-        let heatmap = HeatmapRenderer::new(&ctx, swapchain.render_pass, swapchain.extent, &scene)?;
+        // size to renderer part
+        let render_extent = gui.render_extent();
+        let heatmap = HeatmapRenderer::new(
+            &ctx,
+            swapchain.render_pass,
+            vk::Extent2D {
+                width: render_extent.x,
+                height: render_extent.y,
+            },
+            &scene,
+        )?;
 
         Ok(Self {
             ctx,
@@ -75,6 +102,8 @@ impl VulkanRenderer {
             resized: false,
             compute_timer,
             present_timer,
+            heatmap_timer,
+            compositor_timer,
             present_rate: FPSCounter::new(60),
             gui_sender: None,
         })
@@ -96,16 +125,32 @@ impl VulkanRenderer {
         self.swapchain.extent.width = width;
         self.swapchain.extent.height = height;
         self.gui.handle_resize(width, height);
+
+        let render_extent = self.gui.render_extent();
+        unsafe {
+            if let Err(e) = self.heatmap.handle_resize(
+                &self.ctx,
+                vk::Extent2D {
+                    width: render_extent.x,
+                    height: render_extent.y,
+                },
+            ) {
+                log::error!("heatmap resize failed: {e}");
+            }
+        }
+
         self.resized = true;
     }
 
-    pub fn last_timer_perf(&self) -> (f64, f64, f64, f64) {
-        (
-            self.compute_timer.fps(),
-            self.compute_timer.last_ms(),
-            self.present_rate.get_fps(),
-            self.present_rate.last_frame_ms(),
-        )
+    pub fn last_timer_perf(&self) -> TimerPerf {
+        TimerPerf {
+            compute_fps: self.compute_timer.fps(),
+            compute_ms: self.compute_timer.last_ms(),
+            present_fps: self.present_rate.get_fps(),
+            present_ms: self.present_rate.last_frame_ms(),
+            heatmap_ms: self.heatmap_timer.last_ms(),
+            compositor_ms: self.compositor_timer.last_ms(),
+        }
     }
 
     // is frame_index work complete
@@ -208,6 +253,8 @@ impl VulkanRenderer {
         };
 
         self.present_timer.read_slot(device, frame_index)?;
+        self.heatmap_timer.read_slot(device, frame_index)?;
+        self.compositor_timer.read_slot(device, frame_index)?;
 
         device.reset_command_buffer(
             self.sync.present_command_buffer,
@@ -236,6 +283,9 @@ impl VulkanRenderer {
             self.present_timer.query_pool(),
             &self.heatmap,
             heatmap_view_proj,
+            HEATMAP_ACTIVE,
+            self.heatmap_timer.query_pool(),
+            self.compositor_timer.query_pool(),
         )?;
 
         let wait_semaphores = &[self.sync.image_available_semaphore, self.sync.compute_timeline];
@@ -322,7 +372,10 @@ impl VulkanRenderer {
 
         self.present_timer.destroy(device);
         self.compute_timer.destroy(device);
+        self.heatmap_timer.destroy(device);
+        self.compositor_timer.destroy(device);
         self.gui.destroy(device);
+        self.heatmap.destroy(device);
         self.path_tracer.destroy(device);
         self.sync.destroy(device, self.ctx.command_pool);
         self.swapchain.destroy(device);

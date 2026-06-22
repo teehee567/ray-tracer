@@ -27,6 +27,9 @@ pub(super) unsafe fn record_present_commands(
     query_pool: vk::QueryPool,
     heatmap: &HeatmapRenderer,
     heatmap_view_proj: Mat4,
+    heatmap_active: bool,
+    heatmap_query_pool: vk::QueryPool,
+    compositor_query_pool: vk::QueryPool,
 ) -> Result<()> {
     let swapchain_image = swapchain.images[swapchain_index];
     let begin_info = vk::CommandBufferBeginInfo::builder();
@@ -40,6 +43,11 @@ pub(super) unsafe fn record_present_commands(
         query_pool,
         first_query,
     );
+
+    // reset the heatmap/compositor timer slots here (outside any render pass);
+    // their start/end timestamps are written around the passes below.
+    device.cmd_reset_query_pool(command_buffer, heatmap_query_pool, first_query, 2);
+    device.cmd_reset_query_pool(command_buffer, compositor_query_pool, first_query, 2);
 
     // path traced frame: compute output -> transfer source
     cmd_image_barrier(
@@ -180,10 +188,39 @@ pub(super) unsafe fn record_present_commands(
         }
     }
 
-    // optionally draw the GUI on top via the render pass
-    let mut swap_layout_after = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
+    if heatmap_active {
+        // time the accumulation pass
+        device.cmd_write_timestamp(
+            command_buffer,
+            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+            heatmap_query_pool,
+            first_query,
+        );
+        heatmap.record_into(device, command_buffer, heatmap_view_proj);
+        device.cmd_write_timestamp(
+            command_buffer,
+            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+            heatmap_query_pool,
+            first_query + 1,
+        );
 
-    if gui.has_draws() {
+        // compositor timer spans the reduce + the composite draw (the end
+        // timestamp is written inside the swapchain render pass below).
+        device.cmd_write_timestamp(
+            command_buffer,
+            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+            compositor_query_pool,
+            first_query,
+        );
+        // reduce the accumulation image to its peak overlap (outside any render
+        // pass) so the composite can normalize against the true max
+        heatmap.record_reduce(device, command_buffer);
+    }
+
+    let mut swap_layout_after = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
+    let draw_in_pass = gui.has_draws() || heatmap_active;
+
+    if draw_in_pass {
         cmd_image_barrier(
             device,
             command_buffer,
@@ -211,16 +248,34 @@ pub(super) unsafe fn record_present_commands(
 
         device.cmd_begin_render_pass(command_buffer, &begin_info, vk::SubpassContents::INLINE);
 
-        gui.record_draws(device, command_buffer, frame_index, swapchain.extent)?;
+        // composite the heatmap into its sub-region first so the GUI panels
+        // (drawn next) land on top of it.
+        if heatmap_active {
+            let sub_region = vk::Rect2D {
+                offset: vk::Offset2D {
+                    x: panel_width as i32,
+                    y: 0,
+                },
+                extent: vk::Extent2D {
+                    width: render_extent.x,
+                    height: render_extent.y,
+                },
+            };
+            heatmap.record_composite(device, command_buffer, sub_region);
+            device.cmd_write_timestamp(
+                command_buffer,
+                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                compositor_query_pool,
+                first_query + 1,
+            );
+        }
+
+        if gui.has_draws() {
+            gui.record_draws(device, command_buffer, frame_index, swapchain.extent)?;
+        }
 
         device.cmd_end_render_pass(command_buffer);
         swap_layout_after = vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-    }
-
-    // swtich to proper if later on
-    // heatmap
-    if true {
-        heatmap.record_into(device, command_buffer, heatmap_view_proj);
     }
 
     // path traced frame back to compute-writable

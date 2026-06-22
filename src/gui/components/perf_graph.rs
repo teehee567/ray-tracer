@@ -7,23 +7,26 @@ use crate::gui::PerfHistory;
 const FRAME_COLOR: Color32 = Color32::from_rgb(70, 150, 255);
 // pink line
 const GPU_COLOR: Color32 = Color32::from_rgb(255, 105, 180);
+// green line
+const HEATMAP_COLOR: Color32 = Color32::from_rgb(110, 220, 130);
+// amber line
+const COMPOSITOR_COLOR: Color32 = Color32::from_rgb(240, 190, 70);
 
 pub const PERF_HISTORY_LEN: usize = 200;
 
-// perf graph line graph of last render times, cpu and gpu times separate
+fn series_points(samples: &std::collections::VecDeque<f32>) -> PlotPoints<'static> {
+    samples
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| [i as f64, v as f64])
+        .collect()
+}
+
 pub fn draw_perf_graph(ui: &mut egui::Ui, history: &PerfHistory) {
-    let present_points: PlotPoints = history
-        .present_ms
-        .iter()
-        .enumerate()
-        .map(|(i, &v)| [i as f64, v as f64])
-        .collect();
-    let compute_points: PlotPoints = history
-        .compute_ms
-        .iter()
-        .enumerate()
-        .map(|(i, &v)| [i as f64, v as f64])
-        .collect();
+    let present_points = series_points(&history.present_ms);
+    let compute_points = series_points(&history.compute_ms);
+    let heatmap_points = series_points(&history.heatmap_ms);
+    let compositor_points = series_points(&history.compositor_ms);
 
     let (y_min, y_max) = perf_y_bounds(history);
 
@@ -47,6 +50,16 @@ pub fn draw_perf_graph(ui: &mut egui::Ui, history: &PerfHistory) {
                     .color(GPU_COLOR)
                     .width(1.5),
             );
+            plot_ui.line(
+                Line::new("Heatmap (GPU)", heatmap_points)
+                    .color(HEATMAP_COLOR)
+                    .width(1.5),
+            );
+            plot_ui.line(
+                Line::new("Compositor (GPU)", compositor_points)
+                    .color(COMPOSITOR_COLOR)
+                    .width(1.5),
+            );
         });
 }
 
@@ -54,7 +67,13 @@ pub fn draw_perf_graph(ui: &mut egui::Ui, history: &PerfHistory) {
 fn perf_y_bounds(history: &PerfHistory) -> (f64, f64) {
     let mut lowest = f32::INFINITY;
     let mut highest = f32::NEG_INFINITY;
-    for &v in history.present_ms.iter().chain(&history.compute_ms) {
+    for &v in history
+        .present_ms
+        .iter()
+        .chain(&history.compute_ms)
+        .chain(&history.heatmap_ms)
+        .chain(&history.compositor_ms)
+    {
         lowest = lowest.min(v);
         highest = highest.max(v);
     }

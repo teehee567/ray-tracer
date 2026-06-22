@@ -14,3 +14,6 @@ set GLSLC_PATH=%VULKAN_SDK%\Bin\glslc.exe
 %GLSLC_PATH% ./src/shaders/gui.frag -o ./src/shaders/gui.frag.spv || exit /b 1
 %GLSLC_PATH% ./src/shaders/heatmap.vert -o ./src/shaders/heatmap.vert.spv || exit /b 1
 %GLSLC_PATH% ./src/shaders/heatmap.frag -o ./src/shaders/heatmap.frag.spv || exit /b 1
+%GLSLC_PATH% ./src/shaders/compositor.vert -o ./src/shaders/compositor.vert.spv || exit /b 1
+%GLSLC_PATH% ./src/shaders/compositor.frag -o ./src/shaders/compositor.frag.spv || exit /b 1
+%GLSLC_PATH% ./src/shaders/compositor_reduce.comp -o ./src/shaders/compositor_reduce.comp.spv || exit /b 1

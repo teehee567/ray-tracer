@@ -8,7 +8,7 @@ pub enum PushRender {
 }
 
 pub enum PushGui {
-    PerfUpdate{compute_fps: f64, compute_ms: f64, present_fps: f64, present_ms: f64},
+    PerfUpdate{compute_fps: f64, compute_ms: f64, present_fps: f64, present_ms: f64, heatmap_ms: f64, compositor_ms: f64},
 }
 
 #[derive(Debug, Default)]
@@ -18,6 +18,9 @@ pub struct GuiData {
 
     pub present_fps: f64,
     pub present_ms: f64,
+
+    pub heatmap_ms: f64,
+    pub compositor_ms: f64,
 
     pub save_file_path: String,
     pub perf_history: PerfHistory,
@@ -38,6 +41,8 @@ impl GuiData {
 pub struct PerfHistory {
     pub present_ms: VecDeque<f32>,
     pub compute_ms: VecDeque<f32>,
+    pub heatmap_ms: VecDeque<f32>,
+    pub compositor_ms: VecDeque<f32>,
     capacity: usize,
 }
 
@@ -46,19 +51,24 @@ impl PerfHistory {
         Self {
             present_ms: VecDeque::with_capacity(capacity),
             compute_ms: VecDeque::with_capacity(capacity),
+            heatmap_ms: VecDeque::with_capacity(capacity),
+            compositor_ms: VecDeque::with_capacity(capacity),
             capacity,
         }
     }
 
-    pub fn push(&mut self, compute_ms: f32, present_ms: f32) {
-        if self.present_ms.len() >= self.capacity {
-            self.present_ms.pop_front();
-        }
-        if self.compute_ms.len() >= self.capacity {
-            self.compute_ms.pop_front();
-        }
-        self.present_ms.push_back(compute_ms);
-        self.compute_ms.push_back(present_ms);
+    pub fn push(&mut self, compute_ms: f32, present_ms: f32, heatmap_ms: f32, compositor_ms: f32) {
+        push_capped(&mut self.compute_ms, compute_ms, self.capacity);
+        push_capped(&mut self.present_ms, present_ms, self.capacity);
+        push_capped(&mut self.heatmap_ms, heatmap_ms, self.capacity);
+        push_capped(&mut self.compositor_ms, compositor_ms, self.capacity);
     }
+}
+
+fn push_capped(buf: &mut VecDeque<f32>, value: f32, capacity: usize) {
+    if buf.len() >= capacity {
+        buf.pop_front();
+    }
+    buf.push_back(value);
 }
 

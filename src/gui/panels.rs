@@ -78,6 +78,9 @@ impl GuiPanels {
                     ui.label(format!("Present FPS: {:.2}", gui_data.present_fps));
                     ui.label(format!("Present: {:.2} ms", gui_data.present_ms));
 
+                    ui.label(format!("Heatmap (GPU): {:.2} ms", gui_data.heatmap_ms));
+                    ui.label(format!("Compositor (GPU): {:.2} ms", gui_data.compositor_ms));
+
                     ui.separator();
                     ui.heading("Frame timing");
                     draw_perf_graph(ui, &gui_data.perf_history);

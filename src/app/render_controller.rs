@@ -95,10 +95,11 @@ fn render_loop(
     let mut ready: VecDeque<usize> = VecDeque::with_capacity(OFFSCREEN_FRAME_COUNT);
     let mut current_frame: Option<usize> = None;
 
+    let mut pending_backend_command: Option<PushRender> = None;
+
     while running {
         let mut present_requested = false;
         let mut pending_resize: Option<(u32, u32)> = None;
-        let mut pending_backend_command: Option<PushRender> = None;
 
         loop {
             match command_rx.try_recv() {
@@ -129,6 +130,10 @@ fn render_loop(
             break;
         }
 
+        if pending_backend_command.is_some() {
+            present_requested = true;
+        }
+
         if let Some((width, height)) = pending_resize {
             renderer.handle_resize(width, height);
         }
@@ -148,8 +153,15 @@ fn render_loop(
 
         for index in completed {
             ready.push_back(index);
-            let (compute_fps, compute_ms, present_fps, present_ms) = renderer.last_timer_perf();
-            let _  = gui_data_tx.try_send(PushGui::PerfUpdate{compute_fps, compute_ms, present_fps, present_ms});
+            let perf = renderer.last_timer_perf();
+            let _ = gui_data_tx.try_send(PushGui::PerfUpdate {
+                compute_fps: perf.compute_fps,
+                compute_ms: perf.compute_ms,
+                present_fps: perf.present_fps,
+                present_ms: perf.present_ms,
+                heatmap_ms: perf.heatmap_ms,
+                compositor_ms: perf.compositor_ms,
+            });
         }
 
 
@@ -182,14 +194,22 @@ fn render_loop(
                     None
                 };
 
-                if let Err(err) = unsafe { renderer.present_frame(frame_index, gui_frame, pending_backend_command) } {
-                    error!("present error: {err:?}");
-                    if is_new {
-                        available.push_back(frame_index);
+                match unsafe {
+                    renderer.present_frame(frame_index, gui_frame, pending_backend_command.clone())
+                } {
+                    Err(err) => {
+                        error!("present error: {err:?}");
+                        if is_new {
+                            available.push_back(frame_index);
+                        }
                     }
-                } else if is_new {
-                    if let Some(previous) = current_frame.replace(frame_index) {
-                        available.push_back(previous);
+                    Ok(()) => {
+                        pending_backend_command = None;
+                        if is_new {
+                            if let Some(previous) = current_frame.replace(frame_index) {
+                                available.push_back(previous);
+                            }
+                        }
                     }
                 }
             }

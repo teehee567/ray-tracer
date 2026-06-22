@@ -3,20 +3,21 @@ mod compositor;
 
 use std::slice;
 
-use glam::{Mat4, UVec2};
+use glam::Mat4;
 use log::info;
-use vulkanalia::{prelude::v1_0::*, vk::ImageView};
+use vulkanalia::prelude::v1_0::*;
 
 use crate::{
     accelerators::visualiser::AccelVis, scene::Scene, vulkan::core::{
         buffer::{Buffer, BufferOpts},
         context::VulkanContext,
-        descriptors::binding,
         image::Image,
         pipeline::{create_graphics_pipeline, create_shader_module},
     }
 };
 use anyhow::Result;
+
+use compositor::Compositer;
 
 use super::core::pipeline::GraphicsPipelineConfig;
 
@@ -27,7 +28,6 @@ struct HeatmapVertex {
 
 pub struct HeatmapRenderer {
     pub heatmap_pass: vk::RenderPass,
-    pub swapchain_pass: vk::RenderPass,
     pub image: Image,
     pipeline: vk::Pipeline,
     framebuffer: vk::Framebuffer,
@@ -35,43 +35,22 @@ pub struct HeatmapRenderer {
     index_buffer: Buffer,
     index_count: u32,
     pipeline_layout: vk::PipelineLayout,
-
+    compositor: Compositer,
 }
 
 impl HeatmapRenderer {
     pub(crate) unsafe fn new(
         ctx: &VulkanContext,
         swapchain_pass: vk::RenderPass,
-        extent: vk::Extent2D,
+        render_extent: vk::Extent2D,
         scene: &Scene,
     ) -> Result<Self> {
         let device = &ctx.device;
-        let (w, h) = (extent.width, extent.height);
 
-        let heatmap_image = Image::new_2d(
-            ctx,
-            w,
-            h,
-            vk::Format::R32_SFLOAT,
-            vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            1,
-            vk::ImageCreateFlags::empty(),
-            vk::ImageViewType::_2D,
-        )?;
+        let heatmap_image = Self::create_image(ctx, render_extent)?;
 
         let render_pass = Self::create_render_pass(device, vk::Format::R32_SFLOAT)?;
-
-        // framebuffer
-        let attachments = [heatmap_image.view];
-        let frame_buffer_info = vk::FramebufferCreateInfo::builder()
-            .render_pass(render_pass)
-            .attachments(&attachments)
-            .width(w)
-            .height(h)
-            .layers(1)
-            .build();
-        let framebuffer = device.create_framebuffer(&frame_buffer_info, None)?;
+        let framebuffer = Self::create_framebuffer(device, render_pass, &heatmap_image)?;
 
         let pipeline_layout = Self::create_pipeline_layout(device)?;
         let pipeline = Self::create_heatmap_pipeline(device, pipeline_layout, render_pass)?;
@@ -97,9 +76,10 @@ impl HeatmapRenderer {
             },
         )?;
 
+        let compositor = Compositer::new(ctx, swapchain_pass, heatmap_image.view)?;
+
         Ok(Self {
             heatmap_pass: render_pass,
-            swapchain_pass,
             image: heatmap_image,
             pipeline,
             vertex_buffer,
@@ -107,7 +87,73 @@ impl HeatmapRenderer {
             index_count,
             framebuffer,
             pipeline_layout,
+            compositor,
         })
+    }
+
+    unsafe fn create_image(ctx: &VulkanContext, extent: vk::Extent2D) -> Result<Image> {
+        Image::new_2d(
+            ctx,
+            extent.width,
+            extent.height,
+            vk::Format::R32_SFLOAT,
+            vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            1,
+            vk::ImageCreateFlags::empty(),
+            vk::ImageViewType::_2D,
+        )
+    }
+
+    unsafe fn create_framebuffer(
+        device: &Device,
+        render_pass: vk::RenderPass,
+        image: &Image,
+    ) -> Result<vk::Framebuffer> {
+        let attachments = [image.view];
+        let info = vk::FramebufferCreateInfo::builder()
+            .render_pass(render_pass)
+            .attachments(&attachments)
+            .width(image.width)
+            .height(image.height)
+            .layers(1);
+        Ok(device.create_framebuffer(&info, None)?)
+    }
+
+    pub unsafe fn record_reduce(&self, device: &Device, cb: vk::CommandBuffer) {
+        self.compositor
+            .record_reduce(device, cb, self.image.width, self.image.height);
+    }
+
+    pub unsafe fn record_composite(
+        &self,
+        device: &Device,
+        cb: vk::CommandBuffer,
+        sub_region: vk::Rect2D,
+    ) {
+        self.compositor.record_into(device, cb, sub_region);
+    }
+
+    pub unsafe fn handle_resize(
+        &mut self,
+        ctx: &VulkanContext,
+        render_extent: vk::Extent2D,
+    ) -> Result<()> {
+        let device = &ctx.device;
+        let (w, h) = (render_extent.width.max(1), render_extent.height.max(1));
+        if w == self.image.width && h == self.image.height {
+            return Ok(());
+        }
+
+        device.device_wait_idle()?;
+        device.destroy_framebuffer(self.framebuffer, None);
+        self.image.destroy(device);
+
+        self.image = Self::create_image(ctx, render_extent)?;
+        self.framebuffer = Self::create_framebuffer(device, self.heatmap_pass, &self.image)?;
+        self.compositor.update_composite_set(device, self.image.view);
+
+        Ok(())
     }
 
     unsafe fn create_pipeline_layout(device: &Device) -> Result<vk::PipelineLayout> {
@@ -222,6 +268,9 @@ impl HeatmapRenderer {
             },
         )?;
 
+        device.destroy_shader_module(vert, None);
+        device.destroy_shader_module(frag, None);
+
         Ok(pipeline)
     }
 
@@ -250,8 +299,10 @@ impl HeatmapRenderer {
             .dst_subpass(vk::SUBPASS_EXTERNAL)
             .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
             .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            .dst_stage_mask(vk::PipelineStageFlags::FRAGMENT_SHADER)
-            // load reads and writes
+            // sampled by the reduce compute pass and the composite fragment shader
+            .dst_stage_mask(
+                vk::PipelineStageFlags::COMPUTE_SHADER | vk::PipelineStageFlags::FRAGMENT_SHADER,
+            )
             .dst_access_mask(vk::AccessFlags::SHADER_READ);
 
         let attachments = &[color_attachment];
@@ -269,6 +320,12 @@ impl HeatmapRenderer {
     }
 
     pub unsafe fn destroy(&mut self, device: &Device) {
+        self.compositor.destroy(device);
+        device.destroy_pipeline(self.pipeline, None);
+        device.destroy_pipeline_layout(self.pipeline_layout, None);
+        device.destroy_framebuffer(self.framebuffer, None);
+        self.vertex_buffer.destroy(device);
+        self.index_buffer.destroy(device);
         self.image.destroy(device);
         device.destroy_render_pass(self.heatmap_pass, None);
     }

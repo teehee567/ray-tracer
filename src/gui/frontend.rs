@@ -176,12 +176,19 @@ impl GuiFrontend {
             match self.gui_data_rx.try_recv() {
                 Ok(req) => {
                     match req {
-                        PushGui::PerfUpdate { compute_fps, compute_ms, present_fps, present_ms } => {
+                        PushGui::PerfUpdate { compute_fps, compute_ms, present_fps, present_ms, heatmap_ms, compositor_ms } => {
                             self.gui_data.compute_fps = compute_fps;
                             self.gui_data.compute_ms = compute_ms;
                             self.gui_data.present_fps = present_fps;
                             self.gui_data.present_ms = present_ms;
-                            self.gui_data.perf_history.push(compute_ms as f32, present_ms as f32);
+                            self.gui_data.heatmap_ms = heatmap_ms;
+                            self.gui_data.compositor_ms = compositor_ms;
+                            self.gui_data.perf_history.push(
+                                compute_ms as f32,
+                                present_ms as f32,
+                                heatmap_ms as f32,
+                                compositor_ms as f32,
+                            );
                         },
                     }
                 }

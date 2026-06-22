@@ -1,9 +1,10 @@
 #version 450
 
 layout(set = 0, binding = 0) uniform sampler2D accum;
-layout(push_constant) uniform PushConstants {
-    float max_overlap;
-} pc;
+// per-frame peak overlap, written by compositor_reduce.comp (float bits)
+layout(set = 0, binding = 1) readonly buffer MaxBuf {
+    uint max_bits;
+} mb;
 
 layout(location = 0) in vec2 uv;
 layout(location = 0) out vec4 out_color;
@@ -23,7 +24,10 @@ vec3 heat_color(float t) {
 void main() {
     float count = texture(accum, uv).r;
 
-    float heat = clamp((count - 1.0) / (pc.max_overlap - 1.0), 0.0, 1.0);
+    float max_overlap = uintBitsToFloat(mb.max_bits);
+    // map [1, max] -> [0, 1]; guard against a degenerate (<=1) peak
+    float denom = max(max_overlap - 1.0, 1.0);
+    float heat = clamp((count - 1.0) / denom, 0.0, 1.0);
 
     out_color = vec4(heat_color(heat), 1.0);
 }

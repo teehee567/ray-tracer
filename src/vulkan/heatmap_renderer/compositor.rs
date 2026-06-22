@@ -1,37 +1,46 @@
-use core::slice;
+use vulkanalia::prelude::v1_0::*;
 
-use glam::Mat4;
-use vulkanalia::{prelude::v1_0::*, vk::ImageView};
-
-use crate::{
-    scene::Scene,
-    vulkan::core::{
-        context::VulkanContext,
-        descriptors::{
-            allocate_descriptor_sets, binding, create_descriptor_pool,
-            create_descriptor_set_layout, image_info, image_write, pool_size,
-        },
-        pipeline::{GraphicsPipelineConfig, create_graphics_pipeline, create_shader_module},
-        sampler::{SamplerDesc, create_sampler},
+use crate::vulkan::core::{
+    buffer::Buffer,
+    context::VulkanContext,
+    descriptors::{
+        allocate_descriptor_sets, binding, buffer_info, buffer_write, create_descriptor_pool,
+        create_descriptor_set_layout, image_info, image_write, pool_size,
     },
+    pipeline::{
+        GraphicsPipelineConfig, create_compute_pipeline, create_graphics_pipeline,
+        create_shader_module,
+    },
+    sampler::{SamplerDesc, create_sampler},
 };
 use anyhow::Result;
 
-pub struct Compositer {
+const REDUCE_GROUP: u32 = 16;
+
+// finds per frame peak overlap and samples and tone maps it
+pub(super) struct Compositer {
     sampler: vk::Sampler,
+    max_buffer: Buffer,
+
+    pool: vk::DescriptorPool,
+
     composite_set_layout: vk::DescriptorSetLayout,
-    composite_pool: vk::DescriptorPool,
-    composite_set: vk::DescriptorSet,
     composite_layout: vk::PipelineLayout,
     composite_pipeline: vk::Pipeline,
+    composite_set: vk::DescriptorSet,
+
+    // maybe swithc to anon atomic very slow
+    reduce_set_layout: vk::DescriptorSetLayout,
+    reduce_layout: vk::PipelineLayout,
+    reduce_pipeline: vk::Pipeline,
+    reduce_set: vk::DescriptorSet,
 }
 
 impl Compositer {
-    pub(crate) unsafe fn new(
+    pub(super) unsafe fn new(
         ctx: &VulkanContext,
-        render_pass: vk::RenderPass,
-        extent: vk::Extent2D,
-        scene: &Scene,
+        swapchain_pass: vk::RenderPass,
+        image_view: vk::ImageView,
     ) -> Result<Self> {
         let device = &ctx.device;
 
@@ -44,44 +53,127 @@ impl Compositer {
             },
         )?;
 
-        let bindings = [binding(
-            0,
-            vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            1,
-            vk::ShaderStageFlags::FRAGMENT,
-        )];
+        let max_buffer = Buffer::new(
+            ctx,
+            size_of::<u32>() as vk::DeviceSize,
+            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::TRANSFER_DST,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        )?;
 
-        let set_layout = create_descriptor_set_layout(device, &bindings)?;
+        let composite_bindings = [
+            binding(0, vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1, vk::ShaderStageFlags::FRAGMENT),
+            binding(1, vk::DescriptorType::STORAGE_BUFFER, 1, vk::ShaderStageFlags::FRAGMENT),
+        ];
+        let composite_set_layout = create_descriptor_set_layout(device, &composite_bindings)?;
 
-        let pool_sizes = [pool_size(vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1)];
+        let reduce_bindings = [
+            binding(0, vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1, vk::ShaderStageFlags::COMPUTE),
+            binding(1, vk::DescriptorType::STORAGE_BUFFER, 1, vk::ShaderStageFlags::COMPUTE),
+        ];
+        let reduce_set_layout = create_descriptor_set_layout(device, &reduce_bindings)?;
+
+        let pool_sizes = [
+            pool_size(vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 2),
+            pool_size(vk::DescriptorType::STORAGE_BUFFER, 2),
+        ];
         let pool = create_descriptor_pool(
             device,
             &pool_sizes,
-            1,
+            2,
             vk::DescriptorPoolCreateFlags::empty(),
         )?;
 
-        let set = allocate_descriptor_sets(device, pool, set_layout, 1)?[0];
+        let composite_set = allocate_descriptor_sets(device, pool, composite_set_layout, 1)?[0];
+        let reduce_set = allocate_descriptor_sets(device, pool, reduce_set_layout, 1)?[0];
 
-        let pipeline_layout = Self::create_pipeline_layout(device, set_layout)?;
-        let pipeline = Self::create_compositor_pipeline(device, pipeline_layout, render_pass)?;
+        let composite_layout = Self::create_pipeline_layout(device, composite_set_layout)?;
+        let composite_pipeline =
+            Self::create_compositor_pipeline(device, composite_layout, swapchain_pass)?;
 
-        Ok(Self {
+        let (reduce_layout, reduce_pipeline) = create_compute_pipeline(
+            device,
+            reduce_set_layout,
+            include_bytes!("../../shaders/compositor_reduce.comp.spv"),
+        )?;
+
+        let compositer = Self {
             sampler,
-            composite_set_layout: set_layout,
-            composite_pool: pool,
-            composite_set: set,
-            composite_layout: pipeline_layout,
-            composite_pipeline: pipeline,
-        })
+            max_buffer,
+            pool,
+            composite_set_layout,
+            composite_layout,
+            composite_pipeline,
+            composite_set,
+            reduce_set_layout,
+            reduce_layout,
+            reduce_pipeline,
+            reduce_set,
+        };
+
+        compositer.update_composite_set(device, image_view);
+
+        Ok(compositer)
     }
 
-    pub unsafe fn record_into(
+    pub(super) unsafe fn record_reduce(
+        &self,
+        device: &Device,
+        cb: vk::CommandBuffer,
+        width: u32,
+        height: u32,
+    ) {
+        device.cmd_fill_buffer(cb, self.max_buffer.buffer, 0, vk::WHOLE_SIZE, 0);
+
+        let to_compute = vk::MemoryBarrier::builder()
+            .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+            .dst_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE)
+            .build();
+        device.cmd_pipeline_barrier(
+            cb,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::PipelineStageFlags::COMPUTE_SHADER,
+            vk::DependencyFlags::empty(),
+            &[to_compute],
+            &[] as &[vk::BufferMemoryBarrier],
+            &[] as &[vk::ImageMemoryBarrier],
+        );
+
+        device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::COMPUTE, self.reduce_pipeline);
+        device.cmd_bind_descriptor_sets(
+            cb,
+            vk::PipelineBindPoint::COMPUTE,
+            self.reduce_layout,
+            0,
+            &[self.reduce_set],
+            &[],
+        );
+        device.cmd_dispatch(
+            cb,
+            width.div_ceil(REDUCE_GROUP),
+            height.div_ceil(REDUCE_GROUP),
+            1,
+        );
+
+        let to_fragment = vk::MemoryBarrier::builder()
+            .src_access_mask(vk::AccessFlags::SHADER_WRITE)
+            .dst_access_mask(vk::AccessFlags::SHADER_READ)
+            .build();
+        device.cmd_pipeline_barrier(
+            cb,
+            vk::PipelineStageFlags::COMPUTE_SHADER,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+            vk::DependencyFlags::empty(),
+            &[to_fragment],
+            &[] as &[vk::BufferMemoryBarrier],
+            &[] as &[vk::ImageMemoryBarrier],
+        );
+    }
+
+    pub(super) unsafe fn record_into(
         &self,
         device: &Device,
         cb: vk::CommandBuffer,
         sub_region: vk::Rect2D,
-        max_overlap: f32,
     ) {
         device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, self.composite_pipeline);
 
@@ -105,49 +197,43 @@ impl Compositer {
             &[],
         );
 
-        let bytes = max_overlap.to_ne_bytes();
-        device.cmd_push_constants(
-            cb,
-            self.composite_layout,
-            vk::ShaderStageFlags::FRAGMENT,
-            0,
-            &bytes,
-        );
-
         device.cmd_draw(cb, 3, 1, 0, 0);
     }
 
-    unsafe fn update_composite_set(&self, device: &Device, image_view: vk::ImageView) {
-        let infos = [image_info(
+    pub(super) unsafe fn update_composite_set(&self, device: &Device, image_view: vk::ImageView) {
+        let image = [image_info(
             self.sampler,
             image_view,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
         )];
-        let write = image_write(
-            self.composite_set,
-            0,
-            vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            &infos,
-        );
+        let max_buf = [buffer_info(self.max_buffer.buffer, 0, vk::WHOLE_SIZE)];
 
-        device.update_descriptor_sets(&[write], &[] as &[vk::CopyDescriptorSet]);
+        let writes = [
+            image_write(
+                self.composite_set,
+                0,
+                vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                &image,
+            ),
+            buffer_write(self.composite_set, 1, vk::DescriptorType::STORAGE_BUFFER, &max_buf),
+            image_write(
+                self.reduce_set,
+                0,
+                vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                &image,
+            ),
+            buffer_write(self.reduce_set, 1, vk::DescriptorType::STORAGE_BUFFER, &max_buf),
+        ];
+
+        device.update_descriptor_sets(&writes, &[] as &[vk::CopyDescriptorSet]);
     }
 
     unsafe fn create_pipeline_layout(
         device: &Device,
         set_layout: vk::DescriptorSetLayout,
     ) -> Result<vk::PipelineLayout> {
-        let push_constant = vk::PushConstantRange::builder()
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-            .offset(0)
-            .size(size_of::<f32>() as u32)
-            .build();
-
         let set_layouts = [set_layout];
-        let info = vk::PipelineLayoutCreateInfo::builder()
-            .set_layouts(&set_layouts)
-            .push_constant_ranges(slice::from_ref(&push_constant));
-
+        let info = vk::PipelineLayoutCreateInfo::builder().set_layouts(&set_layouts);
         Ok(device.create_pipeline_layout(&info, None)?)
     }
 
@@ -196,6 +282,9 @@ impl Compositer {
             },
         )?;
 
+        device.destroy_shader_module(vert, None);
+        device.destroy_shader_module(frag, None);
+
         Ok(pipeline)
     }
 
@@ -209,5 +298,17 @@ impl Compositer {
                     | vk::ColorComponentFlags::A,
             )
             .build()
+    }
+
+    pub(super) unsafe fn destroy(&mut self, device: &Device) {
+        device.destroy_pipeline(self.composite_pipeline, None);
+        device.destroy_pipeline_layout(self.composite_layout, None);
+        device.destroy_pipeline(self.reduce_pipeline, None);
+        device.destroy_pipeline_layout(self.reduce_layout, None);
+        device.destroy_descriptor_pool(self.pool, None);
+        device.destroy_descriptor_set_layout(self.composite_set_layout, None);
+        device.destroy_descriptor_set_layout(self.reduce_set_layout, None);
+        self.max_buffer.destroy(device);
+        device.destroy_sampler(self.sampler, None);
     }
 }
