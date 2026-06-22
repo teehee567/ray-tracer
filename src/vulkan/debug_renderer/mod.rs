@@ -52,7 +52,22 @@ impl DebugRenderer {
         device: &Device,
         layout: vk::PipelineLayout,
     ) -> Result<vk::Pipeline> {
-        
+        let vert = create_shader_module(device, include_bytes!("../../shaders/debug.vert.spv"))?;
+        let frag = create_shader_module(device, include_bytes!("../../shaders/debug.frag.spv"))?;
+
+
+        let shaders = [
+            vk::PipelineShaderStageCreateInfo::builder()
+                .stage(vk::ShaderStageFlags::VERTEX)
+                .module(vert)
+                .name(b"main\0")
+                .build(),
+            vk::PipelineShaderStageCreateInfo::builder()
+                .stage(vk::ShaderStageFlags::FRAGMENT)
+                .module(frag)
+                .name(b"main\0")
+                .build(),
+        ];
 
         let vertex_bindings = [vk::VertexInputBindingDescription::builder()
             .binding(0)
@@ -64,10 +79,10 @@ impl DebugRenderer {
             .location(0)
             .format(vk::Format::R32G32B32_SFLOAT)
             .offset(0)
-            .build()]
+            .build()];
 
         let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
-        let blend_attachments = [Self::additive_blend_attachment()]
+        let blend_attachments = [Self::additive_blend_attachment()];
 
         let pipeline = create_graphics_pipeline(
             device,
@@ -132,7 +147,7 @@ impl DebugRenderer {
     }
 
     pub unsafe fn destroy(&mut self, device: &Device) {
-        device.destroy_render_pass(self.render_pass, None);
+        device.destroy_render_pass(self.debug_pass, None);
     }
 
     fn additive_blend_attachment() -> vk::PipelineColorBlendAttachmentState {
