@@ -3,12 +3,14 @@ use log::info;
 use vulkanalia::prelude::v1_0::*;
 
 use crate::vulkan::core::{
-    context::VulkanContext, image::Image, pipeline::create_graphics_pipeline,
+    context::VulkanContext, image::Image, pipeline::{create_graphics_pipeline, create_shader_module},
 };
 use anyhow::Result;
 
 
+#[repr(C)]
 struct DebugVertex {
+    pos: [f32; 3],
 }
 
 pub struct DebugRenderer {
@@ -42,7 +44,7 @@ impl DebugRenderer {
 
         Ok(Self {
             debug_pass: render_pass,
-            swapchain_pass: render_pass,
+            swapchain_pass,
             image: debug_image,
         })
     }
@@ -147,6 +149,7 @@ impl DebugRenderer {
     }
 
     pub unsafe fn destroy(&mut self, device: &Device) {
+        self.image.destroy(device);
         device.destroy_render_pass(self.debug_pass, None);
     }
 
@@ -158,7 +161,7 @@ impl DebugRenderer {
             .dst_color_blend_factor(vk::BlendFactor::ONE)
             .color_blend_op(vk::BlendOp::ADD)
             .src_alpha_blend_factor(vk::BlendFactor::ONE)
-            .src_alpha_blend_factor(vk::BlendFactor::ONE)
+            .dst_alpha_blend_factor(vk::BlendFactor::ONE)
             .alpha_blend_op(vk::BlendOp::ADD)
             .color_write_mask(vk::ColorComponentFlags::R)
             .build()
