@@ -46,10 +46,11 @@ impl DebugRenderer {
     unsafe fn create_debug_pipeline(
         device: &Device,
         layout: vk::PipelineLayout,
-        render_pass: vk::RenderPass,
     ) -> Result<vk::Pipeline> {
         
 
+        let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+        let blend_attachments = [Self::additive_blend_attachment()]
 
         let pipeline = create_graphics_pipeline(
             device,
@@ -57,10 +58,10 @@ impl DebugRenderer {
                 shaders: &shaders,
                 vertex_bindings: (),
                 vertex_attributes: (),
-                blend_attachments: (),
-                dynamic_states: (),
+                blend_attachments: &blend_attachments,
+                dynamic_states: &dynamic_states,
                 layout,
-                render_pass,
+                render_pass: self.debug_pass,
                 subpass: 0,
                 topology: vk::PrimitiveTopology::TRIANGLE_LIST,
                 cull_mode: vk::CullModeFlags::FRONT,
@@ -115,5 +116,20 @@ impl DebugRenderer {
 
     pub unsafe fn destroy(&mut self, device: &Device) {
         device.destroy_render_pass(self.render_pass, None);
+    }
+
+    fn additive_blend_attachment() -> vk::PipelineColorBlendAttachmentState {
+        //dst=ONE, op=ADD means each fragment does count += src. shader writes 1.0, so every covered fragment adds one. and with this we can buuild a heatmpa
+        vk::PipelineColorBlendAttachmentState::builder()
+            .blend_enable(true)
+            .src_color_blend_factor(vk::BlendFactor::ONE)
+            .dst_color_blend_factor(vk::BlendFactor::ONE)
+            .color_blend_op(vk::BlendOp::ADD)
+            .src_alpha_blend_factor(vk::BlendFactor::ONE)
+            .src_alpha_blend_factor(vk::BlendFactor::ONE)
+            .alpha_blend_op(vk::BlendOp::ADD)
+            .color_write_mask(vk::ColorComponentFlags::R)
+            .build()
+
     }
 }
