@@ -5,6 +5,7 @@ use crate::{Material, Triangle};
 
 pub mod aabb;
 pub mod bvh_based;
+pub mod visualiser;
 use bvh_based::bvh::BvhNode;
 
 pub use bvh_based::*;

@@ -134,7 +134,7 @@ impl BvhNode {
         }
     }
 
-    fn is_leaf(&self) -> bool {
+    pub fn is_leaf(&self) -> bool {
         unsafe {
             let max_ptr = &self.max_amt.max as *const AVec3 as *const u8;
             let amt_ptr = max_ptr.add(12) as *const Au32;
@@ -150,7 +150,7 @@ impl BvhNode {
         }
     }
 
-    fn idx(&self) -> u32 {
+    pub fn idx(&self) -> u32 {
         unsafe {
             let min_ptr = &self.min_idx.min as *const AVec3 as *const u8;
             let idx_ptr = min_ptr.add(12) as *const Au32;
@@ -158,12 +158,22 @@ impl BvhNode {
         }
     }
 
-    fn amt(&self) -> u32 {
+    pub fn amt(&self) -> u32 {
         unsafe {
             let max_ptr = &self.max_amt.max as *const AVec3 as *const u8;
             let amt_ptr = max_ptr.add(12) as *const Au32;
             (*amt_ptr).0
         }
+    }
+
+    /// Node bounds minimum corner.
+    pub fn min(&self) -> Vec3 {
+        unsafe { self.min_idx.min.0 }
+    }
+
+    /// Node bounds maximum corner.
+    pub fn max(&self) -> Vec3 {
+        unsafe { self.max_amt.max.0 }
     }
 }
 
