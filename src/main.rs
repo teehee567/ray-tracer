@@ -139,7 +139,7 @@ impl ApplicationHandler for App {
 fn main() -> Result<()> {
     pretty_env_logger::init();
 
-    let scene = Scene::from_new("./scenes/nice/test_scene.yaml")?;
+    let scene = Scene::from_new("./scenes/nice/lego_bulldozer.yaml")?;
 
     let event_loop = EventLoop::new()?;
     let mut app = App {

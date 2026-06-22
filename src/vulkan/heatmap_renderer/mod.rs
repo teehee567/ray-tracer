@@ -17,12 +17,12 @@ use crate::{
 use anyhow::Result;
 
 #[repr(C)]
-struct DebugVertex {
+struct HeatmapVertex {
     pos: [f32; 3],
 }
 
-pub struct DebugRenderer {
-    pub debug_pass: vk::RenderPass,
+pub struct HeatmapRenderer {
+    pub heatmap_pass: vk::RenderPass,
     pub swapchain_pass: vk::RenderPass,
     pub image: Image,
     pipeline: vk::Pipeline,
@@ -33,7 +33,7 @@ pub struct DebugRenderer {
     pipeline_layout: vk::PipelineLayout,
 }
 
-impl DebugRenderer {
+impl HeatmapRenderer {
     pub(crate) unsafe fn new(
         ctx: &VulkanContext,
         swapchain_pass: vk::RenderPass,
@@ -44,7 +44,7 @@ impl DebugRenderer {
         let device = &ctx.device;
         let (w, h) = (extent.width, extent.height);
 
-        let debug_image = Image::new_2d(
+        let heatmap_image = Image::new_2d(
             ctx,
             w,
             h,
@@ -59,7 +59,7 @@ impl DebugRenderer {
         let render_pass = Self::create_render_pass(device, vk::Format::R32_SFLOAT)?;
 
         // framebuffer
-        let attachments = [debug_image.view];
+        let attachments = [heatmap_image.view];
         let frame_buffer_info = vk::FramebufferCreateInfo::builder()
             .render_pass(render_pass)
             .attachments(&attachments)
@@ -70,7 +70,7 @@ impl DebugRenderer {
         let framebuffer = device.create_framebuffer(&frame_buffer_info, None)?;
 
         let pipeline_layout = Self::create_pipeline_layout(device)?;
-        let pipeline = Self::create_debug_pipeline(device, pipeline_layout, render_pass)?;
+        let pipeline = Self::create_heatmap_pipeline(device, pipeline_layout, render_pass)?;
 
         let (vertices, indices) = accel_vis.build_geo();
         let index_count = indices.len() as u32;
@@ -92,9 +92,9 @@ impl DebugRenderer {
         )?;
 
         Ok(Self {
-            debug_pass: render_pass,
+            heatmap_pass: render_pass,
             swapchain_pass,
-            image: debug_image,
+            image: heatmap_image,
             pipeline,
             vertex_buffer,
             index_buffer,
@@ -129,7 +129,7 @@ impl DebugRenderer {
             },
         };
         let begin = vk::RenderPassBeginInfo::builder()
-            .render_pass(self.debug_pass)
+            .render_pass(self.heatmap_pass)
             .framebuffer(self.framebuffer)
             .render_area(area)
             .clear_values(std::slice::from_ref(&clear));
@@ -164,13 +164,13 @@ impl DebugRenderer {
         device.cmd_end_render_pass(cb);
     }
 
-    unsafe fn create_debug_pipeline(
+    unsafe fn create_heatmap_pipeline(
         device: &Device,
         layout: vk::PipelineLayout,
         render_pass: vk::RenderPass,
     ) -> Result<vk::Pipeline> {
-        let vert = create_shader_module(device, include_bytes!("../../shaders/debug.vert.spv"))?;
-        let frag = create_shader_module(device, include_bytes!("../../shaders/debug.frag.spv"))?;
+        let vert = create_shader_module(device, include_bytes!("../../shaders/heatmap.vert.spv"))?;
+        let frag = create_shader_module(device, include_bytes!("../../shaders/heatmap.frag.spv"))?;
 
         let shaders = [
             vk::PipelineShaderStageCreateInfo::builder()
@@ -187,7 +187,7 @@ impl DebugRenderer {
 
         let vertex_bindings = [vk::VertexInputBindingDescription::builder()
             .binding(0)
-            .stride(size_of::<DebugVertex>() as u32)
+            .stride(size_of::<HeatmapVertex>() as u32)
             .input_rate(vk::VertexInputRate::VERTEX)
             .build()];
         let vertex_attributes = [vk::VertexInputAttributeDescription::builder()
@@ -257,14 +257,14 @@ impl DebugRenderer {
             .dependencies(dependencies);
 
         let render_pass = device.create_render_pass(&info, None)?;
-        info!("Created debug render_pass: {:?}", render_pass);
+        info!("Created heatmap render_pass: {:?}", render_pass);
 
         Ok(render_pass)
     }
 
     pub unsafe fn destroy(&mut self, device: &Device) {
         self.image.destroy(device);
-        device.destroy_render_pass(self.debug_pass, None);
+        device.destroy_render_pass(self.heatmap_pass, None);
     }
 
     fn additive_blend_attachment() -> vk::PipelineColorBlendAttachmentState {

@@ -16,3 +16,5 @@ GLSLC_PATH="$VULKAN_SDK/bin/glslc"
 "$GLSLC_PATH" ./src/shaders/main.comp -o ./src/shaders/main.comp.spv
 "$GLSLC_PATH" ./src/shaders/gui.vert -o ./src/shaders/gui.vert.spv
 "$GLSLC_PATH" ./src/shaders/gui.frag -o ./src/shaders/gui.frag.spv
+"$GLSLC_PATH" ./src/shaders/heatmap.vert -o ./src/shaders/heatmap.vert.spv
+"$GLSLC_PATH" ./src/shaders/heatmap.frag -o ./src/shaders/heatmap.frag.spv
