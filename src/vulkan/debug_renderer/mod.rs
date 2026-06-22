@@ -4,11 +4,17 @@ use glam::{Mat4, UVec2};
 use log::info;
 use vulkanalia::{prelude::v1_0::*, vk::ImageView};
 
-use crate::{accelerators::visualiser::AccelVis, vulkan::core::{
-    buffer::{Buffer, BufferOpts}, context::VulkanContext, descriptors::binding, image::Image, pipeline::{create_graphics_pipeline, create_shader_module}
-}};
+use crate::{
+    accelerators::visualiser::AccelVis,
+    vulkan::core::{
+        buffer::{Buffer, BufferOpts},
+        context::VulkanContext,
+        descriptors::binding,
+        image::Image,
+        pipeline::{create_graphics_pipeline, create_shader_module},
+    },
+};
 use anyhow::Result;
-
 
 #[repr(C)]
 struct DebugVertex {
@@ -20,9 +26,11 @@ pub struct DebugRenderer {
     pub swapchain_pass: vk::RenderPass,
     pub image: Image,
     pipeline: vk::Pipeline,
-    frame_buffer: vk::Framebuffer,
+    framebuffer: vk::Framebuffer,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
+    index_count: u32,
+    pipeline_layout: vk::PipelineLayout,
 }
 
 impl DebugRenderer {
@@ -59,16 +67,29 @@ impl DebugRenderer {
             .height(h)
             .layers(1)
             .build();
-        let frame_buffer = device.create_framebuffer(&frame_buffer_info, None)?;
-
+        let framebuffer = device.create_framebuffer(&frame_buffer_info, None)?;
 
         let pipeline_layout = Self::create_pipeline_layout(device)?;
         let pipeline = Self::create_debug_pipeline(device, pipeline_layout, render_pass)?;
 
         let (vertices, indices) = accel_vis.build_geo();
-        let vertex_buffer = Buffer::from_slice(ctx, &vertices, BufferOpts { usage: vk::BufferUsageFlags::VERTEX_BUFFER, ..Default::default()})?;
-        let index_buffer = Buffer::from_slice(ctx, &indices, BufferOpts { usage: vk::BufferUsageFlags::INDEX_BUFFER, ..Default::default()})?;
-
+        let index_count = indices.len() as u32;
+        let vertex_buffer = Buffer::from_slice(
+            ctx,
+            &vertices,
+            BufferOpts {
+                usage: vk::BufferUsageFlags::VERTEX_BUFFER,
+                ..Default::default()
+            },
+        )?;
+        let index_buffer = Buffer::from_slice(
+            ctx,
+            &indices,
+            BufferOpts {
+                usage: vk::BufferUsageFlags::INDEX_BUFFER,
+                ..Default::default()
+            },
+        )?;
 
         Ok(Self {
             debug_pass: render_pass,
@@ -77,10 +98,11 @@ impl DebugRenderer {
             pipeline,
             vertex_buffer,
             index_buffer,
-            frame_buffer,
+            index_count,
+            framebuffer,
+            pipeline_layout,
         })
     }
-
 
     unsafe fn create_pipeline_layout(device: &Device) -> Result<vk::PipelineLayout> {
         let push_constant = vk::PushConstantRange::builder()
@@ -94,6 +116,54 @@ impl DebugRenderer {
         Ok(device.create_pipeline_layout(&info, None)?)
     }
 
+    pub unsafe fn record_into(&self, device: &Device, cb: vk::CommandBuffer, view_proj: Mat4) {
+        let (w, h) = (self.image.width, self.image.height);
+        let clear = vk::ClearValue {
+            color: vk::ClearColorValue { float32: [0.0; 4] },
+        };
+        let area = vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent: vk::Extent2D {
+                width: w,
+                height: h,
+            },
+        };
+        let begin = vk::RenderPassBeginInfo::builder()
+            .render_pass(self.debug_pass)
+            .framebuffer(self.framebuffer)
+            .render_area(area)
+            .clear_values(std::slice::from_ref(&clear));
+        device.cmd_begin_render_pass(cb, &begin, vk::SubpassContents::INLINE);
+
+        device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, self.pipeline);
+        let vp = vk::Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: w as f32,
+            height: h as f32,
+            min_depth: 0.0,
+            max_depth: 1.0,
+        }; // positive height
+        device.cmd_set_viewport(cb, 0, &[vp]);
+        device.cmd_set_scissor(cb, 0, &[area]);
+
+        let bytes =
+            std::slice::from_raw_parts(&view_proj as *const Mat4 as *const u8, size_of::<Mat4>());
+        device.cmd_push_constants(
+            cb,
+            self.pipeline_layout,
+            vk::ShaderStageFlags::VERTEX,
+            0,
+            bytes,
+        );
+
+        device.cmd_bind_vertex_buffers(cb, 0, &[self.vertex_buffer.buffer], &[0]);
+        device.cmd_bind_index_buffer(cb, self.index_buffer.buffer, 0, vk::IndexType::UINT32);
+        device.cmd_draw_indexed(cb, self.index_count, 1, 0, 0, 0);
+
+        device.cmd_end_render_pass(cb);
+    }
+
     unsafe fn create_debug_pipeline(
         device: &Device,
         layout: vk::PipelineLayout,
@@ -101,7 +171,6 @@ impl DebugRenderer {
     ) -> Result<vk::Pipeline> {
         let vert = create_shader_module(device, include_bytes!("../../shaders/debug.vert.spv"))?;
         let frag = create_shader_module(device, include_bytes!("../../shaders/debug.frag.spv"))?;
-
 
         let shaders = [
             vk::PipelineShaderStageCreateInfo::builder()
@@ -210,6 +279,5 @@ impl DebugRenderer {
             .alpha_blend_op(vk::BlendOp::ADD)
             .color_write_mask(vk::ColorComponentFlags::R)
             .build()
-
     }
 }
