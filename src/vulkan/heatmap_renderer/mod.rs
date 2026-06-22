@@ -1,3 +1,6 @@
+
+mod compositor;
+
 use std::slice;
 
 use glam::{Mat4, UVec2};
@@ -30,6 +33,7 @@ pub struct HeatmapRenderer {
     index_buffer: Buffer,
     index_count: u32,
     pipeline_layout: vk::PipelineLayout,
+
 }
 
 impl HeatmapRenderer {
