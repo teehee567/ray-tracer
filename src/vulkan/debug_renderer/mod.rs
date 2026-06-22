@@ -7,6 +7,10 @@ use crate::vulkan::core::{
 };
 use anyhow::Result;
 
+
+struct DebugVertex {
+}
+
 pub struct DebugRenderer {
     pub debug_pass: vk::RenderPass,
     pub swapchain_pass: vk::RenderPass,
@@ -44,10 +48,23 @@ impl DebugRenderer {
     }
 
     unsafe fn create_debug_pipeline(
+        &self,
         device: &Device,
         layout: vk::PipelineLayout,
     ) -> Result<vk::Pipeline> {
         
+
+        let vertex_bindings = [vk::VertexInputBindingDescription::builder()
+            .binding(0)
+            .stride(size_of::<DebugVertex>() as u32)
+            .input_rate(vk::VertexInputRate::VERTEX)
+            .build()];
+        let vertex_attributes = [vk::VertexInputAttributeDescription::builder()
+            .binding(0)
+            .location(0)
+            .format(vk::Format::R32G32B32_SFLOAT)
+            .offset(0)
+            .build()]
 
         let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
         let blend_attachments = [Self::additive_blend_attachment()]
@@ -56,8 +73,8 @@ impl DebugRenderer {
             device,
             super::core::pipeline::GraphicsPipelineConfig {
                 shaders: &shaders,
-                vertex_bindings: (),
-                vertex_attributes: (),
+                vertex_bindings: &vertex_bindings,
+                vertex_attributes: &vertex_attributes,
                 blend_attachments: &blend_attachments,
                 dynamic_states: &dynamic_states,
                 layout,
