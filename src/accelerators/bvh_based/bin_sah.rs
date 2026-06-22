@@ -30,7 +30,7 @@ use glam::{Vec3, Vec3A};
 use rayon::prelude::*;
 
 use crate::accelerators::Accelerator;
-use crate::accelerators::bvh::BvhNode;
+use super::bvh::BvhNode;
 use crate::{Material, Triangle};
 
 /// SAH bins per axis; 16 is the knee of the quality/speed curve (Wald 2007).

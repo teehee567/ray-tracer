@@ -1,12 +1,13 @@
 use aabb::AABB;
-use bvh::BvhNode;
 use glam::Vec3;
 
 use crate::{Material, Triangle};
 
 pub mod aabb;
-pub mod bin_sah;
-pub mod bvh;
+pub mod bvh_based;
+use bvh_based::bvh::BvhNode;
+
+pub use bvh_based::*;
 
 pub trait Primitive: Send + Sync {
     fn centroid(&self) -> Vec3;
