@@ -18,6 +18,8 @@ use crate::{
 };
 use anyhow::Result;
 
+use super::core::pipeline::GraphicsPipelineConfig;
+
 #[repr(C)]
 struct HeatmapVertex {
     pos: [f32; 3],
@@ -206,7 +208,7 @@ impl HeatmapRenderer {
 
         let pipeline = create_graphics_pipeline(
             device,
-            super::core::pipeline::GraphicsPipelineConfig {
+            GraphicsPipelineConfig {
                 shaders: &shaders,
                 vertex_bindings: &vertex_bindings,
                 vertex_attributes: &vertex_attributes,
