@@ -5,7 +5,7 @@ use log::info;
 use vulkanalia::{prelude::v1_0::*, vk::ImageView};
 
 use crate::{accelerators::visualiser::AccelVis, vulkan::core::{
-    context::VulkanContext, descriptors::binding, image::Image, pipeline::{create_graphics_pipeline, create_shader_module}
+    buffer::{Buffer, BufferOpts}, context::VulkanContext, descriptors::binding, image::Image, pipeline::{create_graphics_pipeline, create_shader_module}
 }};
 use anyhow::Result;
 
@@ -20,6 +20,9 @@ pub struct DebugRenderer {
     pub swapchain_pass: vk::RenderPass,
     pub image: Image,
     pipeline: vk::Pipeline,
+    frame_buffer: vk::Framebuffer,
+    vertex_buffer: Buffer,
+    index_buffer: Buffer,
 }
 
 impl DebugRenderer {
@@ -31,7 +34,7 @@ impl DebugRenderer {
         accel_vis: AccelVis,
     ) -> Result<Self> {
         let device = &ctx.device;
-        let (w, h) = (extent.width, extent.height)
+        let (w, h) = (extent.width, extent.height);
 
         let debug_image = Image::new_2d(
             ctx,
@@ -63,12 +66,18 @@ impl DebugRenderer {
         let pipeline = Self::create_debug_pipeline(device, pipeline_layout, render_pass)?;
 
         let (vertices, indices) = accel_vis.build_geo();
+        let vertex_buffer = Buffer::from_slice(ctx, &vertices, BufferOpts { usage: vk::BufferUsageFlags::VERTEX_BUFFER, ..Default::default()})?;
+        let index_buffer = Buffer::from_slice(ctx, &indices, BufferOpts { usage: vk::BufferUsageFlags::INDEX_BUFFER, ..Default::default()})?;
+
 
         Ok(Self {
             debug_pass: render_pass,
             swapchain_pass,
             image: debug_image,
             pipeline,
+            vertex_buffer,
+            index_buffer,
+            frame_buffer,
         })
     }
 
