@@ -5,14 +5,13 @@ use log::info;
 use vulkanalia::{prelude::v1_0::*, vk::ImageView};
 
 use crate::{
-    accelerators::visualiser::AccelVis,
-    vulkan::core::{
+    accelerators::visualiser::AccelVis, scene::Scene, vulkan::core::{
         buffer::{Buffer, BufferOpts},
         context::VulkanContext,
         descriptors::binding,
         image::Image,
         pipeline::{create_graphics_pipeline, create_shader_module},
-    },
+    }
 };
 use anyhow::Result;
 
@@ -38,8 +37,7 @@ impl HeatmapRenderer {
         ctx: &VulkanContext,
         swapchain_pass: vk::RenderPass,
         extent: vk::Extent2D,
-        base_extent: UVec2,
-        accel_vis: AccelVis,
+        scene: &Scene,
     ) -> Result<Self> {
         let device = &ctx.device;
         let (w, h) = (extent.width, extent.height);
@@ -71,6 +69,8 @@ impl HeatmapRenderer {
 
         let pipeline_layout = Self::create_pipeline_layout(device)?;
         let pipeline = Self::create_heatmap_pipeline(device, pipeline_layout, render_pass)?;
+
+        let accel_vis = AccelVis::from_flat_bvh(&scene.components.bvh);
 
         let (vertices, indices) = accel_vis.build_geo();
         let index_count = indices.len() as u32;

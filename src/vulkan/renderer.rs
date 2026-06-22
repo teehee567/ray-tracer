@@ -2,16 +2,17 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use crossbeam_channel::Sender;
+use glam::{Mat3, Mat4};
 use log::info;
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::{KhrSwapchainExtensionDeviceCommands, SuccessCode};
 use winit::window::Window;
 
-use crate::accelerators::visualiser::AccelVis;
 use crate::fps_counter::FPSCounter;
 use crate::gui::{self, PushRender, PushGui};
 use crate::scene::Scene;
 use crate::types::{AUVec2, Au32};
+use crate::vulkan::heatmap_renderer::HeatmapRenderer;
 use crate::vulkan::utils::save_frame::SaveImage;
 
 use super::constants::OFFSCREEN_FRAME_COUNT;
@@ -30,6 +31,7 @@ pub struct VulkanRenderer {
     swapchain: Swapchain,
     path_tracer: PathTracer,
     gui: GuiRenderer,
+    heatmap: HeatmapRenderer,
     sync: SyncState,
     scene: Scene,
     frame: usize,
@@ -38,7 +40,6 @@ pub struct VulkanRenderer {
     present_timer: GpuTimer,
     present_rate: FPSCounter,
     gui_sender: Option<Sender<PushGui>>,
-    accel_vis: AccelVis,
 }
 
 impl VulkanRenderer {
@@ -60,13 +61,14 @@ impl VulkanRenderer {
         let render_resolution = scene.get_camera_controls().resolution.0;
         let gui = GuiRenderer::new(&ctx, swapchain.render_pass, swapchain.extent, render_resolution)?;
 
-        let accel_vis = AccelVis::from_flat_bvh(&scene.components.bvh);
+        let heatmap = HeatmapRenderer::new(&ctx, swapchain.render_pass, swapchain.extent, &scene)?;
 
         Ok(Self {
             ctx,
             swapchain,
             path_tracer,
             gui,
+            heatmap,
             sync,
             scene,
             frame: 0,
@@ -75,7 +77,6 @@ impl VulkanRenderer {
             present_timer,
             present_rate: FPSCounter::new(60),
             gui_sender: None,
-            accel_vis,
         })
     }
 
@@ -168,14 +169,6 @@ impl VulkanRenderer {
         Ok(())
     }
 
-    pub unsafe fn create_accel_vis(
-        &mut self,
-        frame_index: usize
-    ) -> Result<()> {
-
-        Ok(())
-    }
-
     pub unsafe fn present_frame(
         &mut self,
         frame_index: usize,
@@ -227,6 +220,8 @@ impl VulkanRenderer {
             None
         };
 
+        let heatmap_view_proj = self.heatmap_view_proj();
+
         record_present_commands(
             device,
             &mut self.swapchain,
@@ -238,7 +233,9 @@ impl VulkanRenderer {
             panel_width,
             render_extent,
             save_image_buffer.as_ref(),
-            self.present_timer.query_pool()
+            self.present_timer.query_pool(),
+            &self.heatmap,
+            heatmap_view_proj,
         )?;
 
         let wait_semaphores = &[self.sync.image_available_semaphore, self.sync.compute_timeline];
@@ -303,6 +300,20 @@ impl VulkanRenderer {
         self.path_tracer
             .uniform_buffer
             .write(&self.ctx.device, std::slice::from_ref(&ubo))
+    }
+
+    // view projection
+    fn heatmap_view_proj(&self) -> Mat4 {
+        let cam = self.scene.get_camera_controls();
+        let r = Mat3::from_mat4(cam.rotation.0);
+        let view = Mat4::from_mat3(r.transpose()) * Mat4::from_translation(-cam.location.0);
+        let tan_half_y = cam.view_port_uv.0.y / (2.0 * cam.focal_length.0);
+        let fov_y = 2.0 * tan_half_y.atan();
+        let aspect = cam.view_port_uv.0.x / cam.view_port_uv.0.y;
+        let mut proj = Mat4::perspective_rh(fov_y, aspect, 0.01, 10_000.0);
+        // flip for vulkan
+        proj.y_axis.y *= -1.0;
+        proj * view
     }
 
     pub unsafe fn destroy(&mut self) {

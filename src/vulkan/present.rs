@@ -1,7 +1,8 @@
 use anyhow::Result;
-use glam::UVec2;
+use glam::{Mat4, UVec2};
 use vulkanalia::prelude::v1_0::*;
 
+use crate::vulkan::heatmap_renderer::HeatmapRenderer;
 use crate::vulkan::utils::save_frame::SaveImage;
 
 use super::core::image::{cmd_image_barrier, image_barrier, subresource_range};
@@ -24,6 +25,8 @@ pub(super) unsafe fn record_present_commands(
     save_image: Option<&SaveImage>,
     // for timing present timer
     query_pool: vk::QueryPool,
+    heatmap: &HeatmapRenderer,
+    heatmap_view_proj: Mat4,
 ) -> Result<()> {
     let swapchain_image = swapchain.images[swapchain_index];
     let begin_info = vk::CommandBufferBeginInfo::builder();
@@ -212,6 +215,12 @@ pub(super) unsafe fn record_present_commands(
 
         device.cmd_end_render_pass(command_buffer);
         swap_layout_after = vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
+    }
+
+    // swtich to proper if later on
+    // heatmap
+    if true {
+        heatmap.record_into(device, command_buffer, heatmap_view_proj);
     }
 
     // path traced frame back to compute-writable
