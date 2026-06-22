@@ -10,6 +10,9 @@ pub struct AccelVis {
 }
 
 impl AccelVis {
+    pub fn build_geo(&self) -> () {
+
+    }
     // move to trait later on this is just ofr testing
     pub fn from_flat_bvh(nodes: &[BvhNode]) -> Self {
         let mut viz: Vec<AccelVisNode> = nodes

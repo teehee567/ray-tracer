@@ -2,11 +2,11 @@ use std::slice;
 
 use glam::{Mat4, UVec2};
 use log::info;
-use vulkanalia::prelude::v1_0::*;
+use vulkanalia::{prelude::v1_0::*, vk::ImageView};
 
-use crate::vulkan::core::{
+use crate::{accelerators::visualiser::AccelVis, vulkan::core::{
     context::VulkanContext, descriptors::binding, image::Image, pipeline::{create_graphics_pipeline, create_shader_module}
-};
+}};
 use anyhow::Result;
 
 
@@ -19,6 +19,7 @@ pub struct DebugRenderer {
     pub debug_pass: vk::RenderPass,
     pub swapchain_pass: vk::RenderPass,
     pub image: Image,
+    pipeline: vk::Pipeline,
 }
 
 impl DebugRenderer {
@@ -27,13 +28,15 @@ impl DebugRenderer {
         swapchain_pass: vk::RenderPass,
         extent: vk::Extent2D,
         base_extent: UVec2,
+        accel_vis: AccelVis,
     ) -> Result<Self> {
         let device = &ctx.device;
+        let (w, h) = (extent.width, extent.height)
 
         let debug_image = Image::new_2d(
             ctx,
-            extent.width,
-            extent.height,
+            w,
+            h,
             vk::Format::R32_SFLOAT,
             vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
@@ -45,23 +48,30 @@ impl DebugRenderer {
         let render_pass = Self::create_render_pass(device, vk::Format::R32_SFLOAT)?;
 
         // framebuffer
-        let attachments = [image.view];
-        let frame_buffer = 
+        let attachments = [debug_image.view];
+        let frame_buffer_info = vk::FramebufferCreateInfo::builder()
+            .render_pass(render_pass)
+            .attachments(&attachments)
+            .width(w)
+            .height(h)
+            .layers(1)
+            .build();
+        let frame_buffer = device.create_framebuffer(&frame_buffer_info, None)?;
 
-        let pipeline_layout = Self::create_pipeline_layout(device, render_pass)?;
 
-        let pipeline = self.create_debug_pipeline(device, pipeline_layout)
+        let pipeline_layout = Self::create_pipeline_layout(device)?;
+        let pipeline = Self::create_debug_pipeline(device, pipeline_layout, render_pass)?;
+
+        let (vertices, indices) = accel_vis.build_geo();
 
         Ok(Self {
             debug_pass: render_pass,
             swapchain_pass,
             image: debug_image,
+            pipeline,
         })
     }
 
-    unsafe fn create_descriptor_set_layout(device: &Device) -> Result<vk::DescriptorSetLayout> {
-        let bindings = [binding(0, vk::Desc, count, stages)]
-    }
 
     unsafe fn create_pipeline_layout(device: &Device) -> Result<vk::PipelineLayout> {
         let push_constant = vk::PushConstantRange::builder()
