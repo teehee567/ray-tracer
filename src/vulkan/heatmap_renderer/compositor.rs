@@ -204,7 +204,7 @@ impl Compositer {
         let image = [image_info(
             self.sampler,
             image_view,
-            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            vk::ImageLayout::GENERAL,
         )];
         let max_buf = [buffer_info(self.max_buffer.buffer, 0, vk::WHOLE_SIZE)];
 

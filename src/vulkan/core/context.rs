@@ -322,6 +322,13 @@ unsafe fn check_physical_device(
         return Err(anyhow!(SuitabilityError("Insufficient swapchain support.")));
     }
 
+    let features = instance.get_physical_device_features(physical_device);
+    if features.fragment_stores_and_atomics == vk::FALSE {
+        return Err(anyhow!(SuitabilityError(
+            "Missing fragment shader storage image atomics support."
+        )));
+    }
+
     Ok(())
 }
 
@@ -381,6 +388,7 @@ unsafe fn create_logical_device(
     // Features
     let features = vk::PhysicalDeviceFeatures::builder()
         .sampler_anisotropy(true)
+        .fragment_stores_and_atomics(true)
         .shader_storage_image_write_without_format(true)
         .shader_sampled_image_array_dynamic_indexing(true)
         .shader_storage_image_array_dynamic_indexing(true);

@@ -1,15 +1,12 @@
 #version 450
 
-// Finds the maximum overlap count across the accumulation image so the
-// composite can normalize against the true per-frame peak instead of a fixed
-// guess. Counts are non-negative, so their IEEE-754 bit patterns sort in the
-// same order as the floats and atomicMax on the uint bits yields the float max.
+// finds maximum overlap across the accumulated compositor image to normalise against max
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(set = 0, binding = 0) uniform sampler2D accum;
+layout(set = 0, binding = 0) uniform usampler2D accum;
 layout(set = 0, binding = 1) buffer MaxBuf {
-    uint max_bits;
+    uint max_count;
 } mb;
 
 void main() {
@@ -19,6 +16,6 @@ void main() {
         return;
     }
 
-    float count = texelFetch(accum, p, 0).r;
-    atomicMax(mb.max_bits, floatBitsToUint(count));
+    uint count = texelFetch(accum, p, 0).r;
+    atomicMax(mb.max_count, count);
 }

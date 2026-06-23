@@ -5,10 +5,13 @@ use crate::gui::components::perf_graph::PERF_HISTORY_LEN;
 #[derive(Clone, Debug)]
 pub enum PushRender {
     SaveFrame(PathBuf),
+    SetHeatmapBand { low: u32, high: u32 },
+    ToggleHeatmap(bool),
 }
 
 pub enum PushGui {
     PerfUpdate{compute_fps: f64, compute_ms: f64, present_fps: f64, present_ms: f64, heatmap_ms: f64, compositor_ms: f64},
+    HeatmapInfo { max_depth: u32 },
 }
 
 #[derive(Debug, Default)]
@@ -25,6 +28,10 @@ pub struct GuiData {
     pub save_file_path: String,
     pub perf_history: PerfHistory,
 
+    pub heatmap_enabled: bool,
+    pub heatmap_depth_low: u32,
+    pub heatmap_depth_high: u32,
+    pub heatmap_max_depth: u32,
 }
 
 impl GuiData {
@@ -32,6 +39,7 @@ impl GuiData {
 
         Self {
             perf_history: PerfHistory::new(PERF_HISTORY_LEN),
+            heatmap_enabled: true,
             ..Default::default()
         }
     }

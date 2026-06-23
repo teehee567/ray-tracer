@@ -24,8 +24,6 @@ use super::path_tracer::PathTracer;
 use super::present::record_present_commands;
 use super::utils::gpu_timer::GpuTimer;
 
-const HEATMAP_ACTIVE: bool = true;
-
 /// Snapshot of the renderer's timing counters, handed to the GUI each frame.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TimerPerf {
@@ -55,6 +53,8 @@ pub struct VulkanRenderer {
     compositor_timer: GpuTimer,
     present_rate: FPSCounter,
     gui_sender: Option<Sender<PushGui>>,
+    heatmap_active: bool,
+    heatmap_band: (u32, u32),
 }
 
 impl VulkanRenderer {
@@ -89,6 +89,7 @@ impl VulkanRenderer {
             },
             &scene,
         )?;
+        let heatmap_max_depth = heatmap.max_depth();
 
         Ok(Self {
             ctx,
@@ -106,6 +107,8 @@ impl VulkanRenderer {
             compositor_timer,
             present_rate: FPSCounter::new(60),
             gui_sender: None,
+            heatmap_active: true,
+            heatmap_band: (0, heatmap_max_depth),
         })
     }
 
@@ -114,6 +117,9 @@ impl VulkanRenderer {
     }
 
     pub fn set_gui_sender(&mut self, sender: Sender<PushGui>) {
+        let _ = sender.try_send(PushGui::HeatmapInfo {
+            max_depth: self.heatmap.max_depth(),
+        });
         self.gui_sender = Some(sender);
     }
 
@@ -185,10 +191,20 @@ impl VulkanRenderer {
 
         device.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())?;
 
-        self.update_uniform_buffer()?;
+        let path_trace = !self.heatmap_active;
+        // freeze accumulation counter fi showing heatmap
+        if path_trace {
+            self.update_uniform_buffer()?;
+        }
         let render_extent = self.gui.render_extent();
-        self.path_tracer
-            .record_dispatch(device, command_buffer, frame_index, render_extent, self.compute_timer.query_pool())?;
+        self.path_tracer.record_dispatch(
+            device,
+            command_buffer,
+            frame_index,
+            render_extent,
+            self.compute_timer.query_pool(),
+            path_trace,
+        )?;
 
         device.reset_fences(&[self.sync.frame_fences[frame_index]])?;
 
@@ -209,7 +225,9 @@ impl VulkanRenderer {
             self.sync.frame_fences[frame_index],
         )?;
 
-        self.frame += 1;
+        if path_trace {
+            self.frame += 1;
+        }
 
         Ok(())
     }
@@ -230,6 +248,12 @@ impl VulkanRenderer {
         // device.reset_fences(&[self.sync.present_fence])?;
 
         self.present_rate.tick();
+
+        match &save_image {
+            Some(PushRender::SetHeatmapBand { low, high }) => self.heatmap_band = (*low, *high),
+            Some(PushRender::ToggleHeatmap(on)) => self.heatmap_active = *on,
+            _ => {}
+        }
 
         if let Some(frame) = gui_frame.as_deref() {
             self.gui.update(&self.ctx, self.swapchain.extent, frame)?;
@@ -281,9 +305,10 @@ impl VulkanRenderer {
             render_extent,
             save_image_buffer.as_ref(),
             self.present_timer.query_pool(),
-            &self.heatmap,
+            &mut self.heatmap,
             heatmap_view_proj,
-            HEATMAP_ACTIVE,
+            self.heatmap_active,
+            self.heatmap_band,
             self.heatmap_timer.query_pool(),
             self.compositor_timer.query_pool(),
         )?;

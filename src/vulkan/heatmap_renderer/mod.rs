@@ -11,7 +11,11 @@ use crate::{
     accelerators::visualiser::AccelVis, scene::Scene, vulkan::core::{
         buffer::{Buffer, BufferOpts},
         context::VulkanContext,
-        image::Image,
+        image::{cmd_image_barrier, image_barrier, subresource_range, Image},
+        descriptors::{
+            allocate_descriptor_sets, binding, create_descriptor_pool, create_descriptor_set_layout,
+            image_info, image_write, pool_size,
+        },
         pipeline::{create_graphics_pipeline, create_shader_module},
     }
 };
@@ -29,11 +33,18 @@ struct HeatmapVertex {
 pub struct HeatmapRenderer {
     pub heatmap_pass: vk::RenderPass,
     pub image: Image,
+    image_layout: vk::ImageLayout,
+    accum_format: vk::Format,
+    accum_set_layout: vk::DescriptorSetLayout,
+    accum_pool: vk::DescriptorPool,
+    accum_set: vk::DescriptorSet,
     pipeline: vk::Pipeline,
     framebuffer: vk::Framebuffer,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
-    index_count: u32,
+
+    depth_offsets: Vec<u32>,
+    max_depth: u32,
     pipeline_layout: vk::PipelineLayout,
     compositor: Compositer,
 }
@@ -47,18 +58,27 @@ impl HeatmapRenderer {
     ) -> Result<Self> {
         let device = &ctx.device;
 
-        let heatmap_image = Self::create_image(ctx, render_extent)?;
+        let accum_format = Self::select_accum_format(ctx)?;
+        let heatmap_image = Self::create_image(ctx, render_extent, accum_format)?;
 
-        let render_pass = Self::create_render_pass(device, vk::Format::R32_SFLOAT)?;
+        let render_pass = Self::create_render_pass(device)?;
         let framebuffer = Self::create_framebuffer(device, render_pass, &heatmap_image)?;
 
-        let pipeline_layout = Self::create_pipeline_layout(device)?;
+        let accum_set_layout = Self::create_accum_set_layout(device)?;
+        let accum_pool = create_descriptor_pool(
+            device,
+            &[pool_size(vk::DescriptorType::STORAGE_IMAGE, 1)],
+            1,
+            vk::DescriptorPoolCreateFlags::empty(),
+        )?;
+        let accum_set = allocate_descriptor_sets(device, accum_pool, accum_set_layout, 1)?[0];
+
+        let pipeline_layout = Self::create_pipeline_layout(device, accum_set_layout)?;
         let pipeline = Self::create_heatmap_pipeline(device, pipeline_layout, render_pass)?;
 
         let accel_vis = AccelVis::from_flat_bvh(&scene.components.bvh);
 
-        let (vertices, indices) = accel_vis.build_geo();
-        let index_count = indices.len() as u32;
+        let (vertices, indices, depth_offsets, max_depth) = accel_vis.build_geo_layered();
         let vertex_buffer = Buffer::from_slice(
             ctx,
             &vertices,
@@ -77,27 +97,65 @@ impl HeatmapRenderer {
         )?;
 
         let compositor = Compositer::new(ctx, swapchain_pass, heatmap_image.view)?;
+        Self::update_accum_set(device, accum_set, heatmap_image.view);
 
         Ok(Self {
             heatmap_pass: render_pass,
             image: heatmap_image,
+            image_layout: vk::ImageLayout::UNDEFINED,
+            accum_format,
+            accum_set_layout,
+            accum_pool,
+            accum_set,
             pipeline,
             vertex_buffer,
             index_buffer,
-            index_count,
+            depth_offsets,
+            max_depth,
             framebuffer,
             pipeline_layout,
             compositor,
         })
     }
 
-    unsafe fn create_image(ctx: &VulkanContext, extent: vk::Extent2D) -> Result<Image> {
+    pub fn max_depth(&self) -> u32 {
+        self.max_depth
+    }
+
+    unsafe fn select_accum_format(ctx: &VulkanContext) -> Result<vk::Format> {
+        let format = vk::Format::R32_UINT;
+        let required = vk::FormatFeatureFlags::STORAGE_IMAGE
+            | vk::FormatFeatureFlags::STORAGE_IMAGE_ATOMIC
+            | vk::FormatFeatureFlags::SAMPLED_IMAGE
+            | vk::FormatFeatureFlags::TRANSFER_DST;
+        let features = ctx
+            .instance
+            .get_physical_device_format_properties(ctx.physical_device, format)
+            .optimal_tiling_features;
+        if !features.contains(required) {
+            anyhow::bail!(
+                "heatmap accumulation format {:?} is missing {:?} from {:?}",
+                format,
+                required - features,
+                features
+            );
+        }
+        Ok(format)
+    }
+
+    unsafe fn create_image(
+        ctx: &VulkanContext,
+        extent: vk::Extent2D,
+        format: vk::Format,
+    ) -> Result<Image> {
         Image::new_2d(
             ctx,
             extent.width,
             extent.height,
-            vk::Format::R32_SFLOAT,
-            vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+            format,
+            vk::ImageUsageFlags::STORAGE
+                | vk::ImageUsageFlags::SAMPLED
+                | vk::ImageUsageFlags::TRANSFER_DST,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
             1,
             vk::ImageCreateFlags::empty(),
@@ -110,7 +168,7 @@ impl HeatmapRenderer {
         render_pass: vk::RenderPass,
         image: &Image,
     ) -> Result<vk::Framebuffer> {
-        let attachments = [image.view];
+        let attachments: [vk::ImageView; 0] = [];
         let info = vk::FramebufferCreateInfo::builder()
             .render_pass(render_pass)
             .attachments(&attachments)
@@ -118,6 +176,35 @@ impl HeatmapRenderer {
             .height(image.height)
             .layers(1);
         Ok(device.create_framebuffer(&info, None)?)
+    }
+
+    unsafe fn create_accum_set_layout(device: &Device) -> Result<vk::DescriptorSetLayout> {
+        let bindings = [binding(
+            0,
+            vk::DescriptorType::STORAGE_IMAGE,
+            1,
+            vk::ShaderStageFlags::FRAGMENT,
+        )];
+        create_descriptor_set_layout(device, &bindings)
+    }
+
+    unsafe fn update_accum_set(
+        device: &Device,
+        accum_set: vk::DescriptorSet,
+        image_view: vk::ImageView,
+    ) {
+        let image = [image_info(
+            vk::Sampler::null(),
+            image_view,
+            vk::ImageLayout::GENERAL,
+        )];
+        let writes = [image_write(
+            accum_set,
+            0,
+            vk::DescriptorType::STORAGE_IMAGE,
+            &image,
+        )];
+        device.update_descriptor_sets(&writes, &[] as &[vk::CopyDescriptorSet]);
     }
 
     pub unsafe fn record_reduce(&self, device: &Device, cb: vk::CommandBuffer) {
@@ -149,30 +236,88 @@ impl HeatmapRenderer {
         device.destroy_framebuffer(self.framebuffer, None);
         self.image.destroy(device);
 
-        self.image = Self::create_image(ctx, render_extent)?;
+        self.image = Self::create_image(ctx, render_extent, self.accum_format)?;
+        self.image_layout = vk::ImageLayout::UNDEFINED;
         self.framebuffer = Self::create_framebuffer(device, self.heatmap_pass, &self.image)?;
+        Self::update_accum_set(device, self.accum_set, self.image.view);
         self.compositor.update_composite_set(device, self.image.view);
 
         Ok(())
     }
 
-    unsafe fn create_pipeline_layout(device: &Device) -> Result<vk::PipelineLayout> {
+    unsafe fn create_pipeline_layout(
+        device: &Device,
+        set_layout: vk::DescriptorSetLayout,
+    ) -> Result<vk::PipelineLayout> {
         let push_constant = vk::PushConstantRange::builder()
             .stage_flags(vk::ShaderStageFlags::VERTEX)
             .offset(0)
             .size(size_of::<Mat4>() as u32)
             .build();
 
+        let set_layouts = [set_layout];
         let info = vk::PipelineLayoutCreateInfo::builder()
+            .set_layouts(&set_layouts)
             .push_constant_ranges(slice::from_ref(&push_constant));
         Ok(device.create_pipeline_layout(&info, None)?)
     }
 
-    pub unsafe fn record_into(&self, device: &Device, cb: vk::CommandBuffer, view_proj: Mat4) {
+    pub unsafe fn record_into(
+        &mut self,
+        device: &Device,
+        cb: vk::CommandBuffer,
+        view_proj: Mat4,
+        low: u32,
+        high: u32,
+    ) {
         let (w, h) = (self.image.width, self.image.height);
-        let clear = vk::ClearValue {
-            color: vk::ClearColorValue { float32: [0.0; 4] },
+        let (src_access, src_stage) = if self.image_layout == vk::ImageLayout::UNDEFINED {
+            (vk::AccessFlags::empty(), vk::PipelineStageFlags::TOP_OF_PIPE)
+        } else {
+            (
+                vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE,
+                vk::PipelineStageFlags::COMPUTE_SHADER | vk::PipelineStageFlags::FRAGMENT_SHADER,
+            )
         };
+        cmd_image_barrier(
+            device,
+            cb,
+            image_barrier(
+                self.image.image,
+                self.image_layout,
+                vk::ImageLayout::GENERAL,
+                src_access,
+                vk::AccessFlags::TRANSFER_WRITE,
+                1,
+            ),
+            src_stage,
+            vk::PipelineStageFlags::TRANSFER,
+        );
+
+        let clear = vk::ClearColorValue { uint32: [0; 4] };
+        device.cmd_clear_color_image(
+            cb,
+            self.image.image,
+            vk::ImageLayout::GENERAL,
+            &clear,
+            &[subresource_range(1)],
+        );
+        cmd_image_barrier(
+            device,
+            cb,
+            image_barrier(
+                self.image.image,
+                vk::ImageLayout::GENERAL,
+                vk::ImageLayout::GENERAL,
+                vk::AccessFlags::TRANSFER_WRITE,
+                vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE,
+                1,
+            ),
+            vk::PipelineStageFlags::TRANSFER,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+        );
+        self.image_layout = vk::ImageLayout::GENERAL;
+
         let area = vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
             extent: vk::Extent2D {
@@ -183,11 +328,18 @@ impl HeatmapRenderer {
         let begin = vk::RenderPassBeginInfo::builder()
             .render_pass(self.heatmap_pass)
             .framebuffer(self.framebuffer)
-            .render_area(area)
-            .clear_values(std::slice::from_ref(&clear));
+            .render_area(area);
         device.cmd_begin_render_pass(cb, &begin, vk::SubpassContents::INLINE);
 
         device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, self.pipeline);
+        device.cmd_bind_descriptor_sets(
+            cb,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.pipeline_layout,
+            0,
+            &[self.accum_set],
+            &[],
+        );
         let vp = vk::Viewport {
             x: 0.0,
             y: 0.0,
@@ -209,11 +361,33 @@ impl HeatmapRenderer {
             bytes,
         );
 
-        device.cmd_bind_vertex_buffers(cb, 0, &[self.vertex_buffer.buffer], &[0]);
-        device.cmd_bind_index_buffer(cb, self.index_buffer.buffer, 0, vk::IndexType::UINT32);
-        device.cmd_draw_indexed(cb, self.index_count, 1, 0, 0, 0);
+        let low = low.min(self.max_depth);
+        let high = high.min(self.max_depth).max(low);
+        let first = self.depth_offsets[low as usize];
+        let count = self.depth_offsets[high as usize + 1] - first;
+
+        if count > 0 {
+            device.cmd_bind_vertex_buffers(cb, 0, &[self.vertex_buffer.buffer], &[0]);
+            device.cmd_bind_index_buffer(cb, self.index_buffer.buffer, 0, vk::IndexType::UINT32);
+            device.cmd_draw_indexed(cb, count, 1, first, 0, 0);
+        }
 
         device.cmd_end_render_pass(cb);
+
+        cmd_image_barrier(
+            device,
+            cb,
+            image_barrier(
+                self.image.image,
+                vk::ImageLayout::GENERAL,
+                vk::ImageLayout::GENERAL,
+                vk::AccessFlags::SHADER_WRITE,
+                vk::AccessFlags::SHADER_READ,
+                1,
+            ),
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+            vk::PipelineStageFlags::COMPUTE_SHADER | vk::PipelineStageFlags::FRAGMENT_SHADER,
+        );
     }
 
     unsafe fn create_heatmap_pipeline(
@@ -250,7 +424,7 @@ impl HeatmapRenderer {
             .build()];
 
         let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
-        let blend_attachments = [Self::additive_blend_attachment()];
+        let blend_attachments = [];
 
         let pipeline = create_graphics_pipeline(
             device,
@@ -274,44 +448,17 @@ impl HeatmapRenderer {
         Ok(pipeline)
     }
 
-    unsafe fn create_render_pass(device: &Device, format: vk::Format) -> Result<vk::RenderPass> {
-        let color_attachment = vk::AttachmentDescription::builder()
-            .format(format)
-            .samples(vk::SampleCountFlags::_1)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-
-        let color_attachment_ref = vk::AttachmentReference::builder()
-            .attachment(0)
-            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-
-        let color_attachments = &[color_attachment_ref];
+    unsafe fn create_render_pass(device: &Device) -> Result<vk::RenderPass> {
         let subpass = vk::SubpassDescription::builder()
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(color_attachments);
+            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
 
-        let dependency = vk::SubpassDependency::builder()
-            .src_subpass(0)
-            .dst_subpass(vk::SUBPASS_EXTERNAL)
-            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            // sampled by the reduce compute pass and the composite fragment shader
-            .dst_stage_mask(
-                vk::PipelineStageFlags::COMPUTE_SHADER | vk::PipelineStageFlags::FRAGMENT_SHADER,
-            )
-            .dst_access_mask(vk::AccessFlags::SHADER_READ);
-
-        let attachments = &[color_attachment];
+        let attachments: [vk::AttachmentDescription; 0] = [];
+        let dependencies: [vk::SubpassDependency; 0] = [];
         let subpasses = &[subpass];
-        let dependencies = &[dependency];
         let info = vk::RenderPassCreateInfo::builder()
-            .attachments(attachments)
+            .attachments(&attachments)
             .subpasses(subpasses)
-            .dependencies(dependencies);
+            .dependencies(&dependencies);
 
         let render_pass = device.create_render_pass(&info, None)?;
         info!("Created heatmap render_pass: {:?}", render_pass);
@@ -324,23 +471,11 @@ impl HeatmapRenderer {
         device.destroy_pipeline(self.pipeline, None);
         device.destroy_pipeline_layout(self.pipeline_layout, None);
         device.destroy_framebuffer(self.framebuffer, None);
+        device.destroy_descriptor_pool(self.accum_pool, None);
+        device.destroy_descriptor_set_layout(self.accum_set_layout, None);
         self.vertex_buffer.destroy(device);
         self.index_buffer.destroy(device);
         self.image.destroy(device);
         device.destroy_render_pass(self.heatmap_pass, None);
-    }
-
-    fn additive_blend_attachment() -> vk::PipelineColorBlendAttachmentState {
-        //dst=ONE, op=ADD means each fragment does count += src. shader writes 1.0, so every covered fragment adds one. and with this we can buuild a heatmpa
-        vk::PipelineColorBlendAttachmentState::builder()
-            .blend_enable(true)
-            .src_color_blend_factor(vk::BlendFactor::ONE)
-            .dst_color_blend_factor(vk::BlendFactor::ONE)
-            .color_blend_op(vk::BlendOp::ADD)
-            .src_alpha_blend_factor(vk::BlendFactor::ONE)
-            .dst_alpha_blend_factor(vk::BlendFactor::ONE)
-            .alpha_blend_op(vk::BlendOp::ADD)
-            .color_write_mask(vk::ColorComponentFlags::R)
-            .build()
     }
 }

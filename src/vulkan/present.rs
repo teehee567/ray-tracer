@@ -25,9 +25,10 @@ pub(super) unsafe fn record_present_commands(
     save_image: Option<&SaveImage>,
     // for timing present timer
     query_pool: vk::QueryPool,
-    heatmap: &HeatmapRenderer,
+    heatmap: &mut HeatmapRenderer,
     heatmap_view_proj: Mat4,
     heatmap_active: bool,
+    heatmap_band: (u32, u32),
     heatmap_query_pool: vk::QueryPool,
     compositor_query_pool: vk::QueryPool,
 ) -> Result<()> {
@@ -196,7 +197,13 @@ pub(super) unsafe fn record_present_commands(
             heatmap_query_pool,
             first_query,
         );
-        heatmap.record_into(device, command_buffer, heatmap_view_proj);
+        heatmap.record_into(
+            device,
+            command_buffer,
+            heatmap_view_proj,
+            heatmap_band.0,
+            heatmap_band.1,
+        );
         device.cmd_write_timestamp(
             command_buffer,
             vk::PipelineStageFlags::BOTTOM_OF_PIPE,

@@ -190,6 +190,11 @@ impl GuiFrontend {
                                 compositor_ms as f32,
                             );
                         },
+                        PushGui::HeatmapInfo { max_depth } => {
+                            self.gui_data.heatmap_max_depth = max_depth;
+                            self.gui_data.heatmap_depth_low = 0;
+                            self.gui_data.heatmap_depth_high = max_depth;
+                        },
                     }
                 }
                 Err(TryRecvError::Empty) => break,

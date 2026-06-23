@@ -1,15 +1,14 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::app::render_controller::RenderCommand;
 use crate::gui::components::perf_graph::draw_perf_graph;
 use crate::gui::gui_data::PushRender;
-
-use super::frontend::{PANEL_WIDTH_POINTS, panel_width_pixels};
-use super::{GuiData, PerfHistory};
-use crossbeam_channel::Sender;
-use egui::{self, ComboBox};
 use anyhow::Result;
 
+use super::frontend::{panel_width_pixels, PANEL_WIDTH_POINTS};
+use super::GuiData;
+use crossbeam_channel::Sender;
+use egui::{self, ComboBox};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GuiTheme {
@@ -44,18 +43,20 @@ impl GuiPanels {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.heading("Ray Tracer");
                     ui.label(format!("v{}", env!("CARGO_PKG_VERSION")));
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        ComboBox::from_label("Theme")
-                            .selected_text(match self.theme {
-                                GuiTheme::Dark => "Dark",
-                                GuiTheme::Light => "Light",
-                            })
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut self.theme, GuiTheme::Dark, "Dark");
-                                ui.selectable_value(&mut self.theme, GuiTheme::Light, "Light");
-                            });
-                    });
+
+                    // ui.separator();
+                    // ui.horizontal(|ui| {
+                    //     ComboBox::from_label("Theme")
+                    //         .selected_text(match self.theme {
+                    //             GuiTheme::Dark => "Dark",
+                    //             GuiTheme::Light => "Light",
+                    //         })
+                    //         .show_ui(ui, |ui| {
+                    //             ui.selectable_value(&mut self.theme, GuiTheme::Dark, "Dark");
+                    //             ui.selectable_value(&mut self.theme, GuiTheme::Light, "Light");
+                    //         });
+                    // });
+                    
                     ui.separator();
 
                     ui.heading("Renderer");
@@ -79,7 +80,13 @@ impl GuiPanels {
                     ui.label(format!("Present: {:.2} ms", gui_data.present_ms));
 
                     ui.label(format!("Heatmap (GPU): {:.2} ms", gui_data.heatmap_ms));
-                    ui.label(format!("Compositor (GPU): {:.2} ms", gui_data.compositor_ms));
+                    ui.label(format!(
+                        "Compositor (GPU): {:.2} ms",
+                        gui_data.compositor_ms
+                    ));
+
+                    ui.separator();
+                    self.draw_heatmap_controls(ui, gui_data);
 
                     ui.separator();
                     ui.heading("Frame timing");
@@ -93,7 +100,9 @@ impl GuiPanels {
                     ui.text_edit_singleline(&mut gui_data.save_file_path);
 
                     if ui.button("Save Current Frame").clicked() {
-                        let _ = self.send(PushRender::SaveFrame(PathBuf::from(&gui_data.save_file_path)));
+                        let _ = self.send(PushRender::SaveFrame(PathBuf::from(
+                            &gui_data.save_file_path,
+                        )));
                     }
                 });
             });
@@ -102,8 +111,60 @@ impl GuiPanels {
     }
 
     pub fn send(&self, req: PushRender) -> Result<()> {
-        self.render_sender.try_send(RenderCommand::BackendCommand(req))?;
+        self.render_sender
+            .try_send(RenderCommand::BackendCommand(req))?;
         Ok(())
     }
 
+    fn draw_heatmap_controls(&self, ui: &mut egui::Ui, gui_data: &mut GuiData) {
+        ui.heading("Heatmap");
+
+        if ui
+            .checkbox(&mut gui_data.heatmap_enabled, "Enabled")
+            .changed()
+        {
+            let _ = self.send(PushRender::ToggleHeatmap(gui_data.heatmap_enabled));
+        }
+
+        if !gui_data.heatmap_enabled {
+            return;
+        }
+
+        if Self::draw_heatmap_depth_band(ui, gui_data) {
+            let _ = self.send(PushRender::SetHeatmapBand {
+                low: gui_data.heatmap_depth_low,
+                high: gui_data.heatmap_depth_high,
+            });
+        }
+    }
+
+    fn draw_heatmap_depth_band(ui: &mut egui::Ui, gui_data: &mut GuiData) -> bool {
+        let max_depth = gui_data.heatmap_max_depth;
+        let mut changed = false;
+
+        if Self::heatmap_depth_slider(ui, "Min depth", &mut gui_data.heatmap_depth_low, max_depth) {
+            gui_data.heatmap_depth_high =
+                gui_data.heatmap_depth_high.max(gui_data.heatmap_depth_low);
+            changed = true;
+        }
+
+        if Self::heatmap_depth_slider(ui, "Max depth", &mut gui_data.heatmap_depth_high, max_depth)
+        {
+            gui_data.heatmap_depth_low =
+                gui_data.heatmap_depth_low.min(gui_data.heatmap_depth_high);
+            changed = true;
+        }
+
+        changed
+    }
+
+    fn heatmap_depth_slider(
+        ui: &mut egui::Ui,
+        label: &str,
+        value: &mut u32,
+        max_depth: u32,
+    ) -> bool {
+        ui.add(egui::Slider::new(value, 0..=max_depth).text(label))
+            .changed()
+    }
 }

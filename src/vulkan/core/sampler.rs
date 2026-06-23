@@ -8,10 +8,16 @@ pub struct SamplerDesc {
 }
 
 pub unsafe fn create_sampler(device: &Device, desc: &SamplerDesc) -> Result<vk::Sampler> {
+    let mipmap_mode = match desc.filter {
+        vk::Filter::NEAREST => vk::SamplerMipmapMode::NEAREST,
+        vk::Filter::LINEAR => vk::SamplerMipmapMode::LINEAR,
+        _ => vk::SamplerMipmapMode::NEAREST,
+    };
+
     let info = vk::SamplerCreateInfo::builder()
         .mag_filter(desc.filter)
         .min_filter(desc.filter)
-        .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+        .mipmap_mode(mipmap_mode)
         .address_mode_u(desc.address_mode)
         .address_mode_v(desc.address_mode)
         .address_mode_w(desc.address_mode)

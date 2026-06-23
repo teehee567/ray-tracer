@@ -223,6 +223,7 @@ impl PathTracer {
         frame_index: usize,
         render_extent: UVec2,
         query_pool: vk::QueryPool,
+        path_trace: bool,
     ) -> Result<()> {
         let info = vk::CommandBufferBeginInfo::builder();
 
@@ -238,7 +239,7 @@ impl PathTracer {
             first_query,
         );
 
-        if render_extent.x > 0 && render_extent.y > 0 {
+        if path_trace && render_extent.x > 0 && render_extent.y > 0 {
             device.cmd_bind_pipeline(
                 command_buffer,
                 vk::PipelineBindPoint::COMPUTE,

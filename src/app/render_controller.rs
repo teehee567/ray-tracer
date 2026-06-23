@@ -130,10 +130,6 @@ fn render_loop(
             break;
         }
 
-        if pending_backend_command.is_some() {
-            present_requested = true;
-        }
-
         if let Some((width, height)) = pending_resize {
             renderer.handle_resize(width, height);
         }
