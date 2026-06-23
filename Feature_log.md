@@ -4,3 +4,7 @@ Goal is to be able to automatically scale compute chunks to target a (1-10) ms p
 
 # BVH overlay
 overlay that can do something like a bvh heatmap
+
+# finish material model
+# Wavefront
+# restir
