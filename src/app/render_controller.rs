@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
@@ -97,9 +97,16 @@ fn render_loop(
 
     let mut pending_backend_command: Option<PushRender> = None;
 
+    // debounce resize before rerender
+    const RESIZE_DEBOUNCE: Duration = Duration::from_millis(150);
+    let mut pending_resize: Option<(u32, u32)> = None;
+    let mut last_resize_at: Option<Instant> = None;
+
+    // push live render size
+    let mut last_render_res: Option<(u32, u32)> = None;
+
     while running {
         let mut present_requested = false;
-        let mut pending_resize: Option<(u32, u32)> = None;
 
         loop {
             match command_rx.try_recv() {
@@ -108,6 +115,7 @@ fn render_loop(
                     RenderCommand::Resume => paused = false,
                     RenderCommand::Resize { width, height } => {
                         pending_resize = Some((width, height));
+                        last_resize_at = Some(Instant::now());
                     }
                     RenderCommand::Present => present_requested = true,
                     RenderCommand::Shutdown => {
@@ -130,8 +138,21 @@ fn render_loop(
             break;
         }
 
-        if let Some((width, height)) = pending_resize {
-            renderer.handle_resize(width, height);
+        if let (Some((width, height)), Some(at)) = (pending_resize, last_resize_at) {
+            if at.elapsed() >= RESIZE_DEBOUNCE {
+                renderer.handle_resize(width, height);
+                pending_resize = None;
+                last_resize_at = None;
+            }
+        }
+
+        let render_res = renderer.render_resolution();
+        if last_render_res != Some(render_res) {
+            let _ = gui_data_tx.try_send(PushGui::RenderResolution {
+                width: render_res.0,
+                height: render_res.1,
+            });
+            last_render_res = Some(render_res);
         }
 
         let mut completed = Vec::new();

@@ -16,11 +16,11 @@ pub struct Swapchain {
     pub image_views: Vec<vk::ImageView>,
     pub framebuffers: Vec<vk::Framebuffer>,
     pub render_pass: vk::RenderPass,
+    required_usage: vk::ImageUsageFlags,
 }
 
 impl Swapchain {
     pub unsafe fn new(ctx: &VulkanContext, window: &Window) -> Result<Self> {
-        let device = &ctx.device;
         let support = SwapchainSupport::get(&ctx.instance, ctx.surface, ctx.physical_device)?;
 
         let required_usage = vk::ImageUsageFlags::STORAGE
@@ -36,10 +36,40 @@ impl Swapchain {
             )));
         }
 
+        let format = get_surface_format(&support.formats).format;
+        let render_pass = create_render_pass(&ctx.device, format)?;
+
+        let mut swapchain = Self {
+            swapchain: vk::SwapchainKHR::null(),
+            format,
+            extent: vk::Extent2D::default(),
+            images: Vec::new(),
+            image_layouts: Vec::new(),
+            image_views: Vec::new(),
+            framebuffers: Vec::new(),
+            render_pass,
+            required_usage,
+        };
+        let size = window.inner_size();
+        swapchain.rebuild(ctx, size.width, size.height)?;
+        Ok(swapchain)
+    }
+
+    /// rebuild swapchain size stuff
+    pub unsafe fn recreate(&mut self, ctx: &VulkanContext, width: u32, height: u32) -> Result<()> {
+        ctx.device.device_wait_idle()?;
+        self.destroy_size_dependent(&ctx.device);
+        self.rebuild(ctx, width, height)
+    }
+
+    unsafe fn rebuild(&mut self, ctx: &VulkanContext, width: u32, height: u32) -> Result<()> {
+        let device = &ctx.device;
+        let support = SwapchainSupport::get(&ctx.instance, ctx.surface, ctx.physical_device)?;
+
         let surface_format = get_surface_format(&support.formats);
         let present_mode = get_present_mode(&support.present_modes);
-        let extent = get_extent(window, support.capabilities);
-        let format = surface_format.format;
+        let extent = pick_extent(&support.capabilities, width, height);
+        let format = self.format;
 
         let mut image_count = support.capabilities.min_image_count + 1;
         if support.capabilities.max_image_count != 0
@@ -70,7 +100,7 @@ impl Swapchain {
             .image_color_space(surface_format.color_space)
             .image_extent(extent)
             .image_array_layers(1)
-            .image_usage(required_usage)
+            .image_usage(self.required_usage)
             .image_sharing_mode(image_sharing_mode)
             .queue_family_indices(&queue_family_indices)
             .pre_transform(support.capabilities.current_transform)
@@ -106,13 +136,11 @@ impl Swapchain {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let render_pass = create_render_pass(device, format)?;
-
         let mut framebuffers = Vec::with_capacity(image_views.len());
         for &view in &image_views {
             let attachments = [view];
             let info = vk::FramebufferCreateInfo::builder()
-                .render_pass(render_pass)
+                .render_pass(self.render_pass)
                 .attachments(&attachments)
                 .width(extent.width)
                 .height(extent.height)
@@ -121,30 +149,32 @@ impl Swapchain {
             framebuffers.push(device.create_framebuffer(&info, None)?);
         }
 
-        Ok(Self {
-            swapchain,
-            format,
-            extent,
-            images,
-            image_layouts,
-            image_views,
-            framebuffers,
-            render_pass,
-        })
+        self.swapchain = swapchain;
+        self.extent = extent;
+        self.images = images;
+        self.image_layouts = image_layouts;
+        self.image_views = image_views;
+        self.framebuffers = framebuffers;
+        Ok(())
     }
 
-    pub unsafe fn destroy(&mut self, device: &Device) {
+    /// drop swapchain size stuff
+    unsafe fn destroy_size_dependent(&mut self, device: &Device) {
         for &framebuffer in &self.framebuffers {
             device.destroy_framebuffer(framebuffer, None);
         }
         self.framebuffers.clear();
-        device.destroy_render_pass(self.render_pass, None);
         for &view in &self.image_views {
             device.destroy_image_view(view, None);
         }
         self.image_views.clear();
         device.destroy_swapchain_khr(self.swapchain, None);
         self.image_layouts.clear();
+    }
+
+    pub unsafe fn destroy(&mut self, device: &Device) {
+        self.destroy_size_dependent(device);
+        device.destroy_render_pass(self.render_pass, None);
     }
 }
 
@@ -168,16 +198,16 @@ fn get_present_mode(present_modes: &[vk::PresentModeKHR]) -> vk::PresentModeKHR 
 }
 
 #[rustfmt::skip]
-fn get_extent(window: &Window, capabilities: vk::SurfaceCapabilitiesKHR) -> vk::Extent2D {
+fn pick_extent(capabilities: &vk::SurfaceCapabilitiesKHR, width: u32, height: u32) -> vk::Extent2D {
     if capabilities.current_extent.width != u32::MAX {
         capabilities.current_extent
     } else {
         vk::Extent2D::builder()
-            .width(window.inner_size().width.clamp(
+            .width(width.clamp(
                 capabilities.min_image_extent.width,
                 capabilities.max_image_extent.width,
             ))
-            .height(window.inner_size().height.clamp(
+            .height(height.clamp(
                 capabilities.min_image_extent.height,
                 capabilities.max_image_extent.height,
             ))

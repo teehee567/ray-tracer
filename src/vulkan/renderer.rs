@@ -11,7 +11,7 @@ use winit::window::Window;
 use crate::fps_counter::FPSCounter;
 use crate::gui::{self, PushRender, PushGui};
 use crate::scene::Scene;
-use crate::types::{AUVec2, Au32};
+use crate::types::{AUVec2, AVec2, Au32, viewport_uv};
 use crate::vulkan::heatmap_renderer::HeatmapRenderer;
 use crate::vulkan::utils::save_frame::SaveImage;
 
@@ -128,24 +128,36 @@ impl VulkanRenderer {
             return;
         }
 
-        self.swapchain.extent.width = width;
-        self.swapchain.extent.height = height;
         self.gui.handle_resize(width, height);
-
         let render_extent = self.gui.render_extent();
+        let extent = vk::Extent2D {
+            width: render_extent.x,
+            height: render_extent.y,
+        };
+
         unsafe {
-            if let Err(e) = self.heatmap.handle_resize(
-                &self.ctx,
-                vk::Extent2D {
-                    width: render_extent.x,
-                    height: render_extent.y,
-                },
-            ) {
+            // rebuild swapchain before targets
+            if let Err(e) = self.swapchain.recreate(&self.ctx, width, height) {
+                log::error!("swapchain resize failed: {e}");
+                return;
+            }
+            if let Err(e) = self.path_tracer.handle_resize(&self.ctx, extent) {
+                log::error!("path tracer resize failed: {e}");
+            }
+            if let Err(e) = self.heatmap.handle_resize(&self.ctx, extent) {
                 log::error!("heatmap resize failed: {e}");
             }
         }
 
+        // restart accumulation after resize
+        self.frame = 0;
         self.resized = true;
+    }
+
+    /// actual render target size
+    pub fn render_resolution(&self) -> (u32, u32) {
+        let size = self.path_tracer.render_size();
+        (size.x, size.y)
     }
 
     pub fn last_timer_perf(&self) -> TimerPerf {
@@ -196,7 +208,7 @@ impl VulkanRenderer {
         if path_trace {
             self.update_uniform_buffer()?;
         }
-        let render_extent = self.gui.render_extent();
+        let render_extent = self.path_tracer.render_size();
         self.path_tracer.record_dispatch(
             device,
             command_buffer,
@@ -261,7 +273,7 @@ impl VulkanRenderer {
 
         self.gui.prepare_frame(&self.ctx, frame_index)?;
 
-        let render_extent = self.gui.render_extent();
+        let render_extent = self.path_tracer.render_size();
         let panel_width = self.gui.panel_width();
 
         let result = device.acquire_next_image_khr(
@@ -368,8 +380,9 @@ impl VulkanRenderer {
 
     unsafe fn update_uniform_buffer(&self) -> Result<()> {
         let mut ubo = self.scene.get_camera_controls();
-        let render_extent = self.gui.render_extent();
+        let render_extent = self.path_tracer.render_size();
         ubo.resolution = AUVec2(render_extent);
+        ubo.view_port_uv = AVec2(viewport_uv(render_extent));
         ubo.time = Au32(self.frame as u32);
 
         self.path_tracer
@@ -382,9 +395,11 @@ impl VulkanRenderer {
         let cam = self.scene.get_camera_controls();
         let r = Mat3::from_mat4(cam.rotation.0);
         let view = Mat4::from_mat3(r.transpose()) * Mat4::from_translation(-cam.location.0);
-        let tan_half_y = cam.view_port_uv.0.y / (2.0 * cam.focal_length.0);
+        // match viewport to resize
+        let view_port_uv = viewport_uv(self.path_tracer.render_size());
+        let tan_half_y = view_port_uv.y / (2.0 * cam.focal_length.0);
         let fov_y = 2.0 * tan_half_y.atan();
-        let aspect = cam.view_port_uv.0.x / cam.view_port_uv.0.y;
+        let aspect = view_port_uv.x / view_port_uv.y;
         let mut proj = Mat4::perspective_rh(fov_y, aspect, 0.01, 10_000.0);
         // flip for vulkan
         proj.y_axis.y *= -1.0;

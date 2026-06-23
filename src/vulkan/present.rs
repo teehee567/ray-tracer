@@ -101,6 +101,12 @@ pub(super) unsafe fn record_present_commands(
         &[subresource_range(1)],
     );
 
+    // clamp copy to swapchain
+    let copy_w = render_extent
+        .x
+        .min(swapchain.extent.width.saturating_sub(panel_width));
+    let copy_h = render_extent.y.min(swapchain.extent.height);
+
     if render_extent.x > 0 && render_extent.y > 0 {
         // clear writes the showl swapchaing image and copy writes the
         // subregion inside it, both transfer so clear before the copy
@@ -119,44 +125,46 @@ pub(super) unsafe fn record_present_commands(
             vk::PipelineStageFlags::TRANSFER,
         );
 
-        let copy_region = vk::ImageCopy::builder()
-            .src_subresource(
-                vk::ImageSubresourceLayers::builder()
-                    .aspect_mask(vk::ImageAspectFlags::COLOR)
-                    .mip_level(0)
-                    .base_array_layer(0)
-                    .layer_count(1)
-                    .build(),
-            )
-            .dst_subresource(
-                vk::ImageSubresourceLayers::builder()
-                    .aspect_mask(vk::ImageAspectFlags::COLOR)
-                    .mip_level(0)
-                    .base_array_layer(0)
-                    .layer_count(1)
-                    .build(),
-            )
-            .src_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
-            .dst_offset(vk::Offset3D {
-                x: panel_width as i32,
-                y: 0,
-                z: 0,
-            })
-            .extent(vk::Extent3D {
-                width: render_extent.x,
-                height: render_extent.y,
-                depth: 1,
-            })
-            .build();
+        if copy_w > 0 && copy_h > 0 {
+            let copy_region = vk::ImageCopy::builder()
+                .src_subresource(
+                    vk::ImageSubresourceLayers::builder()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .mip_level(0)
+                        .base_array_layer(0)
+                        .layer_count(1)
+                        .build(),
+                )
+                .dst_subresource(
+                    vk::ImageSubresourceLayers::builder()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .mip_level(0)
+                        .base_array_layer(0)
+                        .layer_count(1)
+                        .build(),
+                )
+                .src_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+                .dst_offset(vk::Offset3D {
+                    x: panel_width as i32,
+                    y: 0,
+                    z: 0,
+                })
+                .extent(vk::Extent3D {
+                    width: copy_w,
+                    height: copy_h,
+                    depth: 1,
+                })
+                .build();
 
-        device.cmd_copy_image(
-            command_buffer,
-            framebuffer_image,
-            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-            swapchain_image,
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            &[copy_region],
-        );
+            device.cmd_copy_image(
+                command_buffer,
+                framebuffer_image,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                swapchain_image,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &[copy_region],
+            );
+        }
 
         if let Some(save_image) = save_image {
             let copy_region = vk::BufferImageCopy::builder()
@@ -264,8 +272,8 @@ pub(super) unsafe fn record_present_commands(
                     y: 0,
                 },
                 extent: vk::Extent2D {
-                    width: render_extent.x,
-                    height: render_extent.y,
+                    width: copy_w,
+                    height: copy_h,
                 },
             };
             heatmap.record_composite(device, command_buffer, sub_region);

@@ -103,15 +103,14 @@ impl GuiRenderer {
     }
 
     pub(super) fn update_render_extent(&mut self, swap_width: u32, swap_height: u32) {
-        let available_width = swap_width.saturating_sub(self.panel_width);
-        let width = self.base_extent.x.min(available_width);
-        let height = self.base_extent.y.min(swap_height);
+        // fill available render area
+        let width = swap_width.saturating_sub(self.panel_width).max(1);
+        let height = swap_height.max(1);
         self.render_extent = UVec2::new(width, height);
     }
 
     pub(crate) fn handle_resize(&mut self, width: u32, height: u32) {
-        let max_panel_width = width.saturating_sub(self.base_extent.x);
-        self.panel_width = self.panel_width.min(width).min(max_panel_width);
+        self.panel_width = self.panel_width.min(width.saturating_sub(1));
         self.update_render_extent(width, height);
         for buffers in &mut self.frames {
             buffers.uploaded_generation = None;

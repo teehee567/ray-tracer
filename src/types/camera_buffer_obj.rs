@@ -22,6 +22,16 @@ pub struct CameraBufferObject {
     pub rotation: AMat4,
 }
 
+/// viewport size from resolution
+pub fn viewport_uv(resolution: UVec2) -> Vec2 {
+    let ratio = resolution.x as f32 / resolution.y as f32;
+    if ratio > 1.0 {
+        Vec2::new(ratio, 1.0)
+    } else {
+        Vec2::new(1.0, 1.0 / ratio)
+    }
+}
+
 impl Default for CameraBufferObject {
     fn default() -> Self {
         let mut ubo = Self {
@@ -43,13 +53,7 @@ impl Default for CameraBufferObject {
                 * Mat4::from_rotation_z(rotation[2].to_radians()),
         );
 
-        let ratio = resolution[0] as f32 / resolution[1] as f32;
-        let (u, v) = if ratio > 1.0 {
-            (ratio, 1.0)
-        } else {
-            (1.0, 1.0 / ratio)
-        };
-        ubo.view_port_uv = AVec2(Vec2::new(u, v));
+        ubo.view_port_uv = AVec2(viewport_uv(resolution));
         ubo.resolution = AUVec2(resolution);
         ubo
     }
@@ -153,17 +157,9 @@ impl<'de> Deserialize<'de> for CameraBufferObject {
 
                 let rotation = Mat4::look_at_rh(location, look_at, Vec3::Y).transpose();
 
-                // Calculate view_port_uv
-                let ratio = resolution.x as f32 / resolution.y as f32;
-                let (u, v) = if ratio > 1.0 {
-                    (ratio, 1.0)
-                } else {
-                    (1.0, 1.0 / ratio)
-                };
-
                 Ok(CameraBufferObject {
                     resolution: AUVec2(resolution),
-                    view_port_uv: AVec2(Vec2::new(u, v)),
+                    view_port_uv: AVec2(viewport_uv(resolution)),
                     focal_length: Af32(focal_length),
                     focus_distance: Af32(focus_distance),
                     aperture_radius: Af32(aperture_radius),

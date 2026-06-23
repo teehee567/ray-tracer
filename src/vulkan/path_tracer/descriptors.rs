@@ -145,3 +145,29 @@ pub(super) unsafe fn create_sets(
 
     Ok(sets)
 }
+
+/// rebind resized target images
+pub(super) unsafe fn update_target_bindings(
+    device: &Device,
+    sets: &[vk::DescriptorSet],
+    framebuffer_images: &[Image],
+    accumulator_view: vk::ImageView,
+) {
+    let accumulator = [image_info(
+        vk::Sampler::null(),
+        accumulator_view,
+        vk::ImageLayout::GENERAL,
+    )];
+    for (set, framebuffer) in sets.iter().zip(framebuffer_images) {
+        let target = [image_info(
+            vk::Sampler::null(),
+            framebuffer.view,
+            vk::ImageLayout::GENERAL,
+        )];
+        let writes = [
+            image_write(*set, 4, vk::DescriptorType::STORAGE_IMAGE, &accumulator),
+            image_write(*set, 5, vk::DescriptorType::STORAGE_IMAGE, &target),
+        ];
+        device.update_descriptor_sets(&writes, &[] as &[vk::CopyDescriptorSet]);
+    }
+}

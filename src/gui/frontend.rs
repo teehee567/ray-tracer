@@ -195,6 +195,10 @@ impl GuiFrontend {
                             self.gui_data.heatmap_depth_low = 0;
                             self.gui_data.heatmap_depth_high = max_depth;
                         },
+                        PushGui::RenderResolution { width, height } => {
+                            self.gui_data.render_width = width;
+                            self.gui_data.render_height = height;
+                        },
                     }
                 }
                 Err(TryRecvError::Empty) => break,

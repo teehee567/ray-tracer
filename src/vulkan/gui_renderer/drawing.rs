@@ -63,8 +63,7 @@ impl GuiRenderer {
 
         let swap_width = swap_extent.width;
         let swap_height = swap_extent.height;
-        let max_panel_width = swap_width.saturating_sub(self.base_extent.x);
-        self.panel_width = frame.panel_width.min(swap_width).min(max_panel_width);
+        self.panel_width = frame.panel_width.min(swap_width.saturating_sub(1));
         self.update_render_extent(swap_width, swap_height);
 
         self.apply_textures(ctx, &frame.textures_delta)?;

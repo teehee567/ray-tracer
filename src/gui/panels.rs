@@ -96,6 +96,10 @@ impl GuiPanels {
                     ui.heading("Panel");
                     let width_px = panel_width_pixels(pixels_per_point);
                     ui.label(format!("Resolution: {} × {} px", width_px, panel_height));
+                    ui.label(format!(
+                        "Render: {} × {} px",
+                        gui_data.render_width, gui_data.render_height
+                    ));
 
                     ui.text_edit_singleline(&mut gui_data.save_file_path);
 

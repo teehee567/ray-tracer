@@ -28,6 +28,7 @@ pub struct PathTracer {
     pub ssbo: Buffer,
     pub accumulator: Image,
     pub framebuffer_images: Vec<Image>,
+    pub framebuffer_format: vk::Format,
     pub textures: Vec<Image>,
     pub texture_sampler: vk::Sampler,
     pub skybox: Image,
@@ -41,51 +42,9 @@ impl PathTracer {
         format: vk::Format,
         extent: vk::Extent2D,
     ) -> Result<Self> {
-        // offscreen render targets, one per in-flight frame
-        let mut framebuffer_images = Vec::with_capacity(OFFSCREEN_FRAME_COUNT);
-        for _ in 0..OFFSCREEN_FRAME_COUNT {
-            framebuffer_images.push(Image::new_2d(
-                ctx,
-                extent.width,
-                extent.height,
-                format,
-                vk::ImageUsageFlags::STORAGE
-                    | vk::ImageUsageFlags::TRANSFER_SRC
-                    | vk::ImageUsageFlags::TRANSFER_DST,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                1,
-                vk::ImageCreateFlags::empty(),
-                vk::ImageViewType::_2D,
-            )?);
-        }
-
-        let accumulator = Image::new_2d(
-            ctx,
-            extent.width,
-            extent.height,
-            vk::Format::R8G8B8A8_UNORM,
-            vk::ImageUsageFlags::SAMPLED
-                | vk::ImageUsageFlags::STORAGE
-                | vk::ImageUsageFlags::TRANSFER_SRC,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            1,
-            vk::ImageCreateFlags::empty(),
-            vk::ImageViewType::_2D,
-        )?;
-
-        with_single_time(&ctx.device, ctx.command_pool, ctx.compute_queue, |cb| {
-            for image in framebuffer_images.iter().chain(std::iter::once(&accumulator)) {
-                cmd_transition_image_layout(
-                    &ctx.device,
-                    cb,
-                    image.image,
-                    vk::ImageLayout::UNDEFINED,
-                    vk::ImageLayout::GENERAL,
-                    1,
-                )?;
-            }
-            Ok(())
-        })?;
+        // make offscreen render targets
+        let (framebuffer_images, accumulator) =
+            Self::create_targets(ctx, extent.width, extent.height, format)?;
 
         // scene buffers
         let uniform_buffer = Buffer::new_host(
@@ -194,11 +153,99 @@ impl PathTracer {
             ssbo,
             accumulator,
             framebuffer_images,
+            framebuffer_format: format,
             textures,
             texture_sampler,
             skybox,
             skybox_sampler,
         })
+    }
+
+    /// make render target images
+    unsafe fn create_targets(
+        ctx: &VulkanContext,
+        width: u32,
+        height: u32,
+        format: vk::Format,
+    ) -> Result<(Vec<Image>, Image)> {
+        let mut framebuffer_images = Vec::with_capacity(OFFSCREEN_FRAME_COUNT);
+        for _ in 0..OFFSCREEN_FRAME_COUNT {
+            framebuffer_images.push(Image::new_2d(
+                ctx,
+                width,
+                height,
+                format,
+                vk::ImageUsageFlags::STORAGE
+                    | vk::ImageUsageFlags::TRANSFER_SRC
+                    | vk::ImageUsageFlags::TRANSFER_DST,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                1,
+                vk::ImageCreateFlags::empty(),
+                vk::ImageViewType::_2D,
+            )?);
+        }
+
+        let accumulator = Image::new_2d(
+            ctx,
+            width,
+            height,
+            vk::Format::R8G8B8A8_UNORM,
+            vk::ImageUsageFlags::SAMPLED
+                | vk::ImageUsageFlags::STORAGE
+                | vk::ImageUsageFlags::TRANSFER_SRC,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            1,
+            vk::ImageCreateFlags::empty(),
+            vk::ImageViewType::_2D,
+        )?;
+
+        with_single_time(&ctx.device, ctx.command_pool, ctx.compute_queue, |cb| {
+            for image in framebuffer_images.iter().chain(std::iter::once(&accumulator)) {
+                cmd_transition_image_layout(
+                    &ctx.device,
+                    cb,
+                    image.image,
+                    vk::ImageLayout::UNDEFINED,
+                    vk::ImageLayout::GENERAL,
+                    1,
+                )?;
+            }
+            Ok(())
+        })?;
+
+        Ok((framebuffer_images, accumulator))
+    }
+
+    /// resize render target images
+    pub unsafe fn handle_resize(&mut self, ctx: &VulkanContext, extent: vk::Extent2D) -> Result<()> {
+        let (w, h) = (extent.width.max(1), extent.height.max(1));
+        if w == self.accumulator.width && h == self.accumulator.height {
+            return Ok(());
+        }
+
+        let device = &ctx.device;
+        for image in &mut self.framebuffer_images {
+            image.destroy(device);
+        }
+        self.accumulator.destroy(device);
+
+        let (framebuffer_images, accumulator) =
+            Self::create_targets(ctx, w, h, self.framebuffer_format)?;
+        self.framebuffer_images = framebuffer_images;
+        self.accumulator = accumulator;
+
+        descriptors::update_target_bindings(
+            device,
+            &self.descriptor_sets,
+            &self.framebuffer_images,
+            self.accumulator.view,
+        );
+        Ok(())
+    }
+
+    /// current render target size
+    pub fn render_size(&self) -> UVec2 {
+        UVec2::new(self.accumulator.width, self.accumulator.height)
     }
 
     pub unsafe fn upload_scene(&self, device: &Device, scene: &Scene) -> Result<()> {

@@ -12,6 +12,7 @@ pub enum PushRender {
 pub enum PushGui {
     PerfUpdate{compute_fps: f64, compute_ms: f64, present_fps: f64, present_ms: f64, heatmap_ms: f64, compositor_ms: f64},
     HeatmapInfo { max_depth: u32 },
+    RenderResolution { width: u32, height: u32 },
 }
 
 #[derive(Debug, Default)]
@@ -32,6 +33,10 @@ pub struct GuiData {
     pub heatmap_depth_low: u32,
     pub heatmap_depth_high: u32,
     pub heatmap_max_depth: u32,
+
+    // actual render target size
+    pub render_width: u32,
+    pub render_height: u32,
 }
 
 impl GuiData {
@@ -79,4 +84,3 @@ fn push_capped(buf: &mut VecDeque<f32>, value: f32, capacity: usize) {
     }
     buf.push_back(value);
 }
-
