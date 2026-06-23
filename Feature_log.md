@@ -5,6 +5,14 @@ Goal is to be able to automatically scale compute chunks to target a (1-10) ms p
 # BVH overlay
 overlay that can do something like a bvh heatmap
 
+# full screen or atleast larger screen size
+# move mouse around
+# shader hot reload + scene/material reload
+# material inspector
+# debug channel for albedo and roughness/metallic and stuff so i can finaly fix bsdf
+# pixel path probe
+# path to save a image so it canbe used as reference
+
 # finish material model
 # Wavefront
 # restir
