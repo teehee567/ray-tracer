@@ -37,7 +37,7 @@ impl CameraController {
             position,
             yaw: forward.x.atan2(-forward.z),
             pitch: forward.y.clamp(-1.0, 1.0).asin(),
-            move_speed: 3.0,
+            move_speed: 0.3,
             look_sensitivity: 0.0025,
         }
     }
