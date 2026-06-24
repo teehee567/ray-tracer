@@ -22,8 +22,8 @@ pub struct CameraController {
     look_sensitivity: f32,
 }
 
-const MIN_SPEED: f32 = 0.01;
-const MAX_SPEED: f32 = 1000.0;
+const MIN_SPEED: f32 = 0.005;
+const MAX_SPEED: f32 = 10.0;
 const PITCH_LIMIT: f32 = 89.0 * std::f32::consts::PI / 180.0;
 
 impl CameraController {
@@ -37,7 +37,7 @@ impl CameraController {
             position,
             yaw: forward.x.atan2(-forward.z),
             pitch: forward.y.clamp(-1.0, 1.0).asin(),
-            move_speed: 0.3,
+            move_speed: 0.03,
             look_sensitivity: 0.0025,
         }
     }
