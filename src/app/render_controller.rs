@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
+use glam::{Mat4, Vec3};
 use log::error;
 
 use crate::gui::{self, PushGui};
@@ -80,6 +81,7 @@ pub enum RenderCommand {
     Present,
     Shutdown,
     BackendCommand(PushRender),
+    SetCamera { location: Vec3, rotation: Mat4 },
 }
 
 fn render_loop(
@@ -96,6 +98,8 @@ fn render_loop(
     let mut current_frame: Option<usize> = None;
 
     let mut pending_backend_command: Option<PushRender> = None;
+
+    let mut pending_camera: Option<(Vec3, Mat4)> = None;
 
     // debounce resize before rerender
     const RESIZE_DEBOUNCE: Duration = Duration::from_millis(150);
@@ -125,6 +129,9 @@ fn render_loop(
                     RenderCommand::BackendCommand(command) => {
                         pending_backend_command = Some(command);
                     }
+                    RenderCommand::SetCamera { location, rotation } => {
+                        pending_camera = Some((location, rotation));
+                    }
                 },
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
@@ -144,6 +151,11 @@ fn render_loop(
                 pending_resize = None;
                 last_resize_at = None;
             }
+        }
+
+        // apply new camera
+        if let Some((location, rotation)) = pending_camera.take() {
+            renderer.set_camera_pose(location, rotation);
         }
 
         let render_res = renderer.render_resolution();

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use crossbeam_channel::Sender;
-use glam::{Mat3, Mat4};
+use glam::{Mat3, Mat4, Vec3};
 use log::info;
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::{KhrSwapchainExtensionDeviceCommands, SuccessCode};
@@ -152,6 +152,12 @@ impl VulkanRenderer {
         // restart accumulation after resize
         self.frame = 0;
         self.resized = true;
+    }
+
+    //reset for new camera
+    pub fn set_camera_pose(&mut self, location: Vec3, rotation: Mat4) {
+        self.scene.set_camera_pose(location, rotation);
+        self.frame = 0;
     }
 
     /// actual render target size

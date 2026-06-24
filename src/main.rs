@@ -44,7 +44,8 @@ impl App {
             .scene
             .take()
             .expect("scene already consumed by a previous resume");
-        let render_resolution = scene.get_camera_controls().resolution.0;
+        let initial_camera = scene.get_camera_controls();
+        let render_resolution = initial_camera.resolution.0;
 
         let attributes = Window::default_attributes()
             .with_title("ray-tracer")
@@ -66,7 +67,7 @@ impl App {
         let gui_shared = gui::create_shared_state();
         let render_controller = RenderController::spawn(renderer, gui_shared.clone())?;
         let (gui_data_rx, render_sender) = render_controller.gui_channels();
-        let gui = gui::GuiFrontend::new(&window, gui_shared, gui_data_rx, render_sender);
+        let gui = gui::GuiFrontend::new(&window, gui_shared, gui_data_rx, render_sender, initial_camera);
 
         Ok(AppState {
             window,

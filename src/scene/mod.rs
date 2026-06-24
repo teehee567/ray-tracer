@@ -4,8 +4,12 @@ use std::path::Path;
 use std::time::Instant;
 
 
+use glam::{Mat4, Vec3};
+
 use crate::accelerators::Accelerator;
-use crate::{Af32, Au32, CameraBufferObject, EmissiveTri, MeshLightSampler, SceneComponents};
+use crate::{
+    AMat4, AVec3, Af32, Au32, CameraBufferObject, EmissiveTri, MeshLightSampler, SceneComponents,
+};
 
 #[allow(unused)]
 use crate::accelerators::bin_sah::BinSah;
@@ -193,6 +197,12 @@ impl Scene {
 
     pub fn get_camera_controls(&self) -> CameraBufferObject {
         self.components.camera
+    }
+
+    // set camera
+    pub fn set_camera_pose(&mut self, location: Vec3, rotation: Mat4) {
+        self.components.camera.location = AVec3(location);
+        self.components.camera.rotation = AMat4(rotation);
     }
 
     pub fn build_lights(&mut self) {

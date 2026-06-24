@@ -2,13 +2,16 @@ use std::mem;
 use std::sync::{Arc, RwLock};
 
 use super::{GuiData, PerfHistory};
+use crate::app::camera_controller::{CameraController, CameraInput};
 use crate::app::render_controller::RenderCommand;
 use crate::gui::PushGui;
 use crate::gui::components::perf_graph::PERF_HISTORY_LEN;
 use crate::gui::panels::{GuiPanels, GuiTheme};
+use crate::types::CameraBufferObject;
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use egui::epaint::ClippedPrimitive;
 use egui::{self, Rect, ViewportId, pos2, vec2};
+use glam::Vec2;
 use winit::event::WindowEvent;
 use winit::window::Window;
 
@@ -74,10 +77,19 @@ pub struct GuiFrontend {
 
     gui_data: GuiData,
     panels: GuiPanels,
+
+    camera: CameraController,
+    render_sender: Sender<RenderCommand>,
 }
 
 impl GuiFrontend {
-    pub fn new(window: &Window, shared: GuiShared, gui_data_rx: Receiver<PushGui>, render_sender: Sender<RenderCommand>) -> Self {
+    pub fn new(
+        window: &Window,
+        shared: GuiShared,
+        gui_data_rx: Receiver<PushGui>,
+        render_sender: Sender<RenderCommand>,
+        initial_camera: CameraBufferObject,
+    ) -> Self {
         let ctx = egui::Context::default();
         let scale_factor = window.scale_factor() as f32;
         let size = window.inner_size();
@@ -100,7 +112,10 @@ impl GuiFrontend {
 
             gui_data: GuiData::new(),
 
-            panels: GuiPanels::new(render_sender),
+            panels: GuiPanels::new(render_sender.clone()),
+
+            camera: CameraController::from_camera(&initial_camera),
+            render_sender,
         }
     }
 
@@ -168,6 +183,42 @@ impl GuiFrontend {
 
         if let Ok(mut state) = self.shared.write() {
             state.update(frame);
+        }
+
+        self.update_camera();
+    }
+
+    // sampe from egui
+    fn update_camera(&mut self) {
+        let wants_keyboard = self.ctx.egui_wants_keyboard_input();
+        let wants_pointer = self.ctx.egui_wants_pointer_input();
+
+        let (input, dt) = self.ctx.input(|i| {
+            let kb = !wants_keyboard;
+            let looking = i.pointer.secondary_down() && !wants_pointer;
+            let look_delta = if looking {
+                let d = i.pointer.delta();
+                Vec2::new(d.x, d.y)
+            } else {
+                Vec2::ZERO
+            };
+            let input = CameraInput {
+                forward: kb && i.key_down(egui::Key::W),
+                back: kb && i.key_down(egui::Key::S),
+                left: kb && i.key_down(egui::Key::A),
+                right: kb && i.key_down(egui::Key::D),
+                up: kb && i.key_down(egui::Key::E),
+                down: kb && i.key_down(egui::Key::Q),
+                look_delta,
+                scroll: i.smooth_scroll_delta.y,
+            };
+            (input, i.stable_dt)
+        });
+
+        if let Some((location, rotation)) = self.camera.update(input, dt) {
+            let _ = self
+                .render_sender
+                .try_send(RenderCommand::SetCamera { location, rotation });
         }
     }
 
