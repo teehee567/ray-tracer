@@ -150,13 +150,22 @@ impl VulkanRenderer {
         }
 
         // restart accumulation after resize
-        self.frame = 0;
+        self.reset_accumulator();
         self.resized = true;
     }
 
     //reset for new camera
     pub fn set_camera_pose(&mut self, location: Vec3, rotation: Mat4) {
         self.scene.set_camera_pose(location, rotation);
+        self.reset_accumulator();
+    }
+
+    pub fn reset_accumulator(&mut self) {
+        unsafe {
+            if let Err(e) = self.ctx.device.device_wait_idle() {
+                log::error!("reset_accumulator: device_wait_idle failed: {e}");
+            }
+        }
         self.frame = 0;
     }
 

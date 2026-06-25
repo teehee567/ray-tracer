@@ -153,19 +153,9 @@ fn render_loop(
             }
         }
 
-        // apply camera and drain accumulation images so it doesn t use an old image
-        let awaiting_camera_reset = if pending_camera.is_some() {
-            if in_flight.is_empty() {
-                if let Some((location, rotation)) = pending_camera.take() {
-                    renderer.set_camera_pose(location, rotation);
-                }
-                false
-            } else {
-                true
-            }
-        } else {
-            false
-        };
+        if let Some((location, rotation)) = pending_camera.take() {
+            renderer.set_camera_pose(location, rotation);
+        }
 
         let render_res = renderer.render_resolution();
         if last_render_res != Some(render_res) {
@@ -253,7 +243,7 @@ fn render_loop(
             }
         }
 
-        if !paused && !awaiting_camera_reset {
+        if !paused {
             if let Some(index) = available.pop_front() {
                 match unsafe { renderer.dispatch_compute(index) } {
                     Ok(()) => in_flight.push(index),
@@ -268,7 +258,7 @@ fn render_loop(
             thread::sleep(Duration::from_millis(5));
         }
 
-        if available.is_empty() || awaiting_camera_reset {
+        if available.is_empty() {
             thread::sleep(Duration::from_millis(1));
         }
     }
