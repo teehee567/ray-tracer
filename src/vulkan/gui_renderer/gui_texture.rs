@@ -3,7 +3,7 @@ use vulkanalia::prelude::v1_0::*;
 
 use crate::vulkan::core::context::VulkanContext;
 use crate::vulkan::core::descriptors::{image_info, image_write};
-use crate::vulkan::core::image::Image;
+use crate::vulkan::core::image::{Image, ImageDesc};
 
 #[derive(Clone, Debug, Default)]
 pub struct GuiTexture {
@@ -32,14 +32,13 @@ pub unsafe fn create_gui_texture(
 
     let image = Image::new_2d(
         ctx,
-        size[0],
-        size[1],
-        vk::Format::R8G8B8A8_UNORM,
-        vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
-        vk::MemoryPropertyFlags::DEVICE_LOCAL,
-        1,
-        vk::ImageCreateFlags::empty(),
-        vk::ImageViewType::_2D,
+        &ImageDesc {
+            width: size[0],
+            height: size[1],
+            format: vk::Format::R8G8B8A8_UNORM,
+            usage: vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+            ..Default::default()
+        },
     )?;
 
     let infos = [image_info(

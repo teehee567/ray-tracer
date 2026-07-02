@@ -16,7 +16,7 @@ use crate::{
             allocate_descriptor_sets, binding, create_descriptor_pool,
             create_descriptor_set_layout, image_info, image_write, pool_size,
         },
-        image::{Image, cmd_image_barrier, image_barrier, subresource_range},
+        image::{Image, ImageDesc, cmd_image_barrier, image_barrier, subresource_range},
         pipeline::{create_graphics_pipeline, create_shader_module},
     },
 };
@@ -151,16 +151,15 @@ impl HeatmapRenderer {
     ) -> Result<Image> {
         Image::new_2d(
             ctx,
-            extent.width,
-            extent.height,
-            format,
-            vk::ImageUsageFlags::STORAGE
-                | vk::ImageUsageFlags::SAMPLED
-                | vk::ImageUsageFlags::TRANSFER_DST,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            1,
-            vk::ImageCreateFlags::empty(),
-            vk::ImageViewType::_2D,
+            &ImageDesc {
+                width: extent.width,
+                height: extent.height,
+                format,
+                usage: vk::ImageUsageFlags::STORAGE
+                    | vk::ImageUsageFlags::SAMPLED
+                    | vk::ImageUsageFlags::TRANSFER_DST,
+                ..Default::default()
+            },
         )
     }
 

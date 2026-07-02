@@ -15,51 +15,69 @@ pub struct Image {
     pub height: u32,
 }
 
+/// Parameters for [`Image::new_2d`]. `..Default::default()` covers the
+/// common single-layer 2D DEVICE_LOCAL case.
+#[derive(Clone, Copy, Debug)]
+pub struct ImageDesc {
+    pub width: u32,
+    pub height: u32,
+    pub format: vk::Format,
+    pub usage: vk::ImageUsageFlags,
+    pub properties: vk::MemoryPropertyFlags,
+    pub layer_count: u32,
+    pub flags: vk::ImageCreateFlags,
+    pub view_type: vk::ImageViewType,
+}
+
+impl Default for ImageDesc {
+    fn default() -> Self {
+        Self {
+            width: 0,
+            height: 0,
+            format: vk::Format::UNDEFINED,
+            usage: vk::ImageUsageFlags::empty(),
+            properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            layer_count: 1,
+            flags: vk::ImageCreateFlags::empty(),
+            view_type: vk::ImageViewType::_2D,
+        }
+    }
+}
+
 impl Image {
-    #[allow(clippy::too_many_arguments)]
-    pub unsafe fn new_2d(
-        ctx: &VulkanContext,
-        width: u32,
-        height: u32,
-        format: vk::Format,
-        usage: vk::ImageUsageFlags,
-        properties: vk::MemoryPropertyFlags,
-        layer_count: u32,
-        flags: vk::ImageCreateFlags,
-        view_type: vk::ImageViewType,
-    ) -> Result<Self> {
+    pub unsafe fn new_2d(ctx: &VulkanContext, desc: &ImageDesc) -> Result<Self> {
         let info = vk::ImageCreateInfo::builder()
             .image_type(vk::ImageType::_2D)
-            .format(format)
+            .format(desc.format)
             .extent(vk::Extent3D {
-                width: width.max(1),
-                height: height.max(1),
+                width: desc.width.max(1),
+                height: desc.height.max(1),
                 depth: 1,
             })
             .mip_levels(1)
-            .array_layers(layer_count)
+            .array_layers(desc.layer_count)
             .samples(vk::SampleCountFlags::_1)
             .tiling(vk::ImageTiling::OPTIMAL)
-            .usage(usage)
+            .usage(desc.usage)
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .initial_layout(vk::ImageLayout::UNDEFINED)
-            .flags(flags);
+            .flags(desc.flags);
 
         let image = ctx.device.create_image(&info, None)?;
 
         let requirements = ctx.device.get_image_memory_requirements(image);
         let alloc_info = vk::MemoryAllocateInfo::builder()
             .allocation_size(requirements.size)
-            .memory_type_index(get_memory_type_index(ctx, properties, requirements)?);
+            .memory_type_index(get_memory_type_index(ctx, desc.properties, requirements)?);
 
         let memory = ctx.device.allocate_memory(&alloc_info, None)?;
         ctx.device.bind_image_memory(image, memory, 0)?;
 
         let view_info = vk::ImageViewCreateInfo::builder()
             .image(image)
-            .view_type(view_type)
-            .format(format)
-            .subresource_range(subresource_range(layer_count));
+            .view_type(desc.view_type)
+            .format(desc.format)
+            .subresource_range(subresource_range(desc.layer_count));
 
         let view = ctx.device.create_image_view(&view_info, None)?;
 
@@ -67,8 +85,8 @@ impl Image {
             image,
             memory,
             view,
-            width,
-            height,
+            width: desc.width,
+            height: desc.height,
         })
     }
 
@@ -274,37 +292,58 @@ pub unsafe fn upload_pixels(
     Ok(())
 }
 
+/// Parameters for [`create_texture`]. `..Default::default()` covers a plain
+/// single-layer sRGB texture.
+#[derive(Clone, Copy, Debug)]
+pub struct TextureDesc {
+    pub width: u32,
+    pub height: u32,
+    pub format: vk::Format,
+    pub layer_count: u32,
+    pub flags: vk::ImageCreateFlags,
+    pub view_type: vk::ImageViewType,
+}
+
+impl Default for TextureDesc {
+    fn default() -> Self {
+        Self {
+            width: 0,
+            height: 0,
+            format: vk::Format::R8G8B8A8_SRGB,
+            layer_count: 1,
+            flags: vk::ImageCreateFlags::empty(),
+            view_type: vk::ImageViewType::_2D,
+        }
+    }
+}
+
 /// Create a sampled texture (optionally layered, e.g. a cubemap) and fill it
 /// with `pixels`.
-#[allow(clippy::too_many_arguments)]
 pub unsafe fn create_texture(
     ctx: &VulkanContext,
     pixels: &[u8],
-    width: u32,
-    height: u32,
-    format: vk::Format,
-    layer_count: u32,
-    flags: vk::ImageCreateFlags,
-    view_type: vk::ImageViewType,
+    desc: &TextureDesc,
 ) -> Result<Image> {
     let image = Image::new_2d(
         ctx,
-        width,
-        height,
-        format,
-        vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
-        vk::MemoryPropertyFlags::DEVICE_LOCAL,
-        layer_count,
-        flags,
-        view_type,
+        &ImageDesc {
+            width: desc.width,
+            height: desc.height,
+            format: desc.format,
+            usage: vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+            layer_count: desc.layer_count,
+            flags: desc.flags,
+            view_type: desc.view_type,
+            ..Default::default()
+        },
     )?;
     upload_pixels(
         ctx,
         image.image,
         pixels,
-        [width, height],
+        [desc.width, desc.height],
         [0, 0],
-        layer_count,
+        desc.layer_count,
         vk::ImageLayout::UNDEFINED,
     )?;
     Ok(image)

@@ -21,7 +21,7 @@ use super::core::swapchain::Swapchain;
 use super::core::sync::SyncState;
 use super::gui_renderer::GuiRenderer;
 use super::path_tracer::PathTracer;
-use super::present::record_present_commands;
+use super::present::{HeatmapParams, PresentFrame, PresentTimers, record_present_commands};
 use super::utils::gpu_timer::GpuTimer;
 
 /// Snapshot of the renderer's timing counters, handed to the GUI each frame.
@@ -342,21 +342,27 @@ impl VulkanRenderer {
         record_present_commands(
             device,
             &mut self.swapchain,
-            self.path_tracer.framebuffer_images[frame_index].image,
             &self.gui,
-            self.sync.present_command_buffer,
-            image_index,
-            frame_index,
-            panel_width,
-            render_extent,
-            save_image_buffer.as_ref(),
-            self.present_timer.query_pool(),
             &mut self.heatmap,
-            heatmap_view_proj,
-            self.render_mode == RenderMode::BvhHeatmap,
-            self.heatmap_band,
-            self.heatmap_timer.query_pool(),
-            self.compositor_timer.query_pool(),
+            &PresentFrame {
+                command_buffer: self.sync.present_command_buffer,
+                swapchain_index: image_index,
+                frame_index,
+                framebuffer_image: self.path_tracer.framebuffer_images[frame_index].image,
+                panel_width,
+                render_extent,
+                save_image: save_image_buffer.as_ref(),
+            },
+            &HeatmapParams {
+                active: self.render_mode == RenderMode::BvhHeatmap,
+                view_proj: heatmap_view_proj,
+                band: self.heatmap_band,
+            },
+            &PresentTimers {
+                present: self.present_timer.query_pool(),
+                heatmap: self.heatmap_timer.query_pool(),
+                compositor: self.compositor_timer.query_pool(),
+            },
         )?;
 
         let wait_semaphores = &[

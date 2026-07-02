@@ -11,7 +11,9 @@ use crate::vulkan::constants::{OFFSCREEN_FRAME_COUNT, TILE_SIZE};
 use crate::vulkan::core::buffer::Buffer;
 use crate::vulkan::core::commands::with_single_time;
 use crate::vulkan::core::context::VulkanContext;
-use crate::vulkan::core::image::{Image, cmd_transition_image_layout, create_texture};
+use crate::vulkan::core::image::{
+    Image, ImageDesc, TextureDesc, cmd_transition_image_layout, create_texture,
+};
 use crate::vulkan::core::pipeline::create_compute_pipeline;
 use crate::vulkan::core::sampler::{SamplerDesc, create_sampler};
 
@@ -99,12 +101,11 @@ impl PathTracer {
             textures.push(create_texture(
                 ctx,
                 &texture_data.pixels,
-                texture_data.width,
-                texture_data.height,
-                vk::Format::R8G8B8A8_SRGB,
-                1,
-                vk::ImageCreateFlags::empty(),
-                vk::ImageViewType::_2D,
+                &TextureDesc {
+                    width: texture_data.width,
+                    height: texture_data.height,
+                    ..Default::default()
+                },
             )?);
         }
 
@@ -113,12 +114,11 @@ impl PathTracer {
             textures.push(create_texture(
                 ctx,
                 &default_pixels,
-                1,
-                1,
-                vk::Format::R8G8B8A8_SRGB,
-                1,
-                vk::ImageCreateFlags::empty(),
-                vk::ImageViewType::_2D,
+                &TextureDesc {
+                    width: 1,
+                    height: 1,
+                    ..Default::default()
+                },
             )?);
         }
 
@@ -126,12 +126,14 @@ impl PathTracer {
         let skybox = create_texture(
             ctx,
             &skybox_data.pixels,
-            skybox_data.width,
-            skybox_data.height,
-            vk::Format::R8G8B8A8_SRGB,
-            6,
-            vk::ImageCreateFlags::CUBE_COMPATIBLE,
-            vk::ImageViewType::CUBE,
+            &TextureDesc {
+                width: skybox_data.width,
+                height: skybox_data.height,
+                layer_count: 6,
+                flags: vk::ImageCreateFlags::CUBE_COMPATIBLE,
+                view_type: vk::ImageViewType::CUBE,
+                ..Default::default()
+            },
         )?;
 
         // pipeline + descriptors
@@ -147,15 +149,17 @@ impl PathTracer {
             &ctx.device,
             descriptor_set_layout,
             descriptor_pool,
-            &framebuffer_images,
-            &uniform_buffer,
-            &ssbo,
-            &scene_sizes,
-            accumulator.view,
-            &textures,
-            texture_sampler,
-            skybox.view,
-            skybox_sampler,
+            &descriptors::SceneBindings {
+                framebuffer_images: &framebuffer_images,
+                uniform_buffer: &uniform_buffer,
+                ssbo: &ssbo,
+                scene_sizes: &scene_sizes,
+                accumulator_view: accumulator.view,
+                textures: &textures,
+                texture_sampler,
+                skybox_view: skybox.view,
+                skybox_sampler,
+            },
         )?;
 
         Ok(Self {
@@ -187,31 +191,29 @@ impl PathTracer {
         for _ in 0..OFFSCREEN_FRAME_COUNT {
             framebuffer_images.push(Image::new_2d(
                 ctx,
-                width,
-                height,
-                format,
-                vk::ImageUsageFlags::STORAGE
-                    | vk::ImageUsageFlags::TRANSFER_SRC
-                    | vk::ImageUsageFlags::TRANSFER_DST,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                1,
-                vk::ImageCreateFlags::empty(),
-                vk::ImageViewType::_2D,
+                &ImageDesc {
+                    width,
+                    height,
+                    format,
+                    usage: vk::ImageUsageFlags::STORAGE
+                        | vk::ImageUsageFlags::TRANSFER_SRC
+                        | vk::ImageUsageFlags::TRANSFER_DST,
+                    ..Default::default()
+                },
             )?);
         }
 
         let accumulator = Image::new_2d(
             ctx,
-            width,
-            height,
-            vk::Format::R8G8B8A8_UNORM,
-            vk::ImageUsageFlags::SAMPLED
-                | vk::ImageUsageFlags::STORAGE
-                | vk::ImageUsageFlags::TRANSFER_SRC,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            1,
-            vk::ImageCreateFlags::empty(),
-            vk::ImageViewType::_2D,
+            &ImageDesc {
+                width,
+                height,
+                format: vk::Format::R8G8B8A8_UNORM,
+                usage: vk::ImageUsageFlags::SAMPLED
+                    | vk::ImageUsageFlags::STORAGE
+                    | vk::ImageUsageFlags::TRANSFER_SRC,
+                ..Default::default()
+            },
         )?;
 
         with_single_time(&ctx.device, ctx.command_pool, ctx.compute_queue, |cb| {

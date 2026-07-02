@@ -60,61 +60,66 @@ pub(super) unsafe fn create_pool(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Everything the path tracer descriptor sets bind to.
+pub(super) struct SceneBindings<'a> {
+    pub framebuffer_images: &'a [Image],
+    pub uniform_buffer: &'a Buffer,
+    pub ssbo: &'a Buffer,
+    pub scene_sizes: &'a [u64; 6],
+    pub accumulator_view: vk::ImageView,
+    pub textures: &'a [Image],
+    pub texture_sampler: vk::Sampler,
+    pub skybox_view: vk::ImageView,
+    pub skybox_sampler: vk::Sampler,
+}
+
 pub(super) unsafe fn create_sets(
     device: &Device,
     layout: vk::DescriptorSetLayout,
     pool: vk::DescriptorPool,
-    framebuffer_images: &[Image],
-    uniform_buffer: &Buffer,
-    ssbo: &Buffer,
-    scene_sizes: &[u64; 6],
-    accumulator_view: vk::ImageView,
-    textures: &[Image],
-    texture_sampler: vk::Sampler,
-    skybox_view: vk::ImageView,
-    skybox_sampler: vk::Sampler,
+    bindings: &SceneBindings,
 ) -> Result<Vec<vk::DescriptorSet>> {
-    let sets = allocate_descriptor_sets(device, pool, layout, framebuffer_images.len())?;
+    let sets = allocate_descriptor_sets(device, pool, layout, bindings.framebuffer_images.len())?;
     info!("Allocated Descriptor sets len {}", sets.len());
 
     // ssbo regions for bindings 1, 2, 3, 8, 9, 10 (bvh, materials,
     // triangles, lights, emissive triangles, cdf), packed contiguously
     let mut ssbo_infos = [vk::DescriptorBufferInfo::default(); 6];
     let mut offset = 0;
-    for (info, &size) in ssbo_infos.iter_mut().zip(scene_sizes) {
-        *info = buffer_info(ssbo.buffer, offset, size.max(4));
+    for (info, &size) in ssbo_infos.iter_mut().zip(bindings.scene_sizes) {
+        *info = buffer_info(bindings.ssbo.buffer, offset, size.max(4));
         offset += size;
     }
     let [bvh, materials, triangles, lights, emissive, cdf] = ssbo_infos.map(|i| [i]);
 
     let uniform = [buffer_info(
-        uniform_buffer.buffer,
+        bindings.uniform_buffer.buffer,
         0,
         std::mem::size_of::<CameraBufferObject>() as u64,
     )];
     let accumulator = [image_info(
         vk::Sampler::null(),
-        accumulator_view,
+        bindings.accumulator_view,
         vk::ImageLayout::GENERAL,
     )];
-    let texture_infos: Vec<_> = textures
+    let texture_infos: Vec<_> = bindings
+        .textures
         .iter()
         .map(|tex| {
             image_info(
-                texture_sampler,
+                bindings.texture_sampler,
                 tex.view,
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             )
         })
         .collect();
     let skybox = [image_info(
-        skybox_sampler,
-        skybox_view,
+        bindings.skybox_sampler,
+        bindings.skybox_view,
         vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
     )];
 
-    for (set, framebuffer) in sets.iter().zip(framebuffer_images) {
+    for (set, framebuffer) in sets.iter().zip(bindings.framebuffer_images) {
         let target = [image_info(
             vk::Sampler::null(),
             framebuffer.view,
