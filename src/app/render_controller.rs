@@ -96,7 +96,7 @@ fn render_loop(
     let mut ready: VecDeque<usize> = VecDeque::with_capacity(OFFSCREEN_FRAME_COUNT);
     let mut current_frame: Option<usize> = None;
 
-    let mut pending_backend_command: Option<PushRender> = None;
+    let mut pending_backend_commands: Vec<PushRender> = Vec::new();
 
     let mut pending_camera: Option<(Vec3, Mat4)> = None;
 
@@ -126,7 +126,7 @@ fn render_loop(
                         break;
                     }
                     RenderCommand::BackendCommand(command) => {
-                        pending_backend_command = Some(command);
+                        pending_backend_commands.push(command);
                     }
                     RenderCommand::SetCamera { location, rotation } => {
                         pending_camera = Some((location, rotation));
@@ -221,7 +221,7 @@ fn render_loop(
                 };
 
                 match unsafe {
-                    renderer.present_frame(frame_index, gui_frame, pending_backend_command.clone())
+                    renderer.present_frame(frame_index, gui_frame, &pending_backend_commands)
                 } {
                     Err(err) => {
                         error!("present error: {err:?}");
@@ -230,7 +230,7 @@ fn render_loop(
                         }
                     }
                     Ok(()) => {
-                        pending_backend_command = None;
+                        pending_backend_commands.clear();
                         if is_new {
                             if let Some(previous) = current_frame.replace(frame_index) {
                                 available.push_back(previous);

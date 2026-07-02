@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::app::render_controller::RenderCommand;
 use crate::gui::components::perf_graph::draw_perf_graph;
-use crate::gui::gui_data::PushRender;
+use crate::gui::gui_data::{PushRender, RenderMode};
 use anyhow::Result;
 
 use super::GuiData;
@@ -61,7 +61,7 @@ impl GuiPanels {
                     ));
 
                     ui.separator();
-                    self.draw_heatmap_controls(ui, gui_data);
+                    self.draw_render_mode_controls(ui, gui_data);
 
                     ui.separator();
                     ui.heading("Frame timing");
@@ -95,17 +95,22 @@ impl GuiPanels {
         Ok(())
     }
 
-    fn draw_heatmap_controls(&self, ui: &mut egui::Ui, gui_data: &mut GuiData) {
-        ui.heading("Heatmap");
+    fn draw_render_mode_controls(&self, ui: &mut egui::Ui, gui_data: &mut GuiData) {
+        ui.heading("Render mode");
 
-        if ui
-            .checkbox(&mut gui_data.heatmap_enabled, "Enabled")
-            .changed()
-        {
-            let _ = self.send(PushRender::ToggleHeatmap(gui_data.heatmap_enabled));
+        let previous_mode = gui_data.render_mode;
+        egui::ComboBox::from_label("Mode")
+            .selected_text(gui_data.render_mode.label())
+            .show_ui(ui, |ui| {
+                for mode in RenderMode::ALL {
+                    ui.selectable_value(&mut gui_data.render_mode, mode, mode.label());
+                }
+            });
+        if gui_data.render_mode != previous_mode {
+            let _ = self.send(PushRender::SetRenderMode(gui_data.render_mode));
         }
 
-        if !gui_data.heatmap_enabled {
+        if gui_data.render_mode != RenderMode::BvhHeatmap {
             return;
         }
 

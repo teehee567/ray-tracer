@@ -2,11 +2,30 @@ use std::{collections::VecDeque, path::PathBuf};
 
 use crate::gui::components::perf_graph::PERF_HISTORY_LEN;
 
+/// Which backend output is shown in the viewport.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum RenderMode {
+    PathTracer,
+    #[default]
+    BvhHeatmap,
+}
+
+impl RenderMode {
+    pub const ALL: [RenderMode; 2] = [RenderMode::PathTracer, RenderMode::BvhHeatmap];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            RenderMode::PathTracer => "Path tracer",
+            RenderMode::BvhHeatmap => "BVH heatmap",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum PushRender {
     SaveFrame(PathBuf),
     SetHeatmapBand { low: u32, high: u32 },
-    ToggleHeatmap(bool),
+    SetRenderMode(RenderMode),
 }
 
 pub enum PushGui {
@@ -41,7 +60,7 @@ pub struct GuiData {
     pub save_file_path: String,
     pub perf_history: PerfHistory,
 
-    pub heatmap_enabled: bool,
+    pub render_mode: RenderMode,
     pub heatmap_depth_low: u32,
     pub heatmap_depth_high: u32,
     pub heatmap_max_depth: u32,
@@ -55,7 +74,6 @@ impl GuiData {
     pub fn new() -> Self {
         Self {
             perf_history: PerfHistory::new(PERF_HISTORY_LEN),
-            heatmap_enabled: true,
             ..Default::default()
         }
     }

@@ -9,7 +9,7 @@ use vulkanalia::vk::{KhrSwapchainExtensionDeviceCommands, SuccessCode};
 use winit::window::Window;
 
 use crate::fps_counter::FPSCounter;
-use crate::gui::{self, PushGui, PushRender};
+use crate::gui::{self, PushGui, PushRender, RenderMode};
 use crate::scene::Scene;
 use crate::types::{AUVec2, AVec2, Au32, viewport_uv};
 use crate::vulkan::heatmap_renderer::HeatmapRenderer;
@@ -53,7 +53,7 @@ pub struct VulkanRenderer {
     compositor_timer: GpuTimer,
     present_rate: FPSCounter,
     gui_sender: Option<Sender<PushGui>>,
-    heatmap_active: bool,
+    render_mode: RenderMode,
     heatmap_band: (u32, u32),
 }
 
@@ -112,7 +112,7 @@ impl VulkanRenderer {
             compositor_timer,
             present_rate: FPSCounter::new(60),
             gui_sender: None,
-            heatmap_active: true,
+            render_mode: RenderMode::default(),
             heatmap_band: (0, heatmap_max_depth),
         })
     }
@@ -223,7 +223,7 @@ impl VulkanRenderer {
 
         device.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())?;
 
-        let path_trace = !self.heatmap_active;
+        let path_trace = self.render_mode == RenderMode::PathTracer;
         // freeze accumulation counter if showing heatmap
         if path_trace {
             self.update_uniform_buffer()?;
@@ -268,7 +268,7 @@ impl VulkanRenderer {
         &mut self,
         frame_index: usize,
         gui_frame: Option<Arc<gui::GuiFrame>>,
-        save_image: Option<PushRender>,
+        commands: &[PushRender],
     ) -> Result<()> {
         let device = &self.ctx.device;
 
@@ -277,10 +277,13 @@ impl VulkanRenderer {
 
         self.present_rate.tick();
 
-        match &save_image {
-            Some(PushRender::SetHeatmapBand { low, high }) => self.heatmap_band = (*low, *high),
-            Some(PushRender::ToggleHeatmap(on)) => self.heatmap_active = *on,
-            _ => {}
+        let mut save_request = None;
+        for command in commands {
+            match command {
+                PushRender::SetHeatmapBand { low, high } => self.heatmap_band = (*low, *high),
+                PushRender::SetRenderMode(mode) => self.render_mode = *mode,
+                PushRender::SaveFrame(path) => save_request = Some(path.clone()),
+            }
         }
 
         if let Some(frame) = gui_frame.as_deref() {
@@ -313,7 +316,7 @@ impl VulkanRenderer {
             vk::CommandBufferResetFlags::empty(),
         )?;
 
-        let save_image_buffer = if save_image.is_some() {
+        let save_image_buffer = if save_request.is_some() {
             Some(SaveImage::new(&self.ctx, render_extent.x, render_extent.y)?)
         } else {
             None
@@ -335,7 +338,7 @@ impl VulkanRenderer {
             self.present_timer.query_pool(),
             &mut self.heatmap,
             heatmap_view_proj,
-            self.heatmap_active,
+            self.render_mode == RenderMode::BvhHeatmap,
             self.heatmap_band,
             self.heatmap_timer.query_pool(),
             self.compositor_timer.query_pool(),
@@ -372,10 +375,10 @@ impl VulkanRenderer {
 
         if let Some(mut staging) = save_image_buffer {
             device.wait_for_fences(&[self.sync.present_fence], true, u64::MAX)?;
-            if let Some(PushRender::SaveFrame(path)) = save_image {
+            if let Some(path) = save_request {
                 let _ = staging.save_frame(&self.ctx, path);
-                staging.destroy(&self.ctx.device);
             }
+            staging.destroy(&self.ctx.device);
         }
 
         let swapchains = &[self.swapchain.swapchain];
