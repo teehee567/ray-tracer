@@ -36,6 +36,21 @@ pub struct PathTracer {
 }
 
 impl PathTracer {
+    /// Swap in a newly compiled compute shader. Descriptor layout/sets are
+    /// untouched (the shader's binding interface is fixed), so only the
+    /// pipeline and its layout are recreated — create-before-destroy, so a
+    /// failed build leaves the old pipeline running. Caller must ensure the
+    /// device is idle.
+    pub unsafe fn rebuild_pipeline(&mut self, device: &Device, shader_spv: &[u8]) -> Result<()> {
+        let (pipeline_layout, pipeline) =
+            create_compute_pipeline(device, self.descriptor_set_layout, shader_spv)?;
+        device.destroy_pipeline(self.pipeline, None);
+        device.destroy_pipeline_layout(self.pipeline_layout, None);
+        self.pipeline = pipeline;
+        self.pipeline_layout = pipeline_layout;
+        Ok(())
+    }
+
     pub unsafe fn new(
         ctx: &VulkanContext,
         scene: &Scene,

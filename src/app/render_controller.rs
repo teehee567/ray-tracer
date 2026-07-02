@@ -7,6 +7,7 @@ use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
 use glam::{Mat4, Vec3};
 use log::error;
 
+use crate::app::shader_reload::ShaderBlob;
 use crate::gui::PushRender;
 use crate::gui::{self, PushGui};
 use crate::vulkan::{OFFSCREEN_FRAME_COUNT, VulkanRenderer};
@@ -14,6 +15,7 @@ use crate::vulkan::{OFFSCREEN_FRAME_COUNT, VulkanRenderer};
 pub struct RenderController {
     command_tx: Sender<RenderCommand>,
     gui_data_rx: Receiver<PushGui>,
+    gui_data_tx: Sender<PushGui>,
     handle: Option<thread::JoinHandle<()>>,
 }
 
@@ -24,16 +26,23 @@ impl RenderController {
 
         let render_gui_shared = gui_shared.clone();
         renderer.set_gui_sender(gui_data_tx.clone());
+        let loop_gui_data_tx = gui_data_tx.clone();
         let handle = thread::Builder::new()
             .name("render-thread".into())
-            .spawn(move || render_loop(renderer, render_gui_shared, command_rx, gui_data_tx))
+            .spawn(move || render_loop(renderer, render_gui_shared, command_rx, loop_gui_data_tx))
             .map_err(|err| anyhow::anyhow!("failed to spawn render thread: {err}"))?;
 
         Ok(Self {
             command_tx,
             gui_data_rx,
+            gui_data_tx,
             handle: Some(handle),
         })
+    }
+
+    /// Sender for pushing messages to the GUI from outside the render thread.
+    pub fn gui_push_sender(&self) -> Sender<PushGui> {
+        self.gui_data_tx.clone()
     }
 
     pub fn pause(&self) {
@@ -85,6 +94,8 @@ pub enum RenderCommand {
     },
     Present,
     Shutdown,
+    /// Swap the path tracer pipeline for freshly compiled SPIR-V.
+    ReloadShader(ShaderBlob),
     BackendCommand(PushRender),
     SetCamera {
         location: Vec3,
@@ -109,6 +120,8 @@ fn render_loop(
     let mut pending_backend_commands: Vec<PushRender> = Vec::new();
 
     let mut pending_camera: Option<(Vec3, Mat4)> = None;
+
+    let mut pending_shader: Option<ShaderBlob> = None;
 
     // debounce resize before rerender
     const RESIZE_DEBOUNCE: Duration = Duration::from_millis(150);
@@ -137,6 +150,10 @@ fn render_loop(
                     RenderCommand::Shutdown => {
                         running = false;
                         break;
+                    }
+                    RenderCommand::ReloadShader(blob) => {
+                        // last one wins if several compiles finished in a burst
+                        pending_shader = Some(blob);
                     }
                     RenderCommand::BackendCommand(command) => {
                         pending_backend_commands.push(command);
@@ -167,6 +184,18 @@ fn render_loop(
 
         if let Some((location, rotation)) = pending_camera.take() {
             renderer.set_camera_pose(location, rotation);
+        }
+
+        if let Some(blob) = pending_shader.take() {
+            // Safe point for the device_wait_idle inside: no command recording
+            // is in progress between the command drain and dispatch/present.
+            let error = unsafe { renderer.reload_path_tracer_shader(&blob.0) }
+                .err()
+                .map(|err| err.to_string());
+            if let Some(err) = &error {
+                error!("shader reload failed: {err}");
+            }
+            let _ = gui_data_tx.try_send(PushGui::ShaderReload { error });
         }
 
         let render_res = renderer.render_resolution();

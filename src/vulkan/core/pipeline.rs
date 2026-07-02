@@ -1,10 +1,11 @@
 use log::info;
 use vulkanalia::{bytecode::Bytecode, prelude::v1_0::*};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 
 pub unsafe fn create_shader_module(device: &Device, bytecode: &[u8]) -> Result<vk::ShaderModule> {
-    let bytecode = Bytecode::new(bytecode).unwrap();
+    // No unwrap: runtime-compiled bytes from shader hot reload pass through here.
+    let bytecode = Bytecode::new(bytecode).map_err(|err| anyhow!("invalid SPIR-V: {err:?}"))?;
 
     let info = vk::ShaderModuleCreateInfo::builder()
         .code_size(bytecode.code_size())

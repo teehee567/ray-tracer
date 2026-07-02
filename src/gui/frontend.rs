@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock};
 use super::GuiData;
 use crate::app::camera_controller::{CameraController, CameraInput};
 use crate::app::render_controller::RenderCommand;
+use crate::app::shader_reload::ReloadRequest;
 use crate::gui::PushGui;
 use crate::gui::panels::{GuiPanels, GuiTheme};
 use crate::types::CameraBufferObject;
@@ -87,6 +88,7 @@ impl GuiFrontend {
         shared: GuiShared,
         gui_data_rx: Receiver<PushGui>,
         render_sender: Sender<RenderCommand>,
+        reload_sender: Sender<ReloadRequest>,
         initial_camera: CameraBufferObject,
     ) -> Self {
         let ctx = egui::Context::default();
@@ -111,7 +113,7 @@ impl GuiFrontend {
 
             gui_data: GuiData::new(),
 
-            panels: GuiPanels::new(render_sender.clone()),
+            panels: GuiPanels::new(render_sender.clone(), reload_sender),
 
             camera: CameraController::from_camera(&initial_camera),
             render_sender,
@@ -224,6 +226,9 @@ impl GuiFrontend {
                     PushGui::Status { samples, paused } => {
                         self.gui_data.sample_count = samples;
                         self.gui_data.effective_paused = paused;
+                    }
+                    PushGui::ShaderReload { error } => {
+                        self.gui_data.shader_error = error;
                     }
                     PushGui::PerfUpdate {
                         compute_fps,

@@ -22,13 +22,15 @@ mod vulkan;
 
 pub use types::*;
 
-use app::RenderController;
+use app::{RenderController, ShaderReloader};
 use vulkan::VulkanRenderer;
 
 struct AppState {
     window: Window,
     render_controller: RenderController,
     gui: gui::GuiFrontend,
+    // Kept alive so the shader file watcher keeps running.
+    _shader_reloader: ShaderReloader,
     minimized: bool,
 }
 
@@ -67,11 +69,14 @@ impl App {
         let gui_shared = gui::create_shared_state();
         let render_controller = RenderController::spawn(renderer, gui_shared.clone())?;
         let (gui_data_rx, render_sender) = render_controller.gui_channels();
+        let shader_reloader =
+            ShaderReloader::spawn(render_sender.clone(), render_controller.gui_push_sender());
         let gui = gui::GuiFrontend::new(
             &window,
             gui_shared,
             gui_data_rx,
             render_sender,
+            shader_reloader.request_sender(),
             initial_camera,
         );
 
@@ -79,6 +84,7 @@ impl App {
             window,
             render_controller,
             gui,
+            _shader_reloader: shader_reloader,
             minimized: false,
         })
     }

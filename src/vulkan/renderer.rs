@@ -179,6 +179,16 @@ impl VulkanRenderer {
         self.frame as u32
     }
 
+    /// Swap the path tracer's compute pipeline for freshly compiled SPIR-V.
+    /// On failure the old pipeline keeps rendering.
+    pub unsafe fn reload_path_tracer_shader(&mut self, spv: &[u8]) -> Result<()> {
+        self.ctx.device.device_wait_idle()?;
+        self.path_tracer.rebuild_pipeline(&self.ctx.device, spv)?;
+        // restart accumulation so old-shader samples aren't blended in
+        self.frame = 0;
+        Ok(())
+    }
+
     /// actual render target size
     pub fn render_resolution(&self) -> (u32, u32) {
         let size = self.path_tracer.render_size();

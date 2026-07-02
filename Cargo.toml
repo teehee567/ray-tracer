@@ -16,6 +16,8 @@ glam = { version = "0.33", features = ["serde"] }
 gltf = { version = "1.4", features = ["KHR_materials_emissive_strength", "KHR_materials_ior", "KHR_materials_specular", "KHR_materials_transmission", "KHR_texture_transform", "extensions"] }
 image = "0.25"
 log = "0.4"
+notify = "8.2.0"
+notify-debouncer-mini = "0.7.0"
 png = "0.18"
 pretty_env_logger = "0.5"
 quick-xml = "0.40"

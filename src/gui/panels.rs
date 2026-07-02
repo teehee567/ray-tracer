@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use crate::app::render_controller::RenderCommand;
+use crate::app::shader_reload::ReloadRequest;
 use crate::gui::components::perf_graph::draw_perf_graph;
 use crate::gui::gui_data::{PushRender, RenderMode};
 use anyhow::Result;
@@ -19,12 +20,14 @@ pub enum GuiTheme {
 pub struct GuiPanels {
     pub theme: GuiTheme,
     render_sender: Sender<RenderCommand>,
+    reload_sender: Sender<ReloadRequest>,
 }
 
 impl GuiPanels {
-    pub fn new(render_sender: Sender<RenderCommand>) -> Self {
+    pub fn new(render_sender: Sender<RenderCommand>, reload_sender: Sender<ReloadRequest>) -> Self {
         Self {
             render_sender,
+            reload_sender,
             theme: GuiTheme::Dark,
         }
     }
@@ -81,6 +84,9 @@ impl GuiPanels {
                     self.draw_render_mode_controls(ui, gui_data);
 
                     ui.separator();
+                    self.draw_shader_controls(ui, gui_data);
+
+                    ui.separator();
                     ui.heading("Frame timing");
                     draw_perf_graph(ui, &gui_data.perf_history);
 
@@ -115,6 +121,23 @@ impl GuiPanels {
     pub fn send_command(&self, command: RenderCommand) -> Result<()> {
         self.render_sender.try_send(command)?;
         Ok(())
+    }
+
+    fn draw_shader_controls(&self, ui: &mut egui::Ui, gui_data: &GuiData) {
+        ui.heading("Shaders");
+
+        if ui.button("Reload shaders").clicked() {
+            let _ = self.reload_sender.try_send(ReloadRequest::Manual);
+        }
+
+        if let Some(error) = &gui_data.shader_error {
+            egui::ScrollArea::vertical()
+                .id_salt("shader_error")
+                .max_height(120.0)
+                .show(ui, |ui| {
+                    ui.colored_label(egui::Color32::LIGHT_RED, error);
+                });
+        }
     }
 
     fn draw_render_mode_controls(&self, ui: &mut egui::Ui, gui_data: &mut GuiData) {
