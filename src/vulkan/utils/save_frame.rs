@@ -36,9 +36,9 @@ impl SaveImage {
         };
 
         let size = self.buffer.size;
-        let mapped = ctx
-            .device
-            .map_memory(self.buffer.memory, 0, size, vk::MemoryMapFlags::empty())?;
+        let mapped =
+            ctx.device
+                .map_memory(self.buffer.memory, 0, size, vk::MemoryMapFlags::empty())?;
         let bgra = slice::from_raw_parts(mapped.cast::<u8>(), size as usize);
 
         let mut rgba = vec![0_u8; bgra.len()];
@@ -67,5 +67,4 @@ impl SaveImage {
     pub unsafe fn destroy(&mut self, device: &Device) {
         self.buffer.destroy(device);
     }
-
 }

@@ -1,9 +1,9 @@
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use raytracer::Material;
+use raytracer::accelerators::Accelerator;
 use raytracer::accelerators::bin_sah::BinSah;
 use raytracer::accelerators::bvh::Bvh;
-use raytracer::accelerators::Accelerator;
 use raytracer::scene::Scene;
-use raytracer::Material;
 use std::hint::black_box;
 
 const SPONZA: &str = "scenes/sponza/Sponza.gltf";

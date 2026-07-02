@@ -56,7 +56,11 @@ impl Buffer {
         })
     }
 
-    pub unsafe fn from_slice<T: Copy>(ctx: &VulkanContext, slice: &[T], opts: BufferOpts) -> Result<Self> {
+    pub unsafe fn from_slice<T: Copy>(
+        ctx: &VulkanContext,
+        slice: &[T],
+        opts: BufferOpts,
+    ) -> Result<Self> {
         let size = mem::size_of_val(slice) as u64;
         let buffer = Self::new(ctx, size as u64, opts.usage, opts.properties)?;
         buffer.write(&ctx.device, slice)?;
@@ -76,7 +80,6 @@ impl Buffer {
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
         )
     }
-
 
     pub unsafe fn write_with<F>(&self, device: &Device, size: vk::DeviceSize, f: F) -> Result<()>
     where

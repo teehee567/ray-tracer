@@ -64,8 +64,8 @@ use std::sync::atomic::{AtomicIsize, AtomicUsize, Ordering};
 use glam::{Vec3, Vec3A};
 use rayon::prelude::*;
 
-use crate::accelerators::Accelerator;
 use super::bvh::BvhNode;
+use crate::accelerators::Accelerator;
 use crate::{Material, Triangle};
 
 /// SAH bins per axis; 16 is the knee of the quality/speed curve (Wald 2007).
@@ -610,7 +610,15 @@ fn build_object_tree(cfg: &BinSah, prims: &Prims, idxs: &mut [u32]) -> Vec<BNode
     storage
 }
 
-fn build_par(ctx: &ObjCtx, slot: u32, idxs: &mut [u32], base: u32, g: Bounds, c: Bounds, depth: u32) {
+fn build_par(
+    ctx: &ObjCtx,
+    slot: u32,
+    idxs: &mut [u32],
+    base: u32,
+    g: Bounds,
+    c: Bounds,
+    depth: u32,
+) {
     if idxs.len() < TASK_PARALLEL_MIN {
         build_seq(ctx, slot, idxs, base, g, c, depth);
         return;
@@ -619,9 +627,18 @@ fn build_par(ctx: &ObjCtx, slot: u32, idxs: &mut [u32], base: u32, g: Bounds, c:
     match decide_split(&ctx.cfg, ctx.prims, idxs, &g, &c, depth, &mut bins) {
         Decision::Leaf => {
             // SAFETY: `slot` is owned by this task.
-            unsafe { ctx.arena.write(slot, BNode::new_leaf(&g, base, idxs.len() as u32)) };
+            unsafe {
+                ctx.arena
+                    .write(slot, BNode::new_leaf(&g, base, idxs.len() as u32))
+            };
         }
-        Decision::Split { mid, lg, lc, rg, rc } => {
+        Decision::Split {
+            mid,
+            lg,
+            lc,
+            rg,
+            rc,
+        } => {
             let pair = ctx.arena.alloc_pair();
             // SAFETY: `slot` is owned by this task.
             unsafe { ctx.arena.write(slot, BNode::new_interior(&g, pair)) };
@@ -645,7 +662,15 @@ struct SeqItem {
 
 /// Iterative sequential build with an explicit work stack and a single reused
 /// bin set — no recursion, no per-node allocations.
-fn build_seq(ctx: &ObjCtx, slot: u32, idxs: &mut [u32], base: u32, g: Bounds, c: Bounds, depth: u32) {
+fn build_seq(
+    ctx: &ObjCtx,
+    slot: u32,
+    idxs: &mut [u32],
+    base: u32,
+    g: Bounds,
+    c: Bounds,
+    depth: u32,
+) {
     let mut bins = Bins::new();
     let mut stack: Vec<SeqItem> = Vec::with_capacity(64);
     stack.push(SeqItem {
@@ -658,7 +683,9 @@ fn build_seq(ctx: &ObjCtx, slot: u32, idxs: &mut [u32], base: u32, g: Bounds, c:
     });
     while let Some(it) = stack.pop() {
         let range = &mut idxs[it.lo as usize..it.hi as usize];
-        match decide_split(&ctx.cfg, ctx.prims, range, &it.g, &it.c, it.depth, &mut bins) {
+        match decide_split(
+            &ctx.cfg, ctx.prims, range, &it.g, &it.c, it.depth, &mut bins,
+        ) {
             Decision::Leaf => {
                 // SAFETY: `it.slot` is owned by this task.
                 unsafe {
@@ -666,7 +693,13 @@ fn build_seq(ctx: &ObjCtx, slot: u32, idxs: &mut [u32], base: u32, g: Bounds, c:
                         .write(it.slot, BNode::new_leaf(&it.g, base + it.lo, it.hi - it.lo))
                 };
             }
-            Decision::Split { mid, lg, lc, rg, rc } => {
+            Decision::Split {
+                mid,
+                lg,
+                lc,
+                rg,
+                rc,
+            } => {
                 let pair = ctx.arena.alloc_pair();
                 // SAFETY: `it.slot` is owned by this task.
                 unsafe { ctx.arena.write(it.slot, BNode::new_interior(&it.g, pair)) };
@@ -743,7 +776,13 @@ fn decide_split(
     let (lg, ln) = union_bins(bins, axis, 0, bin);
     let (rg, _) = union_bins(bins, axis, bin, BIN_COUNT);
     debug_assert_eq!(mid, ln as usize);
-    Decision::Split { mid, lg, lc, rg, rc }
+    Decision::Split {
+        mid,
+        lg,
+        lc,
+        rg,
+        rc,
+    }
 }
 
 /// In-place two-pointer partition by bin index (`< split` goes left); each
@@ -810,7 +849,13 @@ fn median_split(prims: &Prims, idxs: &mut [u32], c: &Bounds, g: &Bounds) -> Deci
     });
     let (lg, lc) = bounds_of(prims, &idxs[..mid]);
     let (rg, rc) = bounds_of(prims, &idxs[mid..]);
-    Decision::Split { mid, lg, lc, rg, rc }
+    Decision::Split {
+        mid,
+        lg,
+        lc,
+        rg,
+        rc,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -921,7 +966,13 @@ fn build_sbvh(ctx: &SCtx, slot: u32, mut refs: Vec<SRef>, g: Bounds, c: Bounds, 
         if let Some((cost, axis, bin)) = evaluate_sah(&bins) {
             let (lg, _) = union_bins(&bins, axis, 0, bin);
             let (rg, _) = union_bins(&bins, axis, bin, BIN_COUNT);
-            object = Some(ObjCand { cost, axis, bin, lg, rg });
+            object = Some(ObjCand {
+                cost,
+                axis,
+                bin,
+                lg,
+                rg,
+            });
         }
     }
 
@@ -929,9 +980,7 @@ fn build_sbvh(ctx: &SCtx, slot: u32, mut refs: Vec<SRef>, g: Bounds, c: Bounds, 
     // so most nodes never pay for chopped binning.
     let try_spatial = ctx.budget.load(Ordering::Relaxed) > 0
         && match &object {
-            Some(o) => {
-                Bounds::intersection(&o.lg, &o.rg).half_area() / ctx.root_half > ctx.alpha
-            }
+            Some(o) => Bounds::intersection(&o.lg, &o.rg).half_area() / ctx.root_half > ctx.alpha,
             None => true,
         };
     let spatial = if try_spatial {
@@ -1029,7 +1078,12 @@ fn bin_srefs(refs: &[SRef], cb_min: Vec3A, scale: Vec3A, bins: &mut Bins) {
             .par_chunks(PAR_CHUNK)
             .map(|chunk| {
                 let mut local = Bins::new();
-                bin_iter(chunk.iter().map(|r| (r.min, r.max)), cb_min, scale, &mut local);
+                bin_iter(
+                    chunk.iter().map(|r| (r.min, r.max)),
+                    cb_min,
+                    scale,
+                    &mut local,
+                );
                 local
             })
             .reduce(Bins::new, Bins::merge);
@@ -1204,7 +1258,11 @@ fn clip_box(poly: &Poly, rmin: Vec3A, rmax: Vec3A) -> Option<(Vec3A, Vec3A)> {
     let (mn, mx) = poly.bounds()?;
     let mn = mn.max(rmin);
     let mx = mx.min(rmax);
-    if mn.cmple(mx).all() { Some((mn, mx)) } else { None }
+    if mn.cmple(mx).all() {
+        Some((mn, mx))
+    } else {
+        None
+    }
 }
 
 fn spatial_bins_for(
@@ -1327,7 +1385,11 @@ fn distribute_spatial(ctx: &SCtx, refs: &[SRef], axis: usize, plane: f32) -> Opt
     fn push(side: &mut Vec<SRef>, g: &mut Bounds, c: &mut Bounds, mn: Vec3A, mx: Vec3A, prim: u32) {
         g.grow_minmax(mn, mx);
         c.grow_point((mn + mx) * 0.5);
-        side.push(SRef { min: mn, max: mx, prim });
+        side.push(SRef {
+            min: mn,
+            max: mx,
+            prim,
+        });
     }
 
     let mut l: Vec<SRef> = Vec::with_capacity(refs.len());
@@ -1346,10 +1408,7 @@ fn distribute_spatial(ctx: &SCtx, refs: &[SRef], axis: usize, plane: f32) -> Opt
             if splittable && try_take_budget(ctx) {
                 let poly = Poly::from_triangle(tri);
                 let (lp, rp) = poly.split(axis, plane);
-                match (
-                    clip_box(&lp, rf.min, rf.max),
-                    clip_box(&rp, rf.min, rf.max),
-                ) {
+                match (clip_box(&lp, rf.min, rf.max), clip_box(&rp, rf.min, rf.max)) {
                     (Some((lmn, lmx)), Some((rmn, rmx))) => {
                         push(&mut l, &mut lg, &mut lc, lmn, lmx, rf.prim);
                         push(&mut r, &mut rg, &mut rc, rmn, rmx, rf.prim);

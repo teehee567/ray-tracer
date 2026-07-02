@@ -9,7 +9,7 @@ use vulkanalia::vk::{KhrSwapchainExtensionDeviceCommands, SuccessCode};
 use winit::window::Window;
 
 use crate::fps_counter::FPSCounter;
-use crate::gui::{self, PushRender, PushGui};
+use crate::gui::{self, PushGui, PushRender};
 use crate::scene::Scene;
 use crate::types::{AUVec2, AVec2, Au32, viewport_uv};
 use crate::vulkan::heatmap_renderer::HeatmapRenderer;
@@ -76,7 +76,12 @@ impl VulkanRenderer {
 
         info!("Finished initialisation of Vulkan Resources");
         let render_resolution = scene.get_camera_controls().resolution.0;
-        let gui = GuiRenderer::new(&ctx, swapchain.render_pass, swapchain.extent, render_resolution)?;
+        let gui = GuiRenderer::new(
+            &ctx,
+            swapchain.render_pass,
+            swapchain.extent,
+            render_resolution,
+        )?;
 
         // size to renderer part
         let render_extent = gui.render_extent();
@@ -201,7 +206,7 @@ impl VulkanRenderer {
         match device.get_fence_status(self.sync.present_fence)? {
             SuccessCode::SUCCESS => Ok(true),
             SuccessCode::NOT_READY => Ok(false),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -336,7 +341,10 @@ impl VulkanRenderer {
             self.compositor_timer.query_pool(),
         )?;
 
-        let wait_semaphores = &[self.sync.image_available_semaphore, self.sync.compute_timeline];
+        let wait_semaphores = &[
+            self.sync.image_available_semaphore,
+            self.sync.compute_timeline,
+        ];
         let command_buffers = &[self.sync.present_command_buffer];
         let signal_semaphores = &[self.sync.render_finished_semaphores[image_index]];
         let wait_stage_masks = [

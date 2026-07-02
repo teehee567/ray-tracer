@@ -5,8 +5,8 @@ use crate::gui::components::perf_graph::draw_perf_graph;
 use crate::gui::gui_data::PushRender;
 use anyhow::Result;
 
-use super::frontend::{panel_width_pixels, PANEL_WIDTH_POINTS};
 use super::GuiData;
+use super::frontend::{PANEL_WIDTH_POINTS, panel_width_pixels};
 use crossbeam_channel::Sender;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

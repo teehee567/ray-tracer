@@ -148,12 +148,8 @@ impl GuiFrontend {
         let pixels_per_point = self.pixels_per_point;
 
         let full_output = self.ctx.run_ui(raw_input, |ui| {
-            self.panels.draw(
-                ui,
-                &mut self.gui_data,
-                panel_height,
-                pixels_per_point,
-            );
+            self.panels
+                .draw(ui, &mut self.gui_data, panel_height, pixels_per_point);
         });
 
         self.state
@@ -224,33 +220,38 @@ impl GuiFrontend {
     fn poll_gui_data(&mut self) {
         loop {
             match self.gui_data_rx.try_recv() {
-                Ok(req) => {
-                    match req {
-                        PushGui::PerfUpdate { compute_fps, compute_ms, present_fps, present_ms, heatmap_ms, compositor_ms } => {
-                            self.gui_data.compute_fps = compute_fps;
-                            self.gui_data.compute_ms = compute_ms;
-                            self.gui_data.present_fps = present_fps;
-                            self.gui_data.present_ms = present_ms;
-                            self.gui_data.heatmap_ms = heatmap_ms;
-                            self.gui_data.compositor_ms = compositor_ms;
-                            self.gui_data.perf_history.push(
-                                compute_ms as f32,
-                                present_ms as f32,
-                                heatmap_ms as f32,
-                                compositor_ms as f32,
-                            );
-                        },
-                        PushGui::HeatmapInfo { max_depth } => {
-                            self.gui_data.heatmap_max_depth = max_depth;
-                            self.gui_data.heatmap_depth_low = 0;
-                            self.gui_data.heatmap_depth_high = max_depth;
-                        },
-                        PushGui::RenderResolution { width, height } => {
-                            self.gui_data.render_width = width;
-                            self.gui_data.render_height = height;
-                        },
+                Ok(req) => match req {
+                    PushGui::PerfUpdate {
+                        compute_fps,
+                        compute_ms,
+                        present_fps,
+                        present_ms,
+                        heatmap_ms,
+                        compositor_ms,
+                    } => {
+                        self.gui_data.compute_fps = compute_fps;
+                        self.gui_data.compute_ms = compute_ms;
+                        self.gui_data.present_fps = present_fps;
+                        self.gui_data.present_ms = present_ms;
+                        self.gui_data.heatmap_ms = heatmap_ms;
+                        self.gui_data.compositor_ms = compositor_ms;
+                        self.gui_data.perf_history.push(
+                            compute_ms as f32,
+                            present_ms as f32,
+                            heatmap_ms as f32,
+                            compositor_ms as f32,
+                        );
                     }
-                }
+                    PushGui::HeatmapInfo { max_depth } => {
+                        self.gui_data.heatmap_max_depth = max_depth;
+                        self.gui_data.heatmap_depth_low = 0;
+                        self.gui_data.heatmap_depth_high = max_depth;
+                    }
+                    PushGui::RenderResolution { width, height } => {
+                        self.gui_data.render_width = width;
+                        self.gui_data.render_height = height;
+                    }
+                },
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => break,
             }

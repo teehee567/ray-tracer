@@ -67,7 +67,13 @@ impl App {
         let gui_shared = gui::create_shared_state();
         let render_controller = RenderController::spawn(renderer, gui_shared.clone())?;
         let (gui_data_rx, render_sender) = render_controller.gui_channels();
-        let gui = gui::GuiFrontend::new(&window, gui_shared, gui_data_rx, render_sender, initial_camera);
+        let gui = gui::GuiFrontend::new(
+            &window,
+            gui_shared,
+            gui_data_rx,
+            render_sender,
+            initial_camera,
+        );
 
         Ok(AppState {
             window,
@@ -81,7 +87,9 @@ impl App {
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.state.is_none() {
-            let state = self.init(event_loop).expect("failed to initialize renderer");
+            let state = self
+                .init(event_loop)
+                .expect("failed to initialize renderer");
             self.state = Some(state);
         }
     }

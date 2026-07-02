@@ -7,8 +7,8 @@ use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
 use glam::{Mat4, Vec3};
 use log::error;
 
-use crate::gui::{self, PushGui};
 use crate::gui::PushRender;
+use crate::gui::{self, PushGui};
 use crate::vulkan::{OFFSCREEN_FRAME_COUNT, VulkanRenderer};
 
 pub struct RenderController {
@@ -191,14 +191,13 @@ fn render_loop(
             });
         }
 
-
         let present_ready = match unsafe { renderer.present_ready() } {
-                Ok(ready) => ready,
-                Err(err) => {
-                    error!("present-ready error: {err:?}");
-                    false
-                }
-            };
+            Ok(ready) => ready,
+            Err(err) => {
+                error!("present-ready error: {err:?}");
+                false
+            }
+        };
 
         if present_requested && present_ready {
             // Pick the frame to present BEFORE taking the GUI frame: a taken

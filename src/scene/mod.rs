@@ -3,7 +3,6 @@ use std::os::raw::c_void;
 use std::path::Path;
 use std::time::Instant;
 
-
 use glam::{Mat4, Vec3};
 
 use crate::accelerators::Accelerator;
@@ -218,7 +217,7 @@ impl Scene {
             if mat_idx < self.components.materials.len() {
                 let material = &self.components.materials[mat_idx];
                 let emission = material.emission.0;
-                
+
                 // Check if material is emissive (has non-zero emission)
                 if emission.length_squared() > 0.0 {
                     // Calculate triangle area: |(v1-v0) x (v2-v0)| * 0.5
@@ -228,12 +227,12 @@ impl Scene {
                     let edge1 = v1 - v0;
                     let edge2 = v2 - v0;
                     let area = edge1.cross(edge2).length() * 0.5;
-                    
+
                     // Calculate power: luminance(emission) * area
                     // Using luminance = 0.2126*R + 0.7152*G + 0.0722*B
                     let luminance = emission.x * 0.2126 + emission.y * 0.7152 + emission.z * 0.0722;
                     let power = luminance * area;
-                    
+
                     if power > 0.0 {
                         emissive_tris.push(EmissiveTri {
                             tri_index: Au32(tri_idx as u32),
@@ -262,9 +261,11 @@ impl Scene {
             total_power,
         };
 
-
         println!("Lights built in :{:.4}s", start.elapsed().as_secs_f32());
-        println!("Found {} emissive triangles", self.components.mesh_light_sampler.tris.len());
+        println!(
+            "Found {} emissive triangles",
+            self.components.mesh_light_sampler.tris.len()
+        );
         println!("Total power: {}", total_power);
     }
 

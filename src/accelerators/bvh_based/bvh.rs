@@ -177,7 +177,6 @@ impl BvhNode {
     }
 }
 
-
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Bvh;
 
@@ -332,10 +331,7 @@ impl<'a> BvhBuilder<'a> {
     }
 
     fn apply_ordering(items: &mut Vec<Triangle>, ordering: &[u32]) {
-        let sorted: Vec<Triangle> = ordering
-            .iter()
-            .map(|&i| items[i as usize])
-            .collect();
+        let sorted: Vec<Triangle> = ordering.iter().map(|&i| items[i as usize]).collect();
         *items = sorted;
     }
 }

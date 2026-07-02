@@ -1,4 +1,3 @@
-
 mod compositor;
 
 use std::slice;
@@ -8,16 +7,18 @@ use log::info;
 use vulkanalia::prelude::v1_0::*;
 
 use crate::{
-    accelerators::visualiser::AccelVis, scene::Scene, vulkan::core::{
+    accelerators::visualiser::AccelVis,
+    scene::Scene,
+    vulkan::core::{
         buffer::{Buffer, BufferOpts},
         context::VulkanContext,
-        image::{cmd_image_barrier, image_barrier, subresource_range, Image},
         descriptors::{
-            allocate_descriptor_sets, binding, create_descriptor_pool, create_descriptor_set_layout,
-            image_info, image_write, pool_size,
+            allocate_descriptor_sets, binding, create_descriptor_pool,
+            create_descriptor_set_layout, image_info, image_write, pool_size,
         },
+        image::{Image, cmd_image_barrier, image_barrier, subresource_range},
         pipeline::{create_graphics_pipeline, create_shader_module},
-    }
+    },
 };
 use anyhow::Result;
 
@@ -240,7 +241,8 @@ impl HeatmapRenderer {
         self.image_layout = vk::ImageLayout::UNDEFINED;
         self.framebuffer = Self::create_framebuffer(device, self.heatmap_pass, &self.image)?;
         Self::update_accum_set(device, self.accum_set, self.image.view);
-        self.compositor.update_composite_set(device, self.image.view);
+        self.compositor
+            .update_composite_set(device, self.image.view);
 
         Ok(())
     }
@@ -272,7 +274,10 @@ impl HeatmapRenderer {
     ) {
         let (w, h) = (self.image.width, self.image.height);
         let (src_access, src_stage) = if self.image_layout == vk::ImageLayout::UNDEFINED {
-            (vk::AccessFlags::empty(), vk::PipelineStageFlags::TOP_OF_PIPE)
+            (
+                vk::AccessFlags::empty(),
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+            )
         } else {
             (
                 vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE,
@@ -449,8 +454,8 @@ impl HeatmapRenderer {
     }
 
     unsafe fn create_render_pass(device: &Device) -> Result<vk::RenderPass> {
-        let subpass = vk::SubpassDescription::builder()
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
+        let subpass =
+            vk::SubpassDescription::builder().pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
 
         let attachments: [vk::AttachmentDescription; 0] = [];
         let dependencies: [vk::SubpassDependency; 0] = [];

@@ -200,7 +200,10 @@ impl PathTracer {
         )?;
 
         with_single_time(&ctx.device, ctx.command_pool, ctx.compute_queue, |cb| {
-            for image in framebuffer_images.iter().chain(std::iter::once(&accumulator)) {
+            for image in framebuffer_images
+                .iter()
+                .chain(std::iter::once(&accumulator))
+            {
                 cmd_transition_image_layout(
                     &ctx.device,
                     cb,
@@ -217,7 +220,11 @@ impl PathTracer {
     }
 
     /// resize render target images
-    pub unsafe fn handle_resize(&mut self, ctx: &VulkanContext, extent: vk::Extent2D) -> Result<()> {
+    pub unsafe fn handle_resize(
+        &mut self,
+        ctx: &VulkanContext,
+        extent: vk::Extent2D,
+    ) -> Result<()> {
         let (w, h) = (extent.width.max(1), extent.height.max(1));
         if w == self.accumulator.width && h == self.accumulator.height {
             return Ok(());

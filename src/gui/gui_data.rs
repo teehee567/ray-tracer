@@ -10,9 +10,21 @@ pub enum PushRender {
 }
 
 pub enum PushGui {
-    PerfUpdate{compute_fps: f64, compute_ms: f64, present_fps: f64, present_ms: f64, heatmap_ms: f64, compositor_ms: f64},
-    HeatmapInfo { max_depth: u32 },
-    RenderResolution { width: u32, height: u32 },
+    PerfUpdate {
+        compute_fps: f64,
+        compute_ms: f64,
+        present_fps: f64,
+        present_ms: f64,
+        heatmap_ms: f64,
+        compositor_ms: f64,
+    },
+    HeatmapInfo {
+        max_depth: u32,
+    },
+    RenderResolution {
+        width: u32,
+        height: u32,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -41,7 +53,6 @@ pub struct GuiData {
 
 impl GuiData {
     pub fn new() -> Self {
-
         Self {
             perf_history: PerfHistory::new(PERF_HISTORY_LEN),
             heatmap_enabled: true,

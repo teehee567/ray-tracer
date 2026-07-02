@@ -13,8 +13,9 @@ use vulkanalia::{
 use winit::window::Window;
 
 use crate::vulkan::constants::{
-    DEVICE_EXTENSIONS, PORTABILITY_MACOS_VERSION, VALIDATION_BEST_PRACTICES, VALIDATION_DEBUG_PRINTF,
-    VALIDATION_ENABLED, VALIDATION_GPU_ASSISTED, VALIDATION_LAYER, VALIDATION_SYNC,
+    DEVICE_EXTENSIONS, PORTABILITY_MACOS_VERSION, VALIDATION_BEST_PRACTICES,
+    VALIDATION_DEBUG_PRINTF, VALIDATION_ENABLED, VALIDATION_GPU_ASSISTED, VALIDATION_LAYER,
+    VALIDATION_SYNC,
 };
 
 #[derive(Debug, Error)]
@@ -183,12 +184,18 @@ unsafe fn create_instance(
             );
         }
         if VALIDATION_BEST_PRACTICES {
-            validation_enables
-                .push(c"VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT".as_ptr().cast());
+            validation_enables.push(
+                c"VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT"
+                    .as_ptr()
+                    .cast(),
+            );
         }
         if VALIDATION_GPU_ASSISTED {
-            validation_enables
-                .push(c"VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT".as_ptr().cast());
+            validation_enables.push(
+                c"VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT"
+                    .as_ptr()
+                    .cast(),
+            );
             validation_enables.push(
                 c"VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT"
                     .as_ptr()
@@ -196,8 +203,11 @@ unsafe fn create_instance(
             );
         }
         if VALIDATION_DEBUG_PRINTF {
-            validation_enables
-                .push(c"VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT".as_ptr().cast());
+            validation_enables.push(
+                c"VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT"
+                    .as_ptr()
+                    .cast(),
+            );
         }
     }
 
@@ -429,7 +439,10 @@ unsafe fn create_logical_device(
     // Queues
     let present_queue = device.get_device_queue(indices.present, 0);
     info!("Created Present Queue: {:?}", present_queue);
-    let compute_queue = device.get_device_queue(indices.compute, if indices.queue_count >= 2 { 1 } else { 0 });
+    let compute_queue = device.get_device_queue(
+        indices.compute,
+        if indices.queue_count >= 2 { 1 } else { 0 },
+    );
     info!("Created Compute Queue: {:?}", compute_queue);
 
     Ok((device, compute_queue, present_queue))

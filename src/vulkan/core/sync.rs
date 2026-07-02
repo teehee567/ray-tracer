@@ -42,8 +42,7 @@ impl SyncState {
         let mut timeline_type_info = vk::SemaphoreTypeCreateInfo::builder()
             .semaphore_type(SemaphoreType::TIMELINE)
             .initial_value(0);
-        let timeline_info =
-            vk::SemaphoreCreateInfo::builder().push_next(&mut timeline_type_info);
+        let timeline_info = vk::SemaphoreCreateInfo::builder().push_next(&mut timeline_type_info);
         let compute_semaphore = device.create_semaphore(&timeline_info, None)?;
 
         let fence_info = vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);

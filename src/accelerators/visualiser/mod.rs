@@ -3,7 +3,6 @@ use smallvec::SmallVec;
 
 use crate::accelerators::bvh_based::bvh::BvhNode;
 
-
 pub struct AccelVis {
     pub nodes: Vec<AccelVisNode>,
     // pub stats: AccelVisStats,
@@ -79,12 +78,7 @@ impl AccelVis {
                 if invalid <= 16 {
                     eprintln!(
                         "invalid BVH visualizer bounds: flat_index={} depth={} finite={} ordered={} min={:?} max={:?}",
-                        node.flat_index,
-                        node.depth,
-                        finite,
-                        ordered,
-                        min,
-                        max,
+                        node.flat_index, node.depth, finite, ordered, min, max,
                     );
                 }
             }
@@ -169,11 +163,11 @@ pub struct SplitPlane {
 
 pub enum AccelVisNodeKind {
     Inside,
-    Leaf { first_idx: u32, cnt: u32},
+    Leaf { first_idx: u32, cnt: u32 },
 }
 
 pub enum AccelVisMode {
     LeavesOnly,
-    DepthRange { low: u32, high: u32},
+    DepthRange { low: u32, high: u32 },
     TraversalHeatmap,
 }

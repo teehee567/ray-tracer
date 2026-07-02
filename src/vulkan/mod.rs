@@ -5,11 +5,11 @@
 pub mod constants;
 pub mod core;
 mod gui_renderer;
+mod heatmap_renderer;
 mod path_tracer;
 mod present;
 mod renderer;
 mod utils;
-mod heatmap_renderer;
 
 pub use constants::OFFSCREEN_FRAME_COUNT;
 pub use renderer::VulkanRenderer;

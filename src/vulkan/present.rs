@@ -73,7 +73,6 @@ pub(super) unsafe fn record_present_commands(
         .copied()
         .unwrap_or(vk::ImageLayout::UNDEFINED);
 
-
     cmd_image_barrier(
         device,
         command_buffer,

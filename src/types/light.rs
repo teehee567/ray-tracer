@@ -1,6 +1,6 @@
 use glam::Vec3;
 
-use super::{AVec3, Au32, Af32};
+use super::{AVec3, Af32, Au32};
 
 pub const POINT_LIGHT: u32 = 0;
 pub const MESH_LIGHT: u32 = 1;

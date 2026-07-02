@@ -332,11 +332,13 @@ impl Scene {
         let emissive_strength = material.emissive_strength().unwrap_or(0.0);
 
         let _specular = material
-            .specular().map(|ext| ext.specular_factor())
+            .specular()
+            .map(|ext| ext.specular_factor())
             .unwrap_or(0.);
         let _specular_colour = Vec3::from(
             material
-                .specular().map(|ext| ext.specular_color_factor())
+                .specular()
+                .map(|ext| ext.specular_color_factor())
                 .unwrap_or([0.; 3]),
         );
         let _specular_tex = material

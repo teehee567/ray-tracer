@@ -1,6 +1,5 @@
 use std::{ffi::c_void, mem};
 
-
 const INITIAL_SIZE: usize = 16;
 
 #[derive(Debug)]

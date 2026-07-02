@@ -61,14 +61,34 @@ impl Compositer {
         )?;
 
         let composite_bindings = [
-            binding(0, vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1, vk::ShaderStageFlags::FRAGMENT),
-            binding(1, vk::DescriptorType::STORAGE_BUFFER, 1, vk::ShaderStageFlags::FRAGMENT),
+            binding(
+                0,
+                vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                1,
+                vk::ShaderStageFlags::FRAGMENT,
+            ),
+            binding(
+                1,
+                vk::DescriptorType::STORAGE_BUFFER,
+                1,
+                vk::ShaderStageFlags::FRAGMENT,
+            ),
         ];
         let composite_set_layout = create_descriptor_set_layout(device, &composite_bindings)?;
 
         let reduce_bindings = [
-            binding(0, vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1, vk::ShaderStageFlags::COMPUTE),
-            binding(1, vk::DescriptorType::STORAGE_BUFFER, 1, vk::ShaderStageFlags::COMPUTE),
+            binding(
+                0,
+                vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                1,
+                vk::ShaderStageFlags::COMPUTE,
+            ),
+            binding(
+                1,
+                vk::DescriptorType::STORAGE_BUFFER,
+                1,
+                vk::ShaderStageFlags::COMPUTE,
+            ),
         ];
         let reduce_set_layout = create_descriptor_set_layout(device, &reduce_bindings)?;
 
@@ -215,14 +235,24 @@ impl Compositer {
                 vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
                 &image,
             ),
-            buffer_write(self.composite_set, 1, vk::DescriptorType::STORAGE_BUFFER, &max_buf),
+            buffer_write(
+                self.composite_set,
+                1,
+                vk::DescriptorType::STORAGE_BUFFER,
+                &max_buf,
+            ),
             image_write(
                 self.reduce_set,
                 0,
                 vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
                 &image,
             ),
-            buffer_write(self.reduce_set, 1, vk::DescriptorType::STORAGE_BUFFER, &max_buf),
+            buffer_write(
+                self.reduce_set,
+                1,
+                vk::DescriptorType::STORAGE_BUFFER,
+                &max_buf,
+            ),
         ];
 
         device.update_descriptor_sets(&writes, &[] as &[vk::CopyDescriptorSet]);

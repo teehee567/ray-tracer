@@ -181,7 +181,12 @@ pub unsafe fn cmd_transition_image_layout(
     };
 
     let barrier = image_barrier(
-        image, old_layout, new_layout, src_access, dst_access, layer_count,
+        image,
+        old_layout,
+        new_layout,
+        src_access,
+        dst_access,
+        layer_count,
     );
     cmd_image_barrier(device, command_buffer, barrier, src_stage, dst_stage);
 
