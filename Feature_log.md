@@ -4,7 +4,7 @@
 - [ ] path heatmap
 - [x] full screen or atleast larger screen size
 - [x] move mouse around
-- [ ] shader hot reload + scene/material reload
+- [x] shader hot reload + scene/material reload
 - [ ] material inspector
 - [ ] debug channel for albedo and roughness/metallic and stuff so i can finaly fix bsdf
 - [ ] pixel path probe
