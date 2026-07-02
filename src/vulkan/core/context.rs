@@ -176,20 +176,28 @@ unsafe fn create_instance(
     let mut validation_enables: Vec<*const u8> = Vec::new();
     if VALIDATION_ENABLED {
         if VALIDATION_SYNC {
-            validation_enables
-                .push(b"VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT\0".as_ptr());
+            validation_enables.push(
+                c"VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT"
+                    .as_ptr()
+                    .cast(),
+            );
         }
         if VALIDATION_BEST_PRACTICES {
-            validation_enables.push(b"VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT\0".as_ptr());
+            validation_enables
+                .push(c"VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT".as_ptr().cast());
         }
         if VALIDATION_GPU_ASSISTED {
-            validation_enables.push(b"VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT\0".as_ptr());
+            validation_enables
+                .push(c"VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT".as_ptr().cast());
             validation_enables.push(
-                b"VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT\0".as_ptr(),
+                c"VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT"
+                    .as_ptr()
+                    .cast(),
             );
         }
         if VALIDATION_DEBUG_PRINTF {
-            validation_enables.push(b"VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT\0".as_ptr());
+            validation_enables
+                .push(c"VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT".as_ptr().cast());
         }
     }
 

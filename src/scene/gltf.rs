@@ -423,7 +423,7 @@ impl Scene {
                 self.components.camera.rotation = AMat4(transform);
             }
             gltf::camera::Projection::Orthographic(_) => {
-                unimplemented!("ORTHOGAPHIC CAMERA NOT IMPLEMENTED")
+                unimplemented!("ORTHOGRAPHIC CAMERA NOT IMPLEMENTED")
             }
         }
         Ok(())

@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, default, path::{Path, PathBuf}};
+use std::{collections::VecDeque, path::PathBuf};
 
 use crate::gui::components::perf_graph::PERF_HISTORY_LEN;
 

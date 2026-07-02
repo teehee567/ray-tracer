@@ -108,7 +108,7 @@ pub(super) unsafe fn record_present_commands(
     let copy_h = render_extent.y.min(swapchain.extent.height);
 
     if render_extent.x > 0 && render_extent.y > 0 {
-        // clear writes the showl swapchaing image and copy writes the
+        // clear writes the whole swapchain image and copy writes the
         // subregion inside it, both transfer so clear before the copy
         cmd_image_barrier(
             device,

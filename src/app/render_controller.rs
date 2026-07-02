@@ -8,7 +8,6 @@ use glam::{Mat4, Vec3};
 use log::error;
 
 use crate::gui::{self, PushGui};
-use crate::gui::GuiData;
 use crate::gui::PushRender;
 use crate::vulkan::{OFFSCREEN_FRAME_COUNT, VulkanRenderer};
 

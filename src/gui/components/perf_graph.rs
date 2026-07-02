@@ -43,22 +43,22 @@ pub fn draw_perf_graph(ui: &mut egui::Ui, history: &PerfHistory) {
             plot_ui.line(
                 Line::new("Frame (CPU+GPU)", present_points)
                     .color(FRAME_COLOR)
-                    .width(1.5),
+                    .width(1.5_f32),
             );
             plot_ui.line(
                 Line::new("GPU compute", compute_points)
                     .color(GPU_COLOR)
-                    .width(1.5),
+                    .width(1.5_f32),
             );
             plot_ui.line(
                 Line::new("Heatmap (GPU)", heatmap_points)
                     .color(HEATMAP_COLOR)
-                    .width(1.5),
+                    .width(1.5_f32),
             );
             plot_ui.line(
                 Line::new("Compositor (GPU)", compositor_points)
                     .color(COMPOSITOR_COLOR)
-                    .width(1.5),
+                    .width(1.5_f32),
             );
         });
 }

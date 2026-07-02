@@ -219,7 +219,7 @@ impl VulkanRenderer {
         device.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())?;
 
         let path_trace = !self.heatmap_active;
-        // freeze accumulation counter fi showing heatmap
+        // freeze accumulation counter if showing heatmap
         if path_trace {
             self.update_uniform_buffer()?;
         }
@@ -267,12 +267,8 @@ impl VulkanRenderer {
     ) -> Result<()> {
         let device = &self.ctx.device;
 
-        // device.wait_for_fences(&[self.sync.frame_fences[frame_index]], true, u64::MAX)?;
-
-        // render loop sonly calls this function after present_ready() is true otherwise death
-
-        // device.wait_for_fences(&[self.sync.present_fence], true, u64::MAX)?;
-        // device.reset_fences(&[self.sync.present_fence])?;
+        // No fence wait here: the render loop only calls this after present_ready()
+        // returned true, so the present fence is already signaled.
 
         self.present_rate.tick();
 

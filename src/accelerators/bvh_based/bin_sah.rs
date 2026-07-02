@@ -342,8 +342,7 @@ impl Bins {
 
     #[inline(always)]
     fn add(&mut self, t: [usize; 3], mn: Vec3A, mx: Vec3A) {
-        for axis in 0..3 {
-            let b = t[axis];
+        for (axis, &b) in t.iter().enumerate() {
             debug_assert!(b < BIN_COUNT);
             // SAFETY: `bin_triple` clamps every component to [0, BIN_COUNT).
             unsafe {

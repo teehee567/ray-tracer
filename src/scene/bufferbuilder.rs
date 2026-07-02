@@ -8,6 +8,12 @@ pub struct BufferBuilder {
     buffer: Vec<u8>,
 }
 
+impl Default for BufferBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BufferBuilder {
     pub fn new() -> Self {
         BufferBuilder {
@@ -39,6 +45,9 @@ impl BufferBuilder {
         self.buffer.extend_from_slice(value_bytes);
     }
 
+    /// # Safety
+    /// `output` must point to a writable allocation of at least
+    /// `self.get_offset()` bytes.
     pub unsafe fn write(&self, output: *mut c_void) {
         std::ptr::copy_nonoverlapping(self.buffer.as_ptr(), output as *mut u8, self.buffer.len());
     }

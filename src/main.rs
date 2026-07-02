@@ -113,8 +113,7 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::RedrawRequested => {
                 state.gui.run_frame(&state.window);
-                if state.render_controller.present() {
-                }
+                state.render_controller.present();
             }
             WindowEvent::Resized(size) => {
                 if size.width == 0 || size.height == 0 {

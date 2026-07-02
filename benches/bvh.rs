@@ -21,8 +21,7 @@ fn bench_bvh_build(c: &mut Criterion) {
         b.iter(|| {
             let mut triangles = triangles.clone();
             let mut materials = vec![Material::default()];
-            let nodes =
-                Bvh::default().build(black_box(&mut triangles), black_box(&mut materials));
+            let nodes = Bvh.build(black_box(&mut triangles), black_box(&mut materials));
             black_box(nodes.len())
         });
     });

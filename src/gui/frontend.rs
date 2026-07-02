@@ -1,11 +1,10 @@
 use std::mem;
 use std::sync::{Arc, RwLock};
 
-use super::{GuiData, PerfHistory};
+use super::GuiData;
 use crate::app::camera_controller::{CameraController, CameraInput};
 use crate::app::render_controller::RenderCommand;
 use crate::gui::PushGui;
-use crate::gui::components::perf_graph::PERF_HISTORY_LEN;
 use crate::gui::panels::{GuiPanels, GuiTheme};
 use crate::types::CameraBufferObject;
 use crossbeam_channel::{Receiver, Sender, TryRecvError};

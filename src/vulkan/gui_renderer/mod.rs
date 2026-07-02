@@ -23,7 +23,6 @@ use pipeline::{
 
 /// Renders egui draw lists on top of the path traced image.
 pub struct GuiRenderer {
-    base_extent: UVec2,
     render_extent: UVec2,
     panel_width: u32,
     last_generation: Option<u64>,
@@ -71,7 +70,6 @@ impl GuiRenderer {
         )?;
 
         Ok(Self {
-            base_extent,
             render_extent,
             panel_width: 0,
             last_generation: None,
