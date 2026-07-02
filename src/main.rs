@@ -2,6 +2,8 @@
 // unsafe blocks (edition 2024 style) would add noise without clarity.
 #![allow(unsafe_op_in_unsafe_fn)]
 
+use std::{env, path};
+
 use anyhow::Result;
 use scene::Scene;
 use winit::application::ApplicationHandler;
@@ -22,21 +24,22 @@ mod vulkan;
 
 pub use types::*;
 
-use app::{RenderController, ShaderReloader};
+use app::{RenderController, SceneReloader, ShaderReloader};
 use vulkan::VulkanRenderer;
 
 struct AppState {
     window: Window,
     render_controller: RenderController,
     gui: gui::GuiFrontend,
-    // Kept alive so the shader file watcher keeps running.
     _shader_reloader: ShaderReloader,
+    _scene_reloader: SceneReloader,
     minimized: bool,
 }
 
 struct App {
     // Consumed when the window is created on the first `resumed` call.
     scene: Option<Scene>,
+    scene_path: path::PathBuf,
     state: Option<AppState>,
 }
 
@@ -71,12 +74,18 @@ impl App {
         let (gui_data_rx, render_sender) = render_controller.gui_channels();
         let shader_reloader =
             ShaderReloader::spawn(render_sender.clone(), render_controller.gui_push_sender());
+        let scene_reloader = SceneReloader::spawn(
+            self.scene_path.clone(),
+            render_sender.clone(),
+            render_controller.gui_push_sender(),
+        );
         let gui = gui::GuiFrontend::new(
             &window,
             gui_shared,
             gui_data_rx,
             render_sender,
             shader_reloader.request_sender(),
+            scene_reloader.request_sender(),
             initial_camera,
         );
 
@@ -85,6 +94,7 @@ impl App {
             render_controller,
             gui,
             _shader_reloader: shader_reloader,
+            _scene_reloader: scene_reloader,
             minimized: false,
         })
     }
@@ -153,11 +163,15 @@ impl ApplicationHandler for App {
 fn main() -> Result<()> {
     pretty_env_logger::init();
 
-    let scene = Scene::from_new("./scenes/nice/lego_bulldozer.yaml")?;
+    let scene_path = env::args()
+        .nth(1)
+        .unwrap_or_else(|| "./scenes/nice/lego_bulldozer.yaml".into());
+    let scene = Scene::from_new(&scene_path)?;
 
     let event_loop = EventLoop::new()?;
     let mut app = App {
         scene: Some(scene),
+        scene_path: scene_path.into(),
         state: None,
     };
     event_loop.run_app(&mut app)?;

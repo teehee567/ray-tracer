@@ -246,6 +246,35 @@ impl HeatmapRenderer {
         Ok(())
     }
 
+    pub unsafe fn reload_scene(&mut self, ctx: &VulkanContext, scene: &Scene) -> Result<()> {
+        let accel_vis = AccelVis::from_flat_bvh(&scene.components.bvh);
+        let (vertices, indices, depth_offsets, max_depth) = accel_vis.build_geo_layered();
+        let vertex_buffer = Buffer::from_slice(
+            ctx,
+            &vertices,
+            BufferOpts {
+                usage: vk::BufferUsageFlags::VERTEX_BUFFER,
+                ..Default::default()
+            },
+        )?;
+        let index_buffer = Buffer::from_slice(
+            ctx,
+            &indices,
+            BufferOpts {
+                usage: vk::BufferUsageFlags::INDEX_BUFFER,
+                ..Default::default()
+            },
+        )?;
+
+        self.vertex_buffer.destroy(&ctx.device);
+        self.index_buffer.destroy(&ctx.device);
+        self.vertex_buffer = vertex_buffer;
+        self.index_buffer = index_buffer;
+        self.depth_offsets = depth_offsets;
+        self.max_depth = max_depth;
+        Ok(())
+    }
+
     unsafe fn create_pipeline_layout(
         device: &Device,
         set_layout: vk::DescriptorSetLayout,

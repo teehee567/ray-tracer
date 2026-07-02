@@ -10,6 +10,7 @@ use log::error;
 use crate::app::shader_reload::ShaderBlob;
 use crate::gui::PushRender;
 use crate::gui::{self, PushGui};
+use crate::scene::Scene;
 use crate::vulkan::{OFFSCREEN_FRAME_COUNT, VulkanRenderer};
 
 pub struct RenderController {
@@ -83,10 +84,7 @@ impl Drop for RenderController {
 
 #[derive(Clone, Debug)]
 pub enum RenderCommand {
-    /// Window minimized/restored; stops dispatching while minimized.
     SetMinimized(bool),
-    /// User-requested pause from the GUI; independent of minimize so a
-    /// restore doesn't clobber an explicit pause.
     SetUserPaused(bool),
     Resize {
         width: u32,
@@ -94,8 +92,8 @@ pub enum RenderCommand {
     },
     Present,
     Shutdown,
-    /// Swap the path tracer pipeline for freshly compiled SPIR-V.
     ReloadShader(ShaderBlob),
+    ReloadScene(Box<Scene>),
     BackendCommand(PushRender),
     SetCamera {
         location: Vec3,
@@ -122,6 +120,8 @@ fn render_loop(
     let mut pending_camera: Option<(Vec3, Mat4)> = None;
 
     let mut pending_shader: Option<ShaderBlob> = None;
+
+    let mut pending_scene: Option<Box<Scene>> = None;
 
     // debounce resize before rerender
     const RESIZE_DEBOUNCE: Duration = Duration::from_millis(150);
@@ -154,6 +154,10 @@ fn render_loop(
                     RenderCommand::ReloadShader(blob) => {
                         // last one wins if several compiles finished in a burst
                         pending_shader = Some(blob);
+                    }
+                    RenderCommand::ReloadScene(scene) => {
+                        // last one wins if several reloads finished in a burst
+                        pending_scene = Some(scene);
                     }
                     RenderCommand::BackendCommand(command) => {
                         pending_backend_commands.push(command);
@@ -196,6 +200,17 @@ fn render_loop(
                 error!("shader reload failed: {err}");
             }
             let _ = gui_data_tx.try_send(PushGui::ShaderReload { error });
+        }
+
+        if let Some(scene) = pending_scene.take() {
+            // same safe point as the shader reload above
+            let error = unsafe { renderer.reload_scene(*scene) }
+                .err()
+                .map(|err| err.to_string());
+            if let Some(err) = &error {
+                error!("scene reload failed: {err}");
+            }
+            let _ = gui_data_tx.try_send(PushGui::SceneReload { error });
         }
 
         let render_res = renderer.render_resolution();

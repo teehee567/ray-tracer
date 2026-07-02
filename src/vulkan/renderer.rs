@@ -55,6 +55,7 @@ pub struct VulkanRenderer {
     gui_sender: Option<Sender<PushGui>>,
     render_mode: RenderMode,
     heatmap_band: (u32, u32),
+    last_shader_spv: Option<Arc<Vec<u8>>>,
 }
 
 impl VulkanRenderer {
@@ -114,6 +115,7 @@ impl VulkanRenderer {
             gui_sender: None,
             render_mode: RenderMode::default(),
             heatmap_band: (0, heatmap_max_depth),
+            last_shader_spv: None,
         })
     }
 
@@ -179,12 +181,51 @@ impl VulkanRenderer {
         self.frame as u32
     }
 
-    /// Swap the path tracer's compute pipeline for freshly compiled SPIR-V.
-    /// On failure the old pipeline keeps rendering.
-    pub unsafe fn reload_path_tracer_shader(&mut self, spv: &[u8]) -> Result<()> {
+    pub unsafe fn reload_path_tracer_shader(&mut self, spv: &Arc<Vec<u8>>) -> Result<()> {
         self.ctx.device.device_wait_idle()?;
         self.path_tracer.rebuild_pipeline(&self.ctx.device, spv)?;
+        self.last_shader_spv = Some(spv.clone());
         // restart accumulation so old-shader samples aren't blended in
+        self.frame = 0;
+        Ok(())
+    }
+
+    pub unsafe fn reload_scene(&mut self, mut new_scene: Scene) -> Result<()> {
+        let old_camera = &self.scene.components.camera;
+        new_scene.components.camera.location = old_camera.location;
+        new_scene.components.camera.rotation = old_camera.rotation;
+
+        self.ctx.device.device_wait_idle()?;
+
+        let render_size = self.path_tracer.render_size();
+        let mut new_path_tracer = PathTracer::new(
+            &self.ctx,
+            &new_scene,
+            self.path_tracer.framebuffer_format,
+            vk::Extent2D {
+                width: render_size.x,
+                height: render_size.y,
+            },
+        )?;
+        if let Some(spv) = &self.last_shader_spv {
+            if let Err(e) = new_path_tracer.rebuild_pipeline(&self.ctx.device, spv) {
+                log::warn!("scene reload kept embedded shader: {e}");
+            }
+        }
+        self.path_tracer.destroy(&self.ctx.device);
+        self.path_tracer = new_path_tracer;
+        self.scene = new_scene;
+        self.path_tracer.upload_scene(&self.ctx.device, &self.scene)?;
+
+        self.heatmap.reload_scene(&self.ctx, &self.scene)?;
+        self.heatmap_band = (0, self.heatmap.max_depth());
+        if let Some(sender) = &self.gui_sender {
+            let _ = sender.try_send(PushGui::HeatmapInfo {
+                max_depth: self.heatmap.max_depth(),
+            });
+        }
+
+        // restart accumulation; device is already idle
         self.frame = 0;
         Ok(())
     }

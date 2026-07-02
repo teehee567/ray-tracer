@@ -89,6 +89,7 @@ impl GuiFrontend {
         gui_data_rx: Receiver<PushGui>,
         render_sender: Sender<RenderCommand>,
         reload_sender: Sender<ReloadRequest>,
+        scene_reload_sender: Sender<ReloadRequest>,
         initial_camera: CameraBufferObject,
     ) -> Self {
         let ctx = egui::Context::default();
@@ -114,7 +115,7 @@ impl GuiFrontend {
 
             gui_data: GuiData::new(),
 
-            panels: GuiPanels::new(render_sender.clone(), reload_sender),
+            panels: GuiPanels::new(render_sender.clone(), reload_sender, scene_reload_sender),
 
             camera: CameraController::from_camera(&initial_camera),
             render_sender,
@@ -224,6 +225,9 @@ impl GuiFrontend {
                     }
                     PushGui::ShaderReload { error } => {
                         self.gui_data.shader_error = error;
+                    }
+                    PushGui::SceneReload { error } => {
+                        self.gui_data.scene_error = error;
                     }
                     PushGui::PerfUpdate {
                         compute_fps,

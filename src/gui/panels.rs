@@ -13,13 +13,19 @@ use crossbeam_channel::Sender;
 pub struct GuiPanels {
     render_sender: Sender<RenderCommand>,
     reload_sender: Sender<ReloadRequest>,
+    scene_reload_sender: Sender<ReloadRequest>,
 }
 
 impl GuiPanels {
-    pub fn new(render_sender: Sender<RenderCommand>, reload_sender: Sender<ReloadRequest>) -> Self {
+    pub fn new(
+        render_sender: Sender<RenderCommand>,
+        reload_sender: Sender<ReloadRequest>,
+        scene_reload_sender: Sender<ReloadRequest>,
+    ) -> Self {
         Self {
             render_sender,
             reload_sender,
+            scene_reload_sender,
         }
     }
 
@@ -78,6 +84,9 @@ impl GuiPanels {
                     self.draw_shader_controls(ui, gui_data);
 
                     ui.separator();
+                    self.draw_scene_controls(ui, gui_data);
+
+                    ui.separator();
                     ui.heading("Frame timing");
                     draw_perf_graph(ui, &gui_data.perf_history);
 
@@ -124,6 +133,23 @@ impl GuiPanels {
         if let Some(error) = &gui_data.shader_error {
             egui::ScrollArea::vertical()
                 .id_salt("shader_error")
+                .max_height(120.0)
+                .show(ui, |ui| {
+                    ui.colored_label(egui::Color32::LIGHT_RED, error);
+                });
+        }
+    }
+
+    fn draw_scene_controls(&self, ui: &mut egui::Ui, gui_data: &GuiData) {
+        ui.heading("Scene");
+
+        if ui.button("Reload scene").clicked() {
+            let _ = self.scene_reload_sender.try_send(ReloadRequest::Manual);
+        }
+
+        if let Some(error) = &gui_data.scene_error {
+            egui::ScrollArea::vertical()
+                .id_salt("scene_error")
                 .max_height(120.0)
                 .show(ui, |ui| {
                     ui.colored_label(egui::Color32::LIGHT_RED, error);

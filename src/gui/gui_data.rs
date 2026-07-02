@@ -33,8 +33,10 @@ pub enum PushGui {
         samples: u32,
         paused: bool,
     },
-    /// Result of a shader reload attempt; `None` means success.
     ShaderReload {
+        error: Option<String>,
+    },
+    SceneReload {
         error: Option<String>,
     },
     PerfUpdate {
@@ -70,6 +72,8 @@ pub struct GuiData {
 
     /// Last shader compile/reload error; cleared by a successful reload.
     pub shader_error: Option<String>,
+
+    pub scene_error: Option<String>,
 
     pub render_mode: RenderMode,
     pub user_paused: bool,
