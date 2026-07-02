@@ -22,7 +22,7 @@ use crate::{
 };
 use anyhow::Result;
 
-use compositor::Compositer;
+use compositor::Compositor;
 
 use super::core::pipeline::GraphicsPipelineConfig;
 
@@ -47,7 +47,7 @@ pub struct HeatmapRenderer {
     depth_offsets: Vec<u32>,
     max_depth: u32,
     pipeline_layout: vk::PipelineLayout,
-    compositor: Compositer,
+    compositor: Compositor,
 }
 
 impl HeatmapRenderer {
@@ -97,7 +97,7 @@ impl HeatmapRenderer {
             },
         )?;
 
-        let compositor = Compositer::new(ctx, swapchain_pass, heatmap_image.view)?;
+        let compositor = Compositor::new(ctx, swapchain_pass, heatmap_image.view)?;
         Self::update_accum_set(device, accum_set, heatmap_image.view);
 
         Ok(Self {

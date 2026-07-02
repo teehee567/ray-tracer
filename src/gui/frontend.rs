@@ -6,7 +6,7 @@ use crate::app::camera_controller::{CameraController, CameraInput};
 use crate::app::render_controller::RenderCommand;
 use crate::app::shader_reload::ReloadRequest;
 use crate::gui::PushGui;
-use crate::gui::panels::{GuiPanels, GuiTheme};
+use crate::gui::panels::GuiPanels;
 use crate::types::CameraBufferObject;
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use egui::epaint::ClippedPrimitive;
@@ -102,6 +102,7 @@ impl GuiFrontend {
             None,
             None,
         );
+        ctx.set_visuals(egui::Visuals::dark());
         Self {
             ctx,
             state,
@@ -126,7 +127,6 @@ impl GuiFrontend {
 
     pub fn run_frame(&mut self, window: &Window) {
         self.poll_gui_data();
-        self.apply_theme();
 
         let size = window.inner_size();
         self.panel_height = size.height;
@@ -145,7 +145,6 @@ impl GuiFrontend {
             vec2(width_points, height_points.max(0.0)),
         ));
 
-        let theme = self.panels.theme;
         let panel_height = self.panel_height;
         let pixels_per_point = self.pixels_per_point;
 
@@ -156,10 +155,6 @@ impl GuiFrontend {
 
         self.state
             .handle_platform_output(window, full_output.platform_output);
-
-        if self.panels.theme != theme {
-            self.apply_theme();
-        }
 
         let clipped = self
             .ctx
@@ -264,13 +259,6 @@ impl GuiFrontend {
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => break,
             }
-        }
-    }
-
-    fn apply_theme(&self) {
-        match self.panels.theme {
-            GuiTheme::Dark => self.ctx.set_visuals(egui::Visuals::dark()),
-            GuiTheme::Light => self.ctx.set_visuals(egui::Visuals::light()),
         }
     }
 }

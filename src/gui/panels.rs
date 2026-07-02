@@ -10,15 +10,7 @@ use super::GuiData;
 use super::frontend::{PANEL_WIDTH_POINTS, panel_width_pixels};
 use crossbeam_channel::Sender;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum GuiTheme {
-    Dark,
-    #[allow(dead_code)] // theme switcher UI not currently exposed
-    Light,
-}
-
 pub struct GuiPanels {
-    pub theme: GuiTheme,
     render_sender: Sender<RenderCommand>,
     reload_sender: Sender<ReloadRequest>,
 }
@@ -28,7 +20,6 @@ impl GuiPanels {
         Self {
             render_sender,
             reload_sender,
-            theme: GuiTheme::Dark,
         }
     }
 

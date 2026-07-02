@@ -18,7 +18,7 @@ use anyhow::Result;
 const REDUCE_GROUP: u32 = 16;
 
 // finds per frame peak overlap and samples and tone maps it
-pub(super) struct Compositer {
+pub(super) struct Compositor {
     sampler: vk::Sampler,
     max_buffer: Buffer,
 
@@ -36,7 +36,7 @@ pub(super) struct Compositer {
     reduce_set: vk::DescriptorSet,
 }
 
-impl Compositer {
+impl Compositor {
     pub(super) unsafe fn new(
         ctx: &VulkanContext,
         swapchain_pass: vk::RenderPass,
