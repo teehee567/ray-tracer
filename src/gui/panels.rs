@@ -48,6 +48,23 @@ impl GuiPanels {
 
                     ui.heading("Renderer");
 
+                    if ui
+                        .toggle_value(&mut gui_data.user_paused, "Pause rendering")
+                        .changed()
+                    {
+                        let _ =
+                            self.send_command(RenderCommand::SetUserPaused(gui_data.user_paused));
+                    }
+                    let paused_suffix = if gui_data.effective_paused {
+                        " (paused)"
+                    } else {
+                        ""
+                    };
+                    ui.label(format!(
+                        "Samples: {}{}",
+                        gui_data.sample_count, paused_suffix
+                    ));
+
                     ui.label(format!("Compute: {:.2}", gui_data.compute_fps));
                     ui.label(format!("Compute (GPU): {:.2} ms", gui_data.compute_ms));
 
@@ -92,6 +109,11 @@ impl GuiPanels {
     pub fn send(&self, req: PushRender) -> Result<()> {
         self.render_sender
             .try_send(RenderCommand::BackendCommand(req))?;
+        Ok(())
+    }
+
+    pub fn send_command(&self, command: RenderCommand) -> Result<()> {
+        self.render_sender.try_send(command)?;
         Ok(())
     }
 

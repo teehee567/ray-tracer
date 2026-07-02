@@ -29,6 +29,10 @@ pub enum PushRender {
 }
 
 pub enum PushGui {
+    Status {
+        samples: u32,
+        paused: bool,
+    },
     PerfUpdate {
         compute_fps: f64,
         compute_ms: f64,
@@ -61,6 +65,10 @@ pub struct GuiData {
     pub perf_history: PerfHistory,
 
     pub render_mode: RenderMode,
+    pub user_paused: bool,
+    pub sample_count: u32,
+    /// Actual paused state on the render thread (user pause or minimized).
+    pub effective_paused: bool,
     pub heatmap_depth_low: u32,
     pub heatmap_depth_high: u32,
     pub heatmap_max_depth: u32,

@@ -174,6 +174,11 @@ impl VulkanRenderer {
         self.frame = 0;
     }
 
+    /// Accumulated path-trace samples (includes any in-flight dispatch).
+    pub fn sample_count(&self) -> u32 {
+        self.frame as u32
+    }
+
     /// actual render target size
     pub fn render_resolution(&self) -> (u32, u32) {
         let size = self.path_tracer.render_size();

@@ -221,6 +221,10 @@ impl GuiFrontend {
         loop {
             match self.gui_data_rx.try_recv() {
                 Ok(req) => match req {
+                    PushGui::Status { samples, paused } => {
+                        self.gui_data.sample_count = samples;
+                        self.gui_data.effective_paused = paused;
+                    }
                     PushGui::PerfUpdate {
                         compute_fps,
                         compute_ms,

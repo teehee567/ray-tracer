@@ -37,11 +37,11 @@ impl RenderController {
     }
 
     pub fn pause(&self) {
-        let _ = self.command_tx.try_send(RenderCommand::Pause);
+        let _ = self.command_tx.try_send(RenderCommand::SetMinimized(true));
     }
 
     pub fn resume(&self) {
-        let _ = self.command_tx.try_send(RenderCommand::Resume);
+        let _ = self.command_tx.try_send(RenderCommand::SetMinimized(false));
     }
 
     pub fn resize(&self, width: u32, height: u32) {
@@ -74,13 +74,22 @@ impl Drop for RenderController {
 
 #[derive(Clone, Debug)]
 pub enum RenderCommand {
-    Pause,
-    Resume,
-    Resize { width: u32, height: u32 },
+    /// Window minimized/restored; stops dispatching while minimized.
+    SetMinimized(bool),
+    /// User-requested pause from the GUI; independent of minimize so a
+    /// restore doesn't clobber an explicit pause.
+    SetUserPaused(bool),
+    Resize {
+        width: u32,
+        height: u32,
+    },
     Present,
     Shutdown,
     BackendCommand(PushRender),
-    SetCamera { location: Vec3, rotation: Mat4 },
+    SetCamera {
+        location: Vec3,
+        rotation: Mat4,
+    },
 }
 
 fn render_loop(
@@ -89,7 +98,8 @@ fn render_loop(
     command_rx: Receiver<RenderCommand>,
     gui_data_tx: Sender<PushGui>,
 ) {
-    let mut paused = false;
+    let mut minimized = false;
+    let mut user_paused = false;
     let mut running = true;
     let mut available: VecDeque<usize> = (0..OFFSCREEN_FRAME_COUNT).collect();
     let mut in_flight: Vec<usize> = Vec::with_capacity(OFFSCREEN_FRAME_COUNT);
@@ -108,14 +118,17 @@ fn render_loop(
     // push live render size
     let mut last_render_res: Option<(u32, u32)> = None;
 
+    // push sample count / paused state on change
+    let mut last_status: Option<(u32, bool)> = None;
+
     while running {
         let mut present_requested = false;
 
         loop {
             match command_rx.try_recv() {
                 Ok(command) => match command {
-                    RenderCommand::Pause => paused = true,
-                    RenderCommand::Resume => paused = false,
+                    RenderCommand::SetMinimized(m) => minimized = m,
+                    RenderCommand::SetUserPaused(p) => user_paused = p,
                     RenderCommand::Resize { width, height } => {
                         pending_resize = Some((width, height));
                         last_resize_at = Some(Instant::now());
@@ -163,6 +176,15 @@ fn render_loop(
                 height: render_res.1,
             });
             last_render_res = Some(render_res);
+        }
+
+        let status = (renderer.sample_count(), minimized || user_paused);
+        if last_status != Some(status) {
+            let _ = gui_data_tx.try_send(PushGui::Status {
+                samples: status.0,
+                paused: status.1,
+            });
+            last_status = Some(status);
         }
 
         let mut completed = Vec::new();
@@ -241,7 +263,7 @@ fn render_loop(
             }
         }
 
-        if !paused {
+        if !(minimized || user_paused) {
             if let Some(index) = available.pop_front() {
                 match unsafe { renderer.dispatch_compute(index) } {
                     Ok(()) => in_flight.push(index),
